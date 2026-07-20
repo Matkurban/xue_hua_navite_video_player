@@ -12,13 +12,13 @@ let package = Package(
         .library(name: "xue-hua-navite-video-player", targets: ["xue_hua_navite_video_player"]),
     ],
     dependencies: [
-        .package(name: "FlutterFramework", path: "../FlutterFramework")
+        .package(name: "FlutterFramework", path: "../FlutterFramework"),
     ],
     targets: [
         .target(
             name: "xue_hua_navite_video_player",
             dependencies: [
-                .product(name: "FlutterFramework", package: "FlutterFramework")
+                .product(name: "FlutterFramework", package: "FlutterFramework"),
             ],
             resources: [
                 // If your plugin requires a privacy manifest, for example if it uses any required

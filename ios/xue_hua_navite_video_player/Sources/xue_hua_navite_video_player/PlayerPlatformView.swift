@@ -31,7 +31,7 @@ final class PlayerContainerView: UIView {
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) {
+    required init?(coder _: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
 
@@ -55,7 +55,7 @@ final class PlayerPlatformViewFactory: NSObject, FlutterPlatformViewFactory {
         FlutterStandardMessageCodec.sharedInstance()
     }
 
-    func create(withFrame frame: CGRect, viewIdentifier viewId: Int64, arguments args: Any?)
+    func create(withFrame frame: CGRect, viewIdentifier _: Int64, arguments _: Any?)
         -> FlutterPlatformView
     {
         guard let player = playerProvider() else {
@@ -73,5 +73,7 @@ private final class EmptyPlatformView: NSObject, FlutterPlatformView {
         super.init()
     }
 
-    func view() -> UIView { v }
+    func view() -> UIView {
+        v
+    }
 }

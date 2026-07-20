@@ -59,7 +59,7 @@ public class XueHuaNaviteVideoPlayerPlugin: NSObject, FlutterPlugin {
             result(textureId)
         case "open":
             guard let args = call.arguments as? [String: Any],
-                let url = args["url"] as? String
+                  let url = args["url"] as? String
             else {
                 result(
                     FlutterError(
@@ -80,7 +80,7 @@ public class XueHuaNaviteVideoPlayerPlugin: NSObject, FlutterPlugin {
             result(nil)
         case "seek":
             guard let args = call.arguments as? [String: Any],
-                let position = args["position"] as? Int
+                  let position = args["position"] as? Int
             else {
                 result(
                     FlutterError(
@@ -95,7 +95,7 @@ public class XueHuaNaviteVideoPlayerPlugin: NSObject, FlutterPlugin {
             result(nil)
         case "setVolume":
             guard let args = call.arguments as? [String: Any],
-                let volume = args["volume"] as? Double
+                  let volume = args["volume"] as? Double
             else {
                 result(
                     FlutterError(
@@ -110,7 +110,7 @@ public class XueHuaNaviteVideoPlayerPlugin: NSObject, FlutterPlugin {
             result(nil)
         case "setSpeed":
             guard let args = call.arguments as? [String: Any],
-                let speed = args["speed"] as? Double
+                  let speed = args["speed"] as? Double
             else {
                 result(
                     FlutterError(
@@ -125,7 +125,7 @@ public class XueHuaNaviteVideoPlayerPlugin: NSObject, FlutterPlugin {
             result(nil)
         case "setAspectRatioMode":
             guard let args = call.arguments as? [String: Any],
-                let mode = args["mode"] as? String
+                  let mode = args["mode"] as? String
             else {
                 result(
                     FlutterError(
@@ -147,7 +147,7 @@ public class XueHuaNaviteVideoPlayerPlugin: NSObject, FlutterPlugin {
             player.takeSnapshot(result: result)
         case "extractCovers":
             guard let args = call.arguments as? [String: Any],
-                let url = args["url"] as? String
+                  let url = args["url"] as? String
             else {
                 result(
                     FlutterError(
@@ -173,7 +173,7 @@ public class XueHuaNaviteVideoPlayerPlugin: NSObject, FlutterPlugin {
             )
         case "getDuration":
             guard let args = call.arguments as? [String: Any],
-                let url = args["url"] as? String
+                  let url = args["url"] as? String
             else {
                 result(
                     FlutterError(
@@ -256,7 +256,9 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler {
     }
 
     /// Returns 0 — display uses PlatformView, not Flutter Texture.
-    func create() -> Int64 { 0 }
+    func create() -> Int64 {
+        0
+    }
 
     func open(url: String) {
         cleanupPlayer()
@@ -300,7 +302,7 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler {
             )
         }
         if playerItem!.presentationSize.width > 0,
-            playerItem!.presentationSize.height > 0
+           playerItem!.presentationSize.height > 0
         {
             reportSize(playerItem!.presentationSize)
         }
@@ -427,7 +429,7 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler {
     private func publishBuffering() {
         let buffering =
             waitingForRate || !playbackLikelyToKeepUp || playbackBufferEmpty
-        if !wantsToPlay && !waitingForRate {
+        if !wantsToPlay, !waitingForRate {
             sendEvent(event: "buffering", value: false)
             return
         }
@@ -515,7 +517,6 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler {
         }
     }
 
-
     /// 从视频 URL 中抽取若干非黑的候选封面帧。
     /// Extract non-black cover candidates from a media URL.
     static func extractCovers(
@@ -563,7 +564,7 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler {
             let span = max(upper - lower, 0.1)
             let n = max(candidates, count)
             var times: [NSValue] = []
-            for i in 0..<n {
+            for i in 0 ..< n {
                 let t = lower + span * (Double(i) + 0.5) / Double(n)
                 times.append(
                     NSValue(time: CMTime(seconds: t, preferredTimescale: 600))
@@ -587,7 +588,9 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler {
                 defer { group.leave() }
                 guard status == .succeeded, let cg = cgImage else { return }
                 let brightness = Self.averageBrightness(cgImage: cg)
-                if brightness < minBrightness { return }
+                if brightness < minBrightness {
+                    return
+                }
                 let ms = Int(CMTimeGetSeconds(requestedTime) * 1000)
                 let name = "cover-\(abs(url.hashValue))-\(ms).png"
                 let outPath = (outputDir as NSString).appendingPathComponent(
@@ -707,7 +710,7 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler {
         ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: w, height: h))
         var total: Double = 0
         let pixelCount = w * h
-        for i in 0..<pixelCount {
+        for i in 0 ..< pixelCount {
             let r = Double(data[i * 4]) / 255.0
             let g = Double(data[i * 4 + 1]) / 255.0
             let b = Double(data[i * 4 + 2]) / 255.0
