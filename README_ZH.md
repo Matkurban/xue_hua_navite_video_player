@@ -6,7 +6,7 @@
 
 | 项 | 说明 |
 |----|------|
-| 当前版本 | `1.0.0` |
+| 当前版本 | `1.0.1` |
 | Flutter | `>= 3.44.0` |
 | Dart SDK | `^3.12.0` |
 | 仓库 | [GitHub](https://github.com/MatkurbanWeiXin/xue_hua_navite_video_player) |
@@ -109,7 +109,7 @@ XueHuaNaviteVideoPlayer.instance
 
 ```yaml
 dependencies:
-  xue_hua_navite_video_player: ^1.0.0
+  xue_hua_navite_video_player: ^1.0.1
 ```
 
 然后执行：

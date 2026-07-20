@@ -4,7 +4,7 @@
 #
 Pod::Spec.new do |s|
   s.name             = 'xue_hua_navite_video_player'
-  s.version          = '1.0.0'
+  s.version          = '1.0.1'
   s.summary          = 'xue_hua_navite_video_player'
   s.description      = <<-DESC
 A six-terminal universal audio and video player that caches while watching, supports multi-threaded download, breakpoint resumption, and LRU cache elimination.

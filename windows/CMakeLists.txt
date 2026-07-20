@@ -67,11 +67,18 @@ target_compile_definitions(${PLUGIN_NAME} PRIVATE
 # You can override the source by setting:
 #   -DMPV_DOWNLOAD_URL=<url to 7z archive>
 #   -DMPV_DOWNLOAD_SHA256=<hex sha256>   (empty string disables the check)
+#
+# Flutter path-deps this plugin through `.plugin_symlinks`, so
+# CMAKE_CURRENT_SOURCE_DIR is often a symlink. Resolve to the physical path
+# before download/extract — libarchive refuses to extract through symlinks
+# on Windows ("Cannot extract through symlink").
+get_filename_component(_FCVP_PLUGIN_WINDOWS_DIR
+  "${CMAKE_CURRENT_SOURCE_DIR}" REALPATH)
 if(NOT DEFINED MPV_DIR)
   if(DEFINED ENV{MPV_DIR})
     set(MPV_DIR "$ENV{MPV_DIR}")
   else()
-    set(MPV_DIR "${CMAKE_CURRENT_SOURCE_DIR}/mpv-dev")
+    set(MPV_DIR "${_FCVP_PLUGIN_WINDOWS_DIR}/mpv-dev")
   endif()
 endif()
 set(MPV_DIR "${MPV_DIR}" CACHE PATH "Path to the libmpv SDK")
@@ -94,7 +101,7 @@ if(NOT EXISTS "${MPV_DIR}/include/mpv/client.h")
   endif()
 
   get_filename_component(_FCVP_ARCHIVE_NAME "${MPV_DOWNLOAD_URL}" NAME)
-  set(_FCVP_ARCHIVE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/${_FCVP_ARCHIVE_NAME}")
+  set(_FCVP_ARCHIVE_PATH "${_FCVP_PLUGIN_WINDOWS_DIR}/${_FCVP_ARCHIVE_NAME}")
 
   if(NOT EXISTS "${_FCVP_ARCHIVE_PATH}")
     message(STATUS "libmpv SDK not found at ${MPV_DIR}")
