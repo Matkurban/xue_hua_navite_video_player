@@ -436,7 +436,12 @@ class _PlayerBody extends StatelessWidget {
                   )
                 : GestureDetector(
                     behavior: HitTestBehavior.opaque,
-                    onTap: onToggleControls,
+                    onTap: () {
+                      if (isDesktop) {
+                        focusNode.requestFocus();
+                      }
+                      onToggleControls();
+                    },
                     child: const SizedBox.expand(),
                   ),
           ),
@@ -491,10 +496,10 @@ class _PlayerBody extends StatelessWidget {
       ),
     );
 
-    if (isFullscreen && isDesktop) {
+    if (isDesktop) {
       stack = Focus(
         focusNode: focusNode,
-        autofocus: true,
+        autofocus: isFullscreen,
         onKeyEvent: (node, event) => handlePlayerKeyEvent(controller, event),
         child: stack,
       );

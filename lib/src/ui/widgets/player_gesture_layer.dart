@@ -199,7 +199,7 @@ class _PlayerGestureLayerState extends State<PlayerGestureLayer> {
   }
 }
 
-/// Desktop-only key handler (used while fullscreen).
+/// Desktop / web key handler (active when the player Focus is focused).
 KeyEventResult handlePlayerKeyEvent(VideoPlayerController controller, KeyEvent event) {
   if (event is! KeyDownEvent) return KeyEventResult.ignored;
   switch (event.logicalKey) {
