@@ -1,0 +1,20 @@
+#include <flutter/method_call.h>
+#include <flutter/method_result_functions.h>
+#include <flutter/standard_method_codec.h>
+#include <gtest/gtest.h>
+#include <windows.h>
+
+#include <memory>
+#include <string>
+#include <variant>
+
+namespace xue_hua_navite_video_player {
+	namespace test {
+
+		// Basic sanity test. The full plugin requires TextureRegistrar and
+		// BinaryMessenger which are unavailable in a unit-test context.
+		// Integration tests live in example/integration_test/.
+		TEST(XueHuaNaviteVideoPlayerPlugin, Placeholder) { EXPECT_TRUE(true); }
+
+	}  // namespace test
+}  // namespace xue_hua_navite_video_player

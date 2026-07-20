@@ -1,0 +1,47 @@
+name: xue_hua_navite_video_player
+description: "A cross-platform Flutter audio/video player plugin powered by native players (ExoPlayer, AVPlayer, mpv)."
+version: 1.0.0
+homepage: https://jsontodart.cn
+repository: https://github.com/MatkurbanWeiXin/xue_hua_navite_video_player
+
+environment:
+  sdk: ^3.12.0
+  flutter: '>=3.44.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_web_plugins:
+    sdk: flutter
+  web: ^1.1.1
+  crypto: ^3.0.7
+  cross_file: ^0.3.5+2
+  path_provider: ^2.1.5
+  signals_flutter: ^7.1.0
+  chat_context_menu: ^3.0.1
+  screen_brightness: ^2.1.11
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  mocktail: ^1.0.5
+  flutter_lints: ^6.0.0
+  signals_lint: ^7.1.0
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: com.kurban.xue_hua_navite_video_player
+        pluginClass: XueHuaNaviteVideoPlayerPlugin
+      ios:
+        pluginClass: XueHuaNaviteVideoPlayerPlugin
+      linux:
+        pluginClass: XueHuaNaviteVideoPlayerPlugin
+      macos:
+        pluginClass: XueHuaNaviteVideoPlayerPlugin
+      windows:
+        pluginClass: XueHuaNaviteVideoPlayerPluginCApi
+      web:
+        pluginClass: XueHuaNaviteVideoPlayerWeb
+        fileName: xue_hua_navite_video_player_web.dart
