@@ -88,7 +88,7 @@ class PlaybackSession {
     BrightnessController? brightness,
   }) : _backend = backend ?? ChannelPlayerBackend(),
        _fullscreen = fullscreen ?? SystemChromeFullscreenCoordinator(),
-       _brightness = brightness ?? ScreenBrightnessController();
+       _brightness = brightness ?? ChannelBrightnessController();
 
   FlutterSignal<int?> get textureId => _backend.textureId;
 

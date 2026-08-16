@@ -9,8 +9,12 @@
 
 #include <flutter/event_stream_handler_functions.h>
 #include <flutter/standard_method_codec.h>
+#include <highlevelmonitorconfigurationapi.h>
+#include <physicalmonitorenumerationapi.h>
 #include <shlobj.h>
 #include <windows.h>
+
+#include <algorithm>
 
 #include <cstring>
 #include <filesystem>
@@ -115,6 +119,7 @@ namespace xue_hua_navite_video_player {
 	}
 
 	XueHuaNaviteVideoPlayerPlugin::~XueHuaNaviteVideoPlayerPlugin() {
+		RestoreBrightness();
 		DisposePlayer();
 		if (message_window_) {
 			KillTimer(message_window_, 1);
@@ -293,6 +298,74 @@ namespace xue_hua_navite_video_player {
 		}
 	}
 
+	bool XueHuaNaviteVideoPlayerPlugin::QueryMonitorBrightness(
+		DWORD* min_out, DWORD* current_out, DWORD* max_out) {
+		HWND hwnd = nullptr;
+		if (registrar_ && registrar_->GetView()) {
+			hwnd = registrar_->GetView()->GetNativeWindow();
+		}
+		HMONITOR monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTOPRIMARY);
+		DWORD count = 0;
+		if (!GetNumberOfPhysicalMonitorsFromHMONITOR(monitor, &count) || count == 0) {
+			return false;
+		}
+		std::vector<PHYSICAL_MONITOR> monitors(count);
+		if (!GetPhysicalMonitorsFromHMONITOR(monitor, count, monitors.data())) {
+			return false;
+		}
+		const bool ok = GetMonitorBrightness(
+			monitors[0].hPhysicalMonitor, min_out, current_out, max_out) == TRUE;
+		DestroyPhysicalMonitors(count, monitors.data());
+		return ok;
+	}
+
+	bool XueHuaNaviteVideoPlayerPlugin::ApplyMonitorBrightness(DWORD value) {
+		HWND hwnd = nullptr;
+		if (registrar_ && registrar_->GetView()) {
+			hwnd = registrar_->GetView()->GetNativeWindow();
+		}
+		HMONITOR monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTOPRIMARY);
+		DWORD count = 0;
+		if (!GetNumberOfPhysicalMonitorsFromHMONITOR(monitor, &count) || count == 0) {
+			return false;
+		}
+		std::vector<PHYSICAL_MONITOR> monitors(count);
+		if (!GetPhysicalMonitorsFromHMONITOR(monitor, count, monitors.data())) {
+			return false;
+		}
+		const bool ok = SetMonitorBrightness(monitors[0].hPhysicalMonitor, value) == TRUE;
+		DestroyPhysicalMonitors(count, monitors.data());
+		return ok;
+	}
+
+	double XueHuaNaviteVideoPlayerPlugin::GetBrightness() {
+		DWORD min_b = 0, cur_b = 0, max_b = 0;
+		if (!QueryMonitorBrightness(&min_b, &cur_b, &max_b) || max_b <= min_b) {
+			return 1.0;
+		}
+		return (static_cast<double>(cur_b - min_b) / static_cast<double>(max_b - min_b));
+	}
+
+	void XueHuaNaviteVideoPlayerPlugin::SetBrightness(double value) {
+		DWORD min_b = 0, cur_b = 0, max_b = 0;
+		if (!QueryMonitorBrightness(&min_b, &cur_b, &max_b) || max_b <= min_b) {
+			return;
+		}
+		if (!brightness_saved_) {
+			saved_brightness_ = cur_b;
+			brightness_saved_ = true;
+		}
+		const double clamped = std::clamp(value, 0.0, 1.0);
+		const DWORD target = min_b + static_cast<DWORD>((max_b - min_b) * clamped + 0.5);
+		ApplyMonitorBrightness(target);
+	}
+
+	void XueHuaNaviteVideoPlayerPlugin::RestoreBrightness() {
+		if (!brightness_saved_) return;
+		brightness_saved_ = false;
+		ApplyMonitorBrightness(saved_brightness_);
+	}
+
 	void XueHuaNaviteVideoPlayerPlugin::HandleMethodCall(
 		const flutter::MethodCall<flutter::EncodableValue>& call,
 		std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
@@ -350,7 +423,25 @@ namespace xue_hua_navite_video_player {
 			}
 			result->Success(); return;
 		}
-		if (name == "dispose") { DisposePlayer(); result->Success(); return; }
+		if (name == "dispose") {
+			RestoreBrightness();
+			DisposePlayer();
+			result->Success();
+			return;
+		}
+		if (name == "getBrightness") {
+			result->Success(flutter::EncodableValue(GetBrightness()));
+			return;
+		}
+		if (name == "setBrightness") {
+			double value = 1.0;
+			if (args) {
+				if (const auto* v = GetArg<double>(args, "value")) value = *v;
+			}
+			SetBrightness(value);
+			result->Success();
+			return;
+		}
 		if (name == "takeSnapshot") {
 			if (!player_) { result->Error("NO_PLAYER", "Player not initialized"); return; }
 			std::vector<uint8_t> bytes;

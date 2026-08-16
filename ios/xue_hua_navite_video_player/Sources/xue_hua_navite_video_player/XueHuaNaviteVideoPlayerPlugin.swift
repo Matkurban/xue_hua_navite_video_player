@@ -9,6 +9,7 @@ public class XueHuaNaviteVideoPlayerPlugin: NSObject, FlutterPlugin {
     private var eventChannel: FlutterEventChannel?
     private var registrar: FlutterPluginRegistrar?
     private var videoPlayer: NativeVideoPlayer?
+    private var savedBrightness: CGFloat?
 
     public static func register(with registrar: FlutterPluginRegistrar) {
         let instance = XueHuaNaviteVideoPlayerPlugin()
@@ -141,7 +142,25 @@ public class XueHuaNaviteVideoPlayerPlugin: NSObject, FlutterPlugin {
         case "setVideoViewSize":
             result(nil)
         case "dispose":
+            restoreBrightness()
             player.dispose()
+            result(nil)
+        case "getBrightness":
+            result(currentBrightness())
+        case "setBrightness":
+            guard let args = call.arguments as? [String: Any],
+                  let value = args["value"] as? Double
+            else {
+                result(
+                    FlutterError(
+                        code: "INVALID_ARG",
+                        message: "value is required",
+                        details: nil
+                    )
+                )
+                return
+            }
+            applyBrightness(value)
             result(nil)
         case "takeSnapshot":
             player.takeSnapshot(result: result)
@@ -194,6 +213,37 @@ public class XueHuaNaviteVideoPlayerPlugin: NSObject, FlutterPlugin {
             result("iOS " + UIDevice.current.systemVersion)
         default:
             result(FlutterMethodNotImplemented)
+        }
+    }
+
+    private func currentBrightness() -> Double {
+        Double(UIScreen.main.brightness)
+    }
+
+    private func applyBrightness(_ value: Double) {
+        let apply = {
+            if self.savedBrightness == nil {
+                self.savedBrightness = UIScreen.main.brightness
+            }
+            UIScreen.main.brightness = CGFloat(min(max(value, 0), 1))
+        }
+        if Thread.isMainThread {
+            apply()
+        } else {
+            DispatchQueue.main.sync(execute: apply)
+        }
+    }
+
+    private func restoreBrightness() {
+        guard let original = savedBrightness else { return }
+        savedBrightness = nil
+        let restore = {
+            UIScreen.main.brightness = original
+        }
+        if Thread.isMainThread {
+            restore()
+        } else {
+            DispatchQueue.main.sync(execute: restore)
         }
     }
 }

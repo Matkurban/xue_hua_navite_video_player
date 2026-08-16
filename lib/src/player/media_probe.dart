@@ -1,10 +1,10 @@
 import 'package:cross_file/cross_file.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import 'package:path_provider/path_provider.dart';
 
 import '../core/video_source.dart';
 import '../data/models/video_cover_frame.dart';
+import '../utils/temp_paths.dart';
 
 /// Probe duration / cover frames without a live playback session.
 ///
@@ -51,7 +51,7 @@ class MediaProbe {
     final candidateCount = (count * 3).clamp(count, 30);
     final resolved = await source.resolveToNativeUrl();
 
-    final dir = kIsWeb ? '' : (outputDir ?? await _defaultCoverDir());
+    final dir = kIsWeb ? '' : (outputDir ?? await pluginCoverDir());
 
     final raw = await _channel.invokeMethod<dynamic>('extractCovers', {
       'url': resolved,
@@ -80,10 +80,5 @@ class MediaProbe {
       position: Duration(milliseconds: positionMs),
       brightness: brightness.clamp(0.0, 1.0),
     );
-  }
-
-  static Future<String> _defaultCoverDir() async {
-    final base = await getTemporaryDirectory();
-    return '${base.path}/xue_hua_navite_video_player/covers';
   }
 }

@@ -57,6 +57,12 @@ namespace xue_hua_navite_video_player {
 			std::shared_ptr<flutter::MethodResult<flutter::EncodableValue>> result,
 			flutter::EncodableValue value);
 
+		double GetBrightness();
+		void SetBrightness(double value);
+		void RestoreBrightness();
+		bool QueryMonitorBrightness(DWORD* min_out, DWORD* current_out, DWORD* max_out);
+		bool ApplyMonitorBrightness(DWORD value);
+
 		flutter::PluginRegistrarWindows* registrar_;
 		flutter::TextureRegistrar* texture_registrar_;
 		std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>> method_channel_;
@@ -73,6 +79,9 @@ namespace xue_hua_navite_video_player {
 		std::atomic<bool> drain_posted_{ false };
 		std::atomic<bool> render_posted_{ false };
 		DWORD platform_thread_id_ = 0;
+
+		bool brightness_saved_ = false;
+		DWORD saved_brightness_ = 0;
 
 		// Dedicated render worker. mpv's SW render is a *heavy* operation (decode +
 		// full-frame RGBA memcpy); running it on the Flutter platform thread blocks

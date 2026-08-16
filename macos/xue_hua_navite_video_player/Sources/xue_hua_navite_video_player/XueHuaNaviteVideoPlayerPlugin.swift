@@ -1,6 +1,45 @@
 import AVFoundation
 import Cocoa
+import CoreGraphics
+import Darwin
 import FlutterMacOS
+import IOKit
+
+/// Lazy `dlsym` lookup so missing private symbols do not abort the process.
+private enum DisplayBrightnessAPI {
+    typealias DisplayServicesGet = @convention(c) (
+        CGDirectDisplayID, UnsafeMutablePointer<Float>
+    ) -> Int32
+    typealias DisplayServicesSet = @convention(c) (CGDirectDisplayID, Float) -> Int32
+    typealias IODisplayGet = @convention(c) (
+        io_service_t, IOOptionBits, CFString, UnsafeMutablePointer<Float>
+    ) -> kern_return_t
+    typealias IODisplaySet = @convention(c) (
+        io_service_t, IOOptionBits, CFString, Float
+    ) -> kern_return_t
+
+    static let displayServicesGet: DisplayServicesGet? = load(
+        "DisplayServicesGetBrightness",
+        in: "/System/Library/PrivateFrameworks/DisplayServices.framework/DisplayServices"
+    )
+    static let displayServicesSet: DisplayServicesSet? = load(
+        "DisplayServicesSetBrightness",
+        in: "/System/Library/PrivateFrameworks/DisplayServices.framework/DisplayServices"
+    )
+    static let ioDisplayGet: IODisplayGet? = load("IODisplayGetFloatParameter")
+    static let ioDisplaySet: IODisplaySet? = load("IODisplaySetFloatParameter")
+
+    private static func load<T>(_ symbol: String, in path: String? = nil) -> T? {
+        let handle: UnsafeMutableRawPointer?
+        if let path {
+            handle = dlopen(path, RTLD_LAZY | RTLD_LOCAL)
+        } else {
+            handle = dlopen(nil, RTLD_LAZY)
+        }
+        guard let handle, let pointer = dlsym(handle, symbol) else { return nil }
+        return unsafeBitCast(pointer, to: T.self)
+    }
+}
 
 /// macOS 插件主类，基于 AVPlayer 实现原生视频播放，通过 AVPlayerLayer（PlatformView）渲染。
 /// macOS plugin: AVPlayer displayed via AVPlayerLayer PlatformView.
@@ -9,6 +48,7 @@ public class XueHuaNaviteVideoPlayerPlugin: NSObject, FlutterPlugin {
     private var eventChannel: FlutterEventChannel?
     private var registrar: FlutterPluginRegistrar?
     private var videoPlayer: NativeVideoPlayer?
+    private var savedBrightness: Float?
 
     public static func register(with registrar: FlutterPluginRegistrar) {
         let instance = XueHuaNaviteVideoPlayerPlugin()
@@ -140,7 +180,25 @@ public class XueHuaNaviteVideoPlayerPlugin: NSObject, FlutterPlugin {
         case "setVideoViewSize":
             result(nil)
         case "dispose":
+            restoreBrightness()
             player.dispose()
+            result(nil)
+        case "getBrightness":
+            result(currentBrightness())
+        case "setBrightness":
+            guard let args = call.arguments as? [String: Any],
+                  let value = args["value"] as? Double
+            else {
+                result(
+                    FlutterError(
+                        code: "INVALID_ARG",
+                        message: "value is required",
+                        details: nil
+                    )
+                )
+                return
+            }
+            applyBrightness(value)
             result(nil)
         case "takeSnapshot":
             player.takeSnapshot(result: result)
@@ -196,6 +254,94 @@ public class XueHuaNaviteVideoPlayerPlugin: NSObject, FlutterPlugin {
         default:
             result(FlutterMethodNotImplemented)
         }
+    }
+
+    private func currentBrightness() -> Double {
+        if let value = displayServicesBrightness() {
+            return Double(value)
+        }
+        if let value = ioKitBrightness() {
+            return Double(value)
+        }
+        return 1.0
+    }
+
+    private func applyBrightness(_ value: Double) {
+        let clamped = Float(min(max(value, 0), 1))
+        let apply = {
+            if self.savedBrightness == nil {
+                self.savedBrightness = Float(self.currentBrightness())
+            }
+            _ = self.setDisplayBrightness(clamped)
+        }
+        if Thread.isMainThread {
+            apply()
+        } else {
+            DispatchQueue.main.sync(execute: apply)
+        }
+    }
+
+    private func restoreBrightness() {
+        guard let original = savedBrightness else { return }
+        savedBrightness = nil
+        let restore = {
+            _ = self.setDisplayBrightness(original)
+        }
+        if Thread.isMainThread {
+            restore()
+        } else {
+            DispatchQueue.main.sync(execute: restore)
+        }
+    }
+
+    @discardableResult
+    private func setDisplayBrightness(_ value: Float) -> Bool {
+        if let set = DisplayBrightnessAPI.displayServicesSet,
+           set(CGMainDisplayID(), value) == 0
+        {
+            return true
+        }
+        return setIOKitBrightness(value)
+    }
+
+    private func displayServicesBrightness() -> Float? {
+        guard let get = DisplayBrightnessAPI.displayServicesGet else { return nil }
+        var brightness: Float = 1
+        let status = get(CGMainDisplayID(), &brightness)
+        return status == 0 ? brightness : nil
+    }
+
+    private func ioKitBrightness() -> Float? {
+        guard let get = DisplayBrightnessAPI.ioDisplayGet else { return nil }
+        var brightness: Float = 1
+        let ok = withDisplayService { service in
+            get(service, 0, "brightness" as CFString, &brightness) == KERN_SUCCESS
+        }
+        return ok == true ? brightness : nil
+    }
+
+    private func setIOKitBrightness(_ value: Float) -> Bool {
+        guard let set = DisplayBrightnessAPI.ioDisplaySet else { return false }
+        return withDisplayService { service in
+            set(service, 0, "brightness" as CFString, value) == KERN_SUCCESS
+        } ?? false
+    }
+
+    private func withDisplayService<T>(_ body: (io_service_t) -> T) -> T? {
+        var iterator: io_iterator_t = 0
+        let port: mach_port_t
+        if #available(macOS 12.0, *) {
+            port = kIOMainPortDefault
+        } else {
+            port = kIOMasterPortDefault
+        }
+        let kr = IOServiceGetMatchingServices(port, IOServiceMatching("IODisplayConnect"), &iterator)
+        guard kr == KERN_SUCCESS else { return nil }
+        defer { IOObjectRelease(iterator) }
+        let service = IOIteratorNext(iterator)
+        guard service != 0 else { return nil }
+        defer { IOObjectRelease(service) }
+        return body(service)
     }
 }
 

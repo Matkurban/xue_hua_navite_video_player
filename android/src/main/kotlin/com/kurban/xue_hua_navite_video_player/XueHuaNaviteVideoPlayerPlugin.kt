@@ -1,10 +1,12 @@
 package com.kurban.xue_hua_navite_video_player
 
+import android.app.Activity
 import android.graphics.Bitmap
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
+import android.provider.Settings
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
@@ -14,6 +16,8 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import io.flutter.embedding.engine.plugins.FlutterPlugin
+import io.flutter.embedding.engine.plugins.activity.ActivityAware
+import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
@@ -29,7 +33,8 @@ import kotlin.math.abs
 class XueHuaNaviteVideoPlayerPlugin :
     FlutterPlugin,
     MethodCallHandler,
-    EventChannel.StreamHandler {
+    EventChannel.StreamHandler,
+    ActivityAware {
 
     private lateinit var methodChannel: MethodChannel
     private lateinit var eventChannel: EventChannel
@@ -41,6 +46,8 @@ class XueHuaNaviteVideoPlayerPlugin :
     private var flutterPluginBinding: FlutterPlugin.FlutterPluginBinding? = null
     private var playerView: PlayerView? = null
     private var resizeMode: Int = AspectRatioFrameLayout.RESIZE_MODE_FIT
+    private var activity: Activity? = null
+    private var savedBrightness: Float? = null
 
     fun attachPlayerView(view: PlayerView) {
         playerView = view
@@ -84,8 +91,26 @@ class XueHuaNaviteVideoPlayerPlugin :
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         methodChannel.setMethodCallHandler(null)
         eventChannel.setStreamHandler(null)
+        restoreBrightness()
         releasePlayer()
         flutterPluginBinding = null
+    }
+
+    override fun onAttachedToActivity(binding: ActivityPluginBinding) {
+        activity = binding.activity
+    }
+
+    override fun onDetachedFromActivityForConfigChanges() {
+        activity = null
+    }
+
+    override fun onReattachedToActivityForConfigChanges(binding: ActivityPluginBinding) {
+        activity = binding.activity
+    }
+
+    override fun onDetachedFromActivity() {
+        restoreBrightness()
+        activity = null
     }
 
     override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
@@ -111,6 +136,8 @@ class XueHuaNaviteVideoPlayerPlugin :
             "takeSnapshot" -> handleTakeSnapshot(result)
             "extractCovers" -> handleExtractCovers(call, result)
             "getDuration" -> handleGetDuration(call, result)
+            "getBrightness" -> handleGetBrightness(result)
+            "setBrightness" -> handleSetBrightness(call, result)
             "getPlatformVersion" -> result.success("Android ${android.os.Build.VERSION.RELEASE}")
             else -> result.notImplemented()
         }
@@ -202,8 +229,68 @@ class XueHuaNaviteVideoPlayerPlugin :
 
     /// 释放播放器资源。
     private fun handleDispose(result: Result) {
+        restoreBrightness()
         releasePlayer()
         result.success(null)
+    }
+
+    private fun handleGetBrightness(result: Result) {
+        val window = activity?.window
+        if (window == null) {
+            result.success(1.0)
+            return
+        }
+        val override = window.attributes.screenBrightness
+        if (override >= 0f) {
+            result.success(override.toDouble())
+            return
+        }
+        val system = try {
+            val resolver = activity?.contentResolver
+            if (resolver == null) {
+                1.0
+            } else {
+                Settings.System.getInt(resolver, Settings.System.SCREEN_BRIGHTNESS) / 255.0
+            }
+        } catch (_: Exception) {
+            1.0
+        }
+        result.success(system.coerceIn(0.0, 1.0))
+    }
+
+    private fun handleSetBrightness(call: MethodCall, result: Result) {
+        val value = call.argument<Double>("value") ?: run {
+            result.error("INVALID_ARG", "value is required", null)
+            return
+        }
+        val act = activity
+        val window = act?.window
+        if (act == null || window == null) {
+            result.success(null)
+            return
+        }
+        val clamped = value.toFloat().coerceIn(0f, 1f)
+        act.runOnUiThread {
+            val lp = window.attributes
+            if (savedBrightness == null) {
+                savedBrightness = lp.screenBrightness
+            }
+            lp.screenBrightness = clamped
+            window.attributes = lp
+        }
+        result.success(null)
+    }
+
+    private fun restoreBrightness() {
+        val original = savedBrightness ?: return
+        savedBrightness = null
+        val act = activity
+        val window = act?.window ?: return
+        act.runOnUiThread {
+            val lp = window.attributes
+            lp.screenBrightness = original
+            window.attributes = lp
+        }
     }
 
     private fun releasePlayer() {

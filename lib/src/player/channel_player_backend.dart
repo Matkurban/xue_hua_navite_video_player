@@ -1,13 +1,12 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:cross_file/cross_file.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:signals_flutter/signals_flutter.dart';
 
 import '../data/enums/aspect_ratio_mode.dart';
+import '../utils/temp_paths.dart';
 import 'player_backend.dart';
 import 'player_event.dart';
 
@@ -196,10 +195,8 @@ class ChannelPlayerBackend implements PlayerBackend {
       return XFile.fromData(bytes, mimeType: 'image/png', name: _defaultSnapshotName());
     }
     final bytes = _asUint8List(raw);
-    final outPath = savePath ?? await _defaultSnapshotPath();
-    final file = File(outPath);
-    await file.parent.create(recursive: true);
-    await file.writeAsBytes(bytes, flush: true);
+    final outPath = savePath ?? await pluginSnapshotPath(_defaultSnapshotName());
+    await writeFileBytes(outPath, bytes);
     return XFile(outPath, mimeType: 'image/png');
   }
 
@@ -212,11 +209,5 @@ class ChannelPlayerBackend implements PlayerBackend {
   static String _defaultSnapshotName() {
     final ts = DateTime.now().millisecondsSinceEpoch;
     return 'snapshot-$ts.png';
-  }
-
-  static Future<String> _defaultSnapshotPath() async {
-    final dir = await getTemporaryDirectory();
-    final name = _defaultSnapshotName();
-    return '${dir.path}/xue_hua_navite_video_player/snapshots/$name';
   }
 }

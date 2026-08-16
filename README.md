@@ -6,7 +6,7 @@ A cross-platform Flutter audio/video player plugin. Dart exposes a unified contr
 
 | | |
 |---|---|
-| Version | `1.0.1` |
+| Version | `1.1.0` |
 | Flutter | `>= 3.44.0` |
 | Dart SDK | `^3.12.0` |
 | Repository | [GitHub](https://github.com/MatkurbanWeiXin/xue_hua_navite_video_player) |
@@ -107,7 +107,7 @@ See [CONTEXT.md](CONTEXT.md) for domain notes.
 
 ```yaml
 dependencies:
-  xue_hua_navite_video_player: ^1.0.1
+  xue_hua_navite_video_player: ^1.1.0
 ```
 
 ```bash

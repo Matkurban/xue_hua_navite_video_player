@@ -92,6 +92,10 @@ class XueHuaNaviteVideoPlayerWeb {
       case 'getDuration':
         final args = Map<String, dynamic>.from(call.arguments as Map);
         return _getDuration(args);
+      case 'getBrightness':
+        return 1.0;
+      case 'setBrightness':
+        return null;
       case 'getPlatformVersion':
         return 'Web';
       default:

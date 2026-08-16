@@ -6,11 +6,18 @@
 #include <gtk/gtk.h>
 #include <sys/stat.h>
 #include <sys/utsname.h>
+#include <unistd.h>
 
 #include <clocale>
+#include <cstdio>
 #include <cstring>
 #include <memory>
 #include <string>
+
+#ifdef HAS_XRANDR
+#include <X11/Xlib.h>
+#include <X11/extensions/Xrandr.h>
+#endif
 
 #include "xue_hua_navite_video_player_plugin_private.h"
 #include "mpv_player.h"
@@ -136,6 +143,14 @@ struct _XueHuaNaviteVideoPlayerPlugin {
   // Set while tearing down so mpv wakeup/update handlers never schedule
   // idles against a destroyed player.
   gboolean disposed;
+  gchar* backlight_path;
+  gint backlight_max;
+  gboolean backlight_saved;
+  gint saved_backlight;
+#ifdef HAS_XRANDR
+  XRRCrtcGamma* saved_gamma;
+  RRCrtc saved_crtc;
+#endif
 };
 
 G_DEFINE_TYPE(XueHuaNaviteVideoPlayerPlugin, xue_hua_navite_video_player_plugin, g_object_get_type())
@@ -251,6 +266,166 @@ static gchar* default_cover_dir() {
   return dir;
 }
 
+static bool read_int_file(const char* path, int* out) {
+  FILE* file = fopen(path, "r");
+  if (!file) return false;
+  int value = 0;
+  const bool ok = fscanf(file, "%d", &value) == 1;
+  fclose(file);
+  if (ok) *out = value;
+  return ok;
+}
+
+static bool write_int_file(const char* path, int value) {
+  FILE* file = fopen(path, "w");
+  if (!file) return false;
+  const int written = fprintf(file, "%d", value);
+  fclose(file);
+  return written > 0;
+}
+
+static bool ensure_backlight(XueHuaNaviteVideoPlayerPlugin* self) {
+  if (self->backlight_path && self->backlight_max > 0) return true;
+  GDir* dir = g_dir_open("/sys/class/backlight", 0, nullptr);
+  if (!dir) return false;
+  const gchar* name = nullptr;
+  int best_max = -1;
+  gchar* best_path = nullptr;
+  while ((name = g_dir_read_name(dir))) {
+    g_autofree gchar* max_path =
+        g_build_filename("/sys/class/backlight", name, "max_brightness", nullptr);
+    g_autofree gchar* br_path =
+        g_build_filename("/sys/class/backlight", name, "brightness", nullptr);
+    int max_value = 0;
+    if (!read_int_file(max_path, &max_value) || max_value <= 0) continue;
+    if (access(br_path, W_OK) != 0) continue;
+    if (max_value > best_max) {
+      best_max = max_value;
+      g_free(best_path);
+      best_path = g_strdup(br_path);
+    }
+  }
+  g_dir_close(dir);
+  if (!best_path) return false;
+  self->backlight_path = best_path;
+  self->backlight_max = best_max;
+  return true;
+}
+
+#ifdef HAS_XRANDR
+static bool randr_set_brightness(XueHuaNaviteVideoPlayerPlugin* self, double value) {
+  Display* dpy = XOpenDisplay(nullptr);
+  if (!dpy) return false;
+  const int screen = DefaultScreen(dpy);
+  const Window root = RootWindow(dpy, screen);
+  XRRScreenResources* res = XRRGetScreenResourcesCurrent(dpy, root);
+  if (!res) {
+    XCloseDisplay(dpy);
+    return false;
+  }
+  RRCrtc crtc = None;
+  for (int i = 0; i < res->noutput; i++) {
+    XRROutputInfo* info = XRRGetOutputInfo(dpy, res, res->outputs[i]);
+    if (!info) continue;
+    if (info->connection == RR_Connected && info->crtc != None) {
+      crtc = info->crtc;
+      XRRFreeOutputInfo(info);
+      break;
+    }
+    XRRFreeOutputInfo(info);
+  }
+  if (crtc == None) {
+    XRRFreeScreenResources(res);
+    XCloseDisplay(dpy);
+    return false;
+  }
+  XRRCrtcGamma* gamma = XRRGetCrtcGamma(dpy, crtc);
+  if (!gamma) {
+    XRRFreeScreenResources(res);
+    XCloseDisplay(dpy);
+    return false;
+  }
+  if (!self->saved_gamma) {
+    self->saved_gamma = XRRAllocGamma(gamma->size);
+    if (self->saved_gamma) {
+      memcpy(self->saved_gamma->red, gamma->red, static_cast<size_t>(gamma->size) * sizeof(unsigned short));
+      memcpy(self->saved_gamma->green, gamma->green, static_cast<size_t>(gamma->size) * sizeof(unsigned short));
+      memcpy(self->saved_gamma->blue, gamma->blue, static_cast<size_t>(gamma->size) * sizeof(unsigned short));
+      self->saved_crtc = crtc;
+    }
+  }
+  XRRCrtcGamma* src = self->saved_gamma ? self->saved_gamma : gamma;
+  XRRCrtcGamma* next = XRRAllocGamma(src->size);
+  bool ok = false;
+  const double clamped = value < 0 ? 0 : (value > 1 ? 1 : value);
+  if (next) {
+    for (int i = 0; i < src->size; i++) {
+      next->red[i] = static_cast<unsigned short>(src->red[i] * clamped + 0.5);
+      next->green[i] = static_cast<unsigned short>(src->green[i] * clamped + 0.5);
+      next->blue[i] = static_cast<unsigned short>(src->blue[i] * clamped + 0.5);
+    }
+    XRRSetCrtcGamma(dpy, crtc, next);
+    XRRFreeGamma(next);
+    ok = true;
+  }
+  XRRFreeGamma(gamma);
+  XRRFreeScreenResources(res);
+  XCloseDisplay(dpy);
+  return ok;
+}
+
+static void randr_restore_brightness(XueHuaNaviteVideoPlayerPlugin* self) {
+  if (!self->saved_gamma) return;
+  Display* dpy = XOpenDisplay(nullptr);
+  if (dpy) {
+    XRRSetCrtcGamma(dpy, self->saved_crtc, self->saved_gamma);
+    XCloseDisplay(dpy);
+  }
+  XRRFreeGamma(self->saved_gamma);
+  self->saved_gamma = nullptr;
+  self->saved_crtc = None;
+}
+#endif
+
+static double plugin_get_brightness(XueHuaNaviteVideoPlayerPlugin* self) {
+  if (ensure_backlight(self)) {
+    int current = 0;
+    if (read_int_file(self->backlight_path, &current) && self->backlight_max > 0) {
+      return static_cast<double>(current) / static_cast<double>(self->backlight_max);
+    }
+  }
+  return 1.0;
+}
+
+static void plugin_set_brightness(XueHuaNaviteVideoPlayerPlugin* self, double value) {
+  const double clamped = value < 0 ? 0 : (value > 1 ? 1 : value);
+  if (ensure_backlight(self)) {
+    int original = 0;
+    const bool have_original = read_int_file(self->backlight_path, &original);
+    const int target = static_cast<int>(self->backlight_max * clamped + 0.5);
+    if (write_int_file(self->backlight_path, target)) {
+      if (!self->backlight_saved && have_original) {
+        self->saved_backlight = original;
+        self->backlight_saved = TRUE;
+      }
+      return;
+    }
+  }
+#ifdef HAS_XRANDR
+  randr_set_brightness(self, clamped);
+#endif
+}
+
+static void plugin_restore_brightness(XueHuaNaviteVideoPlayerPlugin* self) {
+  if (self->backlight_saved && self->backlight_path) {
+    write_int_file(self->backlight_path, self->saved_backlight);
+    self->backlight_saved = FALSE;
+  }
+#ifdef HAS_XRANDR
+  randr_restore_brightness(self);
+#endif
+}
+
 static void handle_method_call(XueHuaNaviteVideoPlayerPlugin* self, FlMethodCall* method_call) {
   g_autoptr(FlMethodResponse) response = nullptr;
   const gchar* method = fl_method_call_get_name(method_call);
@@ -319,7 +494,18 @@ static void handle_method_call(XueHuaNaviteVideoPlayerPlugin* self, FlMethodCall
     }
     response = FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
   } else if (strcmp(method, "dispose") == 0) {
+    plugin_restore_brightness(self);
     player_dispose(self);
+    response = FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
+  } else if (strcmp(method, "getBrightness") == 0) {
+    g_autoptr(FlValue) out = fl_value_new_float(plugin_get_brightness(self));
+    response = FL_METHOD_RESPONSE(fl_method_success_response_new(out));
+  } else if (strcmp(method, "setBrightness") == 0) {
+    FlValue* args = fl_method_call_get_args(method_call);
+    FlValue* value = args ? fl_value_lookup_string(args, "value") : nullptr;
+    if (value) {
+      plugin_set_brightness(self, fl_value_get_float(value));
+    }
     response = FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
   } else if (strcmp(method, "takeSnapshot") == 0) {
     if (!self->player) {
@@ -403,6 +589,8 @@ FlMethodResponse* get_platform_version() {
 
 static void xue_hua_navite_video_player_plugin_dispose(GObject* object) {
   auto* self = XUE_HUA_NAVITE_VIDEO_PLAYER_PLUGIN(object);
+  plugin_restore_brightness(self);
+  g_clear_pointer(&self->backlight_path, g_free);
   player_dispose(self);
   g_clear_object(&self->method_channel);
   g_clear_object(&self->event_channel);
@@ -421,6 +609,14 @@ static void xue_hua_navite_video_player_plugin_init(XueHuaNaviteVideoPlayerPlugi
   self->drain_timer_id = 0;
   self->render_source_id = 0;
   self->disposed = FALSE;
+  self->backlight_path = nullptr;
+  self->backlight_max = 0;
+  self->backlight_saved = FALSE;
+  self->saved_backlight = 0;
+#ifdef HAS_XRANDR
+  self->saved_gamma = nullptr;
+  self->saved_crtc = None;
+#endif
 }
 
 static void method_call_cb(FlMethodChannel*, FlMethodCall* method_call, gpointer user_data) {

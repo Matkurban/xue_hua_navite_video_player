@@ -9,14 +9,15 @@ import '../utils/asset_extractor.dart';
 ///
 /// * [NetworkVideoSource] ─ 网络地址（`http(s)://...`），由原生播放器直连。
 /// * [FileVideoSource]    ─ 本地绝对路径或 `file://` URI。
-/// * [AssetVideoSource]   ─ Flutter assets，由插件自动抽取到临时目录后以 `file://` 交给原生播放器。
+/// * [AssetVideoSource]   ─ Flutter assets。原生平台抽取到临时目录后以 `file://`
+///   交给播放器；Web / WASM 直接使用 Flutter 托管的 `assets/` URL。
 ///
 /// A sealed description of a playable media source.
 ///
 /// * [NetworkVideoSource] – HTTP(S) URL, opened directly by the native player.
 /// * [FileVideoSource]    – Local absolute path or `file://` URI.
-/// * [AssetVideoSource]   – Flutter asset; the plugin extracts it to the temp
-///   directory and hands the `file://` URI to the native player.
+/// * [AssetVideoSource]   – Flutter asset. Native platforms extract it to a
+///   temp file; Web / WASM uses the Flutter-hosted `assets/` URL.
 @immutable
 sealed class VideoSource {
   const VideoSource();
@@ -33,7 +34,7 @@ sealed class VideoSource {
   ///
   /// * 网络：原样返回
   /// * 文件：规范化为 `file:///absolute/path`
-  /// * 资源：懒抽取到临时目录并返回 `file://` URI
+  /// * 资源：原生抽取到临时目录并返回 `file://` URI；Web 返回 `assets/` URL
   ///
   /// Resolve this source into a URL the native player can consume directly.
   Future<String> resolveToNativeUrl();
@@ -106,8 +107,8 @@ class FileVideoSource extends VideoSource {
   int get hashCode => path.hashCode;
 }
 
-/// Flutter assets 来源；首次使用时自动抽取到临时目录。
-/// Flutter asset media source; extracted to the temp directory on first use.
+/// Flutter assets 来源；原生平台首次使用时抽取到临时目录，Web 直接使用托管 URL。
+/// Flutter asset media source; extracted on native, served as a URL on web.
 class AssetVideoSource extends VideoSource {
   /// Asset 路径（与 `rootBundle.load(...)` 相同）。
   /// Asset key (same as `rootBundle.load(...)`).
@@ -124,8 +125,17 @@ class AssetVideoSource extends VideoSource {
 
   @override
   Future<String> resolveToNativeUrl() async {
+    if (kIsWeb) {
+      return _webAssetUrl(assetPath);
+    }
     final path = await AssetExtractor.extract(assetPath, bundle: bundle);
     return Uri.file(path).toString();
+  }
+
+  /// Flutter web serves declared assets under the `assets/` prefix.
+  static String _webAssetUrl(String assetPath) {
+    final key = assetPath.startsWith('/') ? assetPath.substring(1) : assetPath;
+    return 'assets/$key';
   }
 
   @override

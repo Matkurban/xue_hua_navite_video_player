@@ -1,5 +1,5 @@
 import 'package:cross_file/cross_file.dart';
-import 'package:flutter/widgets.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:signals_flutter/signals_flutter.dart';
 import 'package:xue_hua_navite_video_player/src/data/enums/aspect_ratio_mode.dart';
@@ -293,6 +293,48 @@ void main() {
       expect(controller.brightness.value, 0.35);
       expect(brightness.value, 0.35);
       await controller.dispose();
+    });
+  });
+
+  group('ChannelBrightnessController', () {
+    const channel = MethodChannel('xue_hua_navite_video_player/player');
+
+    tearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
+        channel,
+        null,
+      );
+    });
+
+    test('reads and writes via MethodChannel', () async {
+      double? lastSet;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
+        channel,
+        (call) async {
+          if (call.method == 'getBrightness') return 0.4;
+          if (call.method == 'setBrightness') {
+            lastSet = (call.arguments as Map)['value'] as double;
+            return null;
+          }
+          return null;
+        },
+      );
+
+      final brightness = ChannelBrightnessController();
+      expect(await brightness.current, 0.4);
+      await brightness.setBrightness(0.2);
+      expect(lastSet, 0.2);
+    });
+
+    test('no-ops when the channel is unimplemented', () async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
+        channel,
+        (call) async => throw MissingPluginException('none'),
+      );
+
+      final brightness = ChannelBrightnessController();
+      expect(await brightness.current, 1.0);
+      await brightness.setBrightness(0.2);
     });
   });
 

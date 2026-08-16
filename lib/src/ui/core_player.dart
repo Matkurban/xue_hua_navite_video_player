@@ -1,5 +1,3 @@
-import 'dart:io' show Platform;
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -34,7 +32,9 @@ class CorePlayer extends SignalWidget {
 
   static bool get _usesPlatformView {
     if (kIsWeb) return false;
-    return Platform.isIOS || Platform.isMacOS || Platform.isAndroid;
+    return defaultTargetPlatform == TargetPlatform.iOS ||
+        defaultTargetPlatform == TargetPlatform.macOS ||
+        defaultTargetPlatform == TargetPlatform.android;
   }
 
   @override
@@ -102,7 +102,7 @@ class _PlatformPlayerView extends StatefulWidget {
 class _PlatformPlayerViewState extends State<_PlatformPlayerView> {
   @override
   Widget build(BuildContext context) {
-    if (Platform.isAndroid) {
+    if (defaultTargetPlatform == TargetPlatform.android) {
       return AndroidView(
         viewType: kNativePlayerViewType,
         layoutDirection: TextDirection.ltr,
@@ -111,7 +111,7 @@ class _PlatformPlayerViewState extends State<_PlatformPlayerView> {
         hitTestBehavior: PlatformViewHitTestBehavior.transparent,
       );
     }
-    if (Platform.isIOS) {
+    if (defaultTargetPlatform == TargetPlatform.iOS) {
       return UiKitView(
         viewType: kNativePlayerViewType,
         layoutDirection: TextDirection.ltr,

@@ -51,6 +51,14 @@ target_link_libraries(${PLUGIN_NAME} PRIVATE PkgConfig::GTK)
 target_link_libraries(${PLUGIN_NAME} PRIVATE ${MPV_LIBRARIES})
 target_compile_options(${PLUGIN_NAME} PRIVATE ${MPV_CFLAGS_OTHER})
 
+pkg_check_modules(XRANDR xrandr)
+if(XRANDR_FOUND)
+  target_compile_definitions(${PLUGIN_NAME} PRIVATE HAS_XRANDR=1)
+  target_include_directories(${PLUGIN_NAME} PRIVATE ${XRANDR_INCLUDE_DIRS})
+  target_link_libraries(${PLUGIN_NAME} PRIVATE ${XRANDR_LIBRARIES})
+  target_compile_options(${PLUGIN_NAME} PRIVATE ${XRANDR_CFLAGS_OTHER})
+endif()
+
 # List of absolute paths to libraries that should be bundled with the plugin.
 # This list could contain prebuilt libraries, or libraries created by an
 # external build triggered from this build file.

@@ -1,5 +1,3 @@
-import 'dart:io' show File;
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:xue_hua_navite_video_player/xue_hua_navite_video_player.dart';
@@ -493,5 +491,12 @@ Widget _imageFor(XFile file, {BoxFit fit = BoxFit.contain}) {
     // On web, path is a data: or blob: URL.
     return Image.network(file.path, fit: fit);
   }
-  return Image.file(File(file.path), fit: fit);
+  return FutureBuilder<Uint8List>(
+    future: file.readAsBytes(),
+    builder: (context, snap) {
+      final bytes = snap.data;
+      if (bytes == null) return const SizedBox.shrink();
+      return Image.memory(bytes, fit: fit);
+    },
+  );
 }

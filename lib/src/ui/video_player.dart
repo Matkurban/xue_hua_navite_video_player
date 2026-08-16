@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io' show Platform;
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
@@ -116,14 +115,11 @@ class _VideoPlayerState extends State<VideoPlayer> {
   bool get _canAutoHide =>
       widget.controller.isPlaying.value && !widget.controller.isBuffering.value;
 
-  bool get _isMobile {
-    if (kIsWeb) return false;
-    return Platform.isIOS || Platform.isAndroid;
-  }
-
   bool get _isDesktop {
     if (kIsWeb) return true;
-    return Platform.isMacOS || Platform.isWindows || Platform.isLinux;
+    return defaultTargetPlatform == TargetPlatform.macOS ||
+        defaultTargetPlatform == TargetPlatform.windows ||
+        defaultTargetPlatform == TargetPlatform.linux;
   }
 
   @override
@@ -284,7 +280,6 @@ class _VideoPlayerState extends State<VideoPlayer> {
           fill: true,
           fadeDuration: widget.fadeDuration,
           visible: _visible,
-          isMobile: _isMobile,
           isDesktop: _isDesktop,
           focusNode: _focusNode,
           leading: widget.leading,
@@ -320,7 +315,6 @@ class _VideoPlayerState extends State<VideoPlayer> {
             fill: widget.fill || fs,
             fadeDuration: widget.fadeDuration,
             visible: _visible,
-            isMobile: _isMobile,
             isDesktop: _isDesktop,
             focusNode: _focusNode,
             leading: widget.leading,
@@ -359,7 +353,6 @@ class _PlayerBody extends StatelessWidget {
     required this.fill,
     required this.fadeDuration,
     required this.visible,
-    required this.isMobile,
     required this.isDesktop,
     required this.focusNode,
     required this.leading,
@@ -387,7 +380,6 @@ class _PlayerBody extends StatelessWidget {
   final bool fill;
   final Duration fadeDuration;
   final FlutterSignal<bool> visible;
-  final bool isMobile;
   final bool isDesktop;
   final FocusNode focusNode;
   final Widget? leading;
@@ -428,7 +420,7 @@ class _PlayerBody extends StatelessWidget {
             ),
           ),
           Positioned.fill(
-            child: isFullscreen && isMobile
+            child: isFullscreen && !kIsWeb
                 ? PlayerGestureLayer(
                     controller: controller,
                     onTap: onToggleControls,
