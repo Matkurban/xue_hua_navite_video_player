@@ -57,7 +57,7 @@
 
 | 平台 | 原生引擎 | 画面承载 |
 |------|----------|----------|
-| Android | ExoPlayer (Media3) | `AndroidView` PlatformView |
+| Android | ExoPlayer (Media3) | `AndroidView` PlatformView（`TextureView`） |
 | iOS | AVPlayer | `UiKitView` PlatformView |
 | macOS | AVPlayer | `AppKitView` PlatformView |
 | Linux | libmpv（软件渲染） | Flutter `Texture` |
@@ -508,8 +508,8 @@ VideoPlayer(
 
 `VideoPlayer` 通过 `OverlayPortal` 将同一路画面挂到根 `Overlay`：
 
-- 进入全屏时抑制树内画面，由 Overlay 宿主单独展示
-- PlatformView 会迁移，而不是简单销毁再重建（仍可能发生 remount）
+- 进入全屏时在同一帧把画面用 `GlobalKey` 迁到 Overlay 宿主，避免先销毁再重建
+- Android 使用默认 `AndroidView` + `TextureView`（不用 expensive Hybrid Composition，避免播放时 NativeAlloc GC 风暴）
 - 请在已挂载 `VideoPlayer` 且存在 `Overlay` 祖先时调用 `controller.toggleFullscreen()`
 
 ---

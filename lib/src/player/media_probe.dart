@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cross_file/cross_file.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -23,10 +25,12 @@ class MediaProbe {
   }) async {
     try {
       final mediaUrl = await source.resolveToNativeUrl();
-      final raw = await _channel.invokeMethod<dynamic>('getDuration', {
-        'url': mediaUrl,
-        'timeoutMs': timeout.inMilliseconds,
-      });
+      final raw = await _channel
+          .invokeMethod<dynamic>('getDuration', {
+            'url': mediaUrl,
+            'timeoutMs': timeout.inMilliseconds,
+          })
+          .timeout(timeout);
       if (raw == null) return null;
       final ms = switch (raw) {
         final int v => v,
@@ -53,21 +57,27 @@ class MediaProbe {
 
     final dir = kIsWeb ? '' : (outputDir ?? await pluginCoverDir());
 
-    final raw = await _channel.invokeMethod<dynamic>('extractCovers', {
-      'url': resolved,
-      'count': count,
-      'candidates': candidateCount,
-      'minBrightness': minBrightness,
-      'outputDir': dir,
-    });
-    if (raw == null) return const <VideoCoverFrame>[];
-    final list = (raw as List)
-        .map((e) => Map<String, dynamic>.from(e as Map))
-        .map(_frameFromMap)
-        .whereType<VideoCoverFrame>()
-        .toList();
-    list.sort((a, b) => b.brightness.compareTo(a.brightness));
-    return list;
+    try {
+      final raw = await _channel
+          .invokeMethod<dynamic>('extractCovers', {
+            'url': resolved,
+            'count': count,
+            'candidates': candidateCount,
+            'minBrightness': minBrightness,
+            'outputDir': dir,
+          })
+          .timeout(const Duration(seconds: 60));
+      if (raw == null) return const <VideoCoverFrame>[];
+      final list = (raw as List)
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .map(_frameFromMap)
+          .whereType<VideoCoverFrame>()
+          .toList();
+      list.sort((a, b) => b.brightness.compareTo(a.brightness));
+      return list;
+    } on TimeoutException {
+      return const <VideoCoverFrame>[];
+    }
   }
 
   static VideoCoverFrame? _frameFromMap(Map<String, dynamic> map) {

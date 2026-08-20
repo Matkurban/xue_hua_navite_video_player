@@ -32,8 +32,9 @@ class VideoPlayerSlotContext {
 
 /// 高性能的默认视频播放器组件。
 ///
-/// Hosts visual fullscreen via [OverlayPortal]. Entering fullscreen suppresses
-/// the in-tree surface then shows the overlay host (PlatformView may remount).
+/// Hosts visual fullscreen via [OverlayPortal]. Entering fullscreen reparents
+/// the in-tree surface into the overlay host in the same frame (via [GlobalKey])
+/// so Android PlatformViews are not disposed and immediately resized.
 /// Controller-only fullscreen without this widget still applies orientation /
 /// immersive UI.
 class VideoPlayer extends StatefulWidget {
@@ -102,6 +103,7 @@ class _VideoPlayerState extends State<VideoPlayer> {
   late final FlutterSignal<bool> _visible = signal(widget.initiallyVisible);
   final FocusNode _focusNode = FocusNode();
   final OverlayPortalController _fullscreenPortal = OverlayPortalController();
+  final GlobalKey _playerSurfaceKey = GlobalKey();
 
   /// When true, in-tree [_PlayerBody] is omitted so overlay can host alone.
   bool _inlineSuppressed = false;
@@ -155,32 +157,28 @@ class _VideoPlayerState extends State<VideoPlayer> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         if (fs) {
-          if (!_inlineSuppressed) {
+          // Show overlay first so the GlobalKey'd surface moves in one build;
+          // suppressing inline before show() would dispose the PlatformView.
+          if (!_fullscreenPortal.isShowing) {
+            final overlay = Overlay.maybeOf(context, rootOverlay: true);
+            if (overlay != null) {
+              _fullscreenPortal.show();
+            }
+            if (_isDesktop) {
+              _focusNode.requestFocus();
+            }
+          }
+          if (_fullscreenPortal.isShowing && !_inlineSuppressed) {
             setState(() => _inlineSuppressed = true);
           }
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (!mounted || !widget.controller.isFullscreen.value) return;
-            if (!_fullscreenPortal.isShowing) {
-              final overlay = Overlay.maybeOf(context, rootOverlay: true);
-              if (overlay != null) {
-                _fullscreenPortal.show();
-              }
-              if (_isDesktop) {
-                _focusNode.requestFocus();
-              }
-              setState(() {});
-            }
-          });
         } else {
+          // Un-suppress before hide() so the surface stays mounted while moving.
+          if (_inlineSuppressed) {
+            setState(() => _inlineSuppressed = false);
+          }
           if (_fullscreenPortal.isShowing) {
             _fullscreenPortal.hide();
           }
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (!mounted || widget.controller.isFullscreen.value) return;
-            if (_inlineSuppressed) {
-              setState(() => _inlineSuppressed = false);
-            }
-          });
         }
       });
     });
@@ -276,6 +274,7 @@ class _VideoPlayerState extends State<VideoPlayer> {
         child: _PlayerBody(
           slot: slot,
           controller: widget.controller,
+          surfaceKey: _playerSurfaceKey,
           aspectRatio: widget.aspectRatio,
           fill: true,
           fadeDuration: widget.fadeDuration,
@@ -311,6 +310,7 @@ class _VideoPlayerState extends State<VideoPlayer> {
           return _PlayerBody(
             slot: slot,
             controller: widget.controller,
+            surfaceKey: _playerSurfaceKey,
             aspectRatio: widget.aspectRatio,
             fill: widget.fill || fs,
             fadeDuration: widget.fadeDuration,
@@ -349,6 +349,7 @@ class _PlayerBody extends StatelessWidget {
   const _PlayerBody({
     required this.slot,
     required this.controller,
+    required this.surfaceKey,
     required this.aspectRatio,
     required this.fill,
     required this.fadeDuration,
@@ -376,6 +377,7 @@ class _PlayerBody extends StatelessWidget {
 
   final VideoPlayerSlotContext slot;
   final VideoPlayerController controller;
+  final Key surfaceKey;
   final double? aspectRatio;
   final bool fill;
   final Duration fadeDuration;
@@ -412,6 +414,7 @@ class _PlayerBody extends StatelessWidget {
         children: <Widget>[
           Positioned.fill(
             child: CorePlayer(
+              key: surfaceKey,
               controller: controller,
               aspectRatio: aspectRatio,
               backgroundColor: style.backgroundColor,

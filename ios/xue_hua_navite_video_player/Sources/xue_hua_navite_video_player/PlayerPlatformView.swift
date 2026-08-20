@@ -7,12 +7,18 @@ let kPlayerPlatformViewType = "plugins.xuehua/navite_video_player"
 /// Hosts [AVPlayerLayer] so videoGravity uses the official Apple property.
 final class PlayerPlatformView: NSObject, FlutterPlatformView {
     private let container: PlayerContainerView
+    private weak var player: NativeVideoPlayer?
 
     init(frame: CGRect, player: NativeVideoPlayer) {
         container = PlayerContainerView(frame: frame)
         container.backgroundColor = .black
         super.init()
+        self.player = player
         player.attachPlayerLayer(container.playerLayer)
+    }
+
+    deinit {
+        player?.detachPlayerLayer(container.playerLayer)
     }
 
     func view() -> UIView {

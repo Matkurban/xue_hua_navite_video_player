@@ -57,7 +57,7 @@ A cross-platform Flutter audio/video player plugin. Dart exposes a unified contr
 
 | Platform | Native engine | Surface |
 |----------|---------------|---------|
-| Android | ExoPlayer (Media3) | `AndroidView` PlatformView |
+| Android | ExoPlayer (Media3) | `AndroidView` PlatformView (`TextureView`) |
 | iOS | AVPlayer | `UiKitView` PlatformView |
 | macOS | AVPlayer | `AppKitView` PlatformView |
 | Linux | libmpv (software) | Flutter `Texture` |

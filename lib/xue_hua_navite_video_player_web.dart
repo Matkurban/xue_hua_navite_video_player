@@ -48,9 +48,10 @@ class XueHuaNaviteVideoPlayerWeb {
         _open(args['url'] as String);
         return null;
       case 'play':
-        _videoElement?.play().toDart.catchError((_) {
+        _videoElement?.play().toDart.catchError((Object error) {
           _sendEvent('playing', false);
           _sendEvent('buffering', false);
+          _sendEvent('error', 'Autoplay blocked: $error');
           return null;
         });
         return null;
@@ -110,6 +111,7 @@ class XueHuaNaviteVideoPlayerWeb {
     // Reuse a long-lived <video> so the registered platform-view factory
     // always returns a live element across dispose → create cycles.
     _videoElement ??= html.HTMLVideoElement()
+      ..crossOrigin = 'anonymous'
       ..style.width = '100%'
       ..style.height = '100%'
       ..style.setProperty('object-fit', 'contain')
@@ -187,7 +189,15 @@ class XueHuaNaviteVideoPlayerWeb {
     video.addEventListener(
       'error',
       ((html.Event e) {
-        _sendEvent('error', 'Video playback error');
+        final code = video.error?.code;
+        final message = switch (code) {
+          1 => 'MEDIA_ERR_ABORTED',
+          2 => 'MEDIA_ERR_NETWORK',
+          3 => 'MEDIA_ERR_DECODE',
+          4 => 'MEDIA_ERR_SRC_NOT_SUPPORTED',
+          _ => 'Video playback error',
+        };
+        _sendEvent('error', message);
       }).toJS,
     );
 
@@ -294,51 +304,56 @@ class XueHuaNaviteVideoPlayerWeb {
       ..preload = 'auto'
       ..src = url;
     try {
-      await video.onLoadedMetadata.first.timeout(const Duration(seconds: 15));
-    } catch (_) {
-      return const [];
-    }
-    final durationSec = video.duration;
-    if (!durationSec.isFinite || durationSec <= 0) return const [];
-
-    final lower = durationSec * 0.05;
-    final upper = durationSec * 0.95;
-    final span = (upper - lower).clamp(0.1, double.infinity);
-    final n = candidates > count ? candidates : count;
-
-    final frames = <Map<String, dynamic>>[];
-    final canvas = html.HTMLCanvasElement();
-    for (var i = 0; i < n; i++) {
-      final t = lower + span * (i + 0.5) / n;
-      video.currentTime = t;
       try {
-        await video.onSeeked.first.timeout(const Duration(seconds: 5));
+        await video.onLoadedMetadata.first.timeout(const Duration(seconds: 15));
       } catch (_) {
-        continue;
-      }
-      final w = video.videoWidth == 0 ? 640 : video.videoWidth;
-      final h = video.videoHeight == 0 ? 360 : video.videoHeight;
-      canvas
-        ..width = w
-        ..height = h;
-      final ctx = canvas.getContext('2d') as html.CanvasRenderingContext2D?;
-      if (ctx == null) continue;
-      try {
-        ctx.drawImage(video, 0, 0, w.toDouble(), h.toDouble());
-        final brightness = _canvasAverageBrightness(ctx, w, h);
-        if (brightness < minBrightness) continue;
-        final dataUrl = canvas.toDataURL('image/png');
-        frames.add({'path': dataUrl, 'positionMs': (t * 1000).toInt(), 'brightness': brightness});
-      } catch (_) {
-        // CORS / taint — abort; nothing we can read back.
         return const [];
       }
+      final durationSec = video.duration;
+      if (!durationSec.isFinite || durationSec <= 0) return const [];
+
+      final lower = durationSec * 0.05;
+      final upper = durationSec * 0.95;
+      final span = (upper - lower).clamp(0.1, double.infinity);
+      final n = candidates > count ? candidates : count;
+
+      final frames = <Map<String, dynamic>>[];
+      final canvas = html.HTMLCanvasElement();
+      for (var i = 0; i < n; i++) {
+        final t = lower + span * (i + 0.5) / n;
+        video.currentTime = t;
+        try {
+          await video.onSeeked.first.timeout(const Duration(seconds: 5));
+        } catch (_) {
+          continue;
+        }
+        final w = video.videoWidth == 0 ? 640 : video.videoWidth;
+        final h = video.videoHeight == 0 ? 360 : video.videoHeight;
+        canvas
+          ..width = w
+          ..height = h;
+        final ctx = canvas.getContext('2d') as html.CanvasRenderingContext2D?;
+        if (ctx == null) continue;
+        try {
+          ctx.drawImage(video, 0, 0, w.toDouble(), h.toDouble());
+          final brightness = _canvasAverageBrightness(ctx, w, h);
+          if (brightness < minBrightness) continue;
+          final dataUrl = canvas.toDataURL('image/png');
+          frames.add({'path': dataUrl, 'positionMs': (t * 1000).toInt(), 'brightness': brightness});
+        } catch (_) {
+          continue;
+        }
+      }
+      frames.sort(
+        (a, b) =>
+            ((b['brightness'] as num).toDouble()).compareTo((a['brightness'] as num).toDouble()),
+      );
+      return frames.take(count).toList();
+    } finally {
+      try {
+        video.removeAttribute('src');
+      } catch (_) {}
     }
-    frames.sort(
-      (a, b) =>
-          ((b['brightness'] as num).toDouble()).compareTo((a['brightness'] as num).toDouble()),
-    );
-    return frames.take(count).toList();
   }
 
   /// 使用离屏 `<video>` 元素仅加载媒体元数据以获取精确时长（毫秒）。

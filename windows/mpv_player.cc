@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <clocale>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -48,7 +49,9 @@ namespace xue_hua_navite_video_player {
 			char tmp[MAX_PATH] = { 0 };
 			GetTempPathA(MAX_PATH, tmp);
 			char name[MAX_PATH] = { 0 };
-			GetTempFileNameA(tmp, "fcv", 0, name);
+			if (GetTempFileNameA(tmp, "fcv", 0, name) == 0) {
+				return {};
+			}
 			std::string p(name);
 			// GetTempFileName creates the file with a .tmp extension; replace.
 			auto pos = p.find_last_of('.');
@@ -58,10 +61,11 @@ namespace xue_hua_navite_video_player {
 #else
 			char buf[] = "/tmp/fcv-XXXXXX";
 			int fd = mkstemp(buf);
-			if (fd >= 0) {
-				close(fd);
-				mpv_unlink(buf);
+			if (fd < 0) {
+				return {};
 			}
+			close(fd);
+			mpv_unlink(buf);
 			std::string p(buf);
 			p += suffix;
 			return p;
@@ -138,6 +142,7 @@ namespace xue_hua_navite_video_player {
 	}
 
 	bool MpvPlayer::Initialize(std::string* error) {
+		std::setlocale(LC_NUMERIC, "C");
 		mpv_ = mpv_create();
 		if (!mpv_) {
 			if (error) *error = "mpv_create failed";
@@ -599,6 +604,10 @@ namespace xue_hua_navite_video_player {
 			return false;
 		}
 		std::string path = TempFilePath(".png");
+		if (path.empty()) {
+			if (error) *error = "failed to create temp file";
+			return false;
+		}
 		const char* cmd[] = { "screenshot-to-file", path.c_str(), "video", nullptr };
 		int rc = mpv_command(mpv_, cmd);
 		if (rc < 0) {
@@ -625,6 +634,7 @@ namespace xue_hua_navite_video_player {
 		if (count <= 0) return result;
 		if (candidates < count) candidates = count * 3;
 
+		std::setlocale(LC_NUMERIC, "C");
 		mpv_handle* h = mpv_create();
 		if (!h) {
 			if (error) *error = "mpv_create failed";
@@ -800,6 +810,7 @@ namespace xue_hua_navite_video_player {
 			return 0;
 		}
 
+		std::setlocale(LC_NUMERIC, "C");
 		mpv_handle* h = mpv_create();
 		if (!h) {
 			if (error) *error = "mpv_create failed";

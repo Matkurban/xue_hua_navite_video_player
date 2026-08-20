@@ -43,12 +43,9 @@ class CorePlayer extends SignalWidget {
     final buffering = controller.isBuffering;
     final bg = backgroundColor ?? VideoPlayerTheme.of(context).backgroundColor;
 
-    final double effectiveAspectRatio;
-    if (aspectRatio != null) {
-      effectiveAspectRatio = aspectRatio!;
-    } else {
-      final reported = controller.videoAspectRatio;
-      effectiveAspectRatio = ((reported.value > 0) ? reported.value : 16 / 9);
+    // Keep aspect tracking in this SignalWidget so size/rotation updates rebuild.
+    if (aspectRatio == null) {
+      controller.videoAspectRatio.value;
     }
 
     if (state.value == PlayState.error) {
@@ -60,7 +57,7 @@ class CorePlayer extends SignalWidget {
       );
     }
 
-    final media = _buildMediaSurface(context, effectiveAspectRatio);
+    final media = _buildMediaSurface();
     final showLoading = state.value == PlayState.loading || buffering.value;
 
     return ColoredBox(
@@ -76,7 +73,7 @@ class CorePlayer extends SignalWidget {
     );
   }
 
-  Widget _buildMediaSurface(BuildContext context, double effectiveAspectRatio) {
+  Widget _buildMediaSurface() {
     if (kIsWeb) {
       return const HtmlElementView(viewType: kWebPlayerViewType);
     }
@@ -86,7 +83,7 @@ class CorePlayer extends SignalWidget {
     }
 
     // Linux / Windows — Texture + report view size for mpv panscan.
-    return _TexturePlayerView(controller: controller, effectiveAspectRatio: effectiveAspectRatio);
+    return _TexturePlayerView(controller: controller);
   }
 }
 
@@ -132,10 +129,9 @@ class _PlatformPlayerViewState extends State<_PlatformPlayerView> {
 }
 
 class _TexturePlayerView extends StatefulWidget {
-  const _TexturePlayerView({required this.controller, required this.effectiveAspectRatio});
+  const _TexturePlayerView({required this.controller});
 
   final VideoPlayerController controller;
-  final double effectiveAspectRatio;
 
   @override
   State<_TexturePlayerView> createState() => _TexturePlayerViewState();
@@ -166,12 +162,16 @@ class _TexturePlayerViewState extends State<_TexturePlayerView> {
           _reportSize(size, dpr);
         });
 
-        final textureId = widget.controller.textureId.value;
-        final rotation = widget.controller.rotationDegrees.value % 360;
-        if (textureId == null) {
-          return const SizedBox.expand();
-        }
-        return _VideoTexture(textureId: textureId, rotationDegrees: rotation);
+        return SignalBuilder(
+          builder: (context) {
+            final textureId = widget.controller.textureId.value;
+            final rotation = widget.controller.rotationDegrees.value % 360;
+            if (textureId == null) {
+              return const SizedBox.expand();
+            }
+            return _VideoTexture(textureId: textureId, rotationDegrees: rotation);
+          },
+        );
       },
     );
   }

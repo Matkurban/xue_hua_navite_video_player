@@ -21,6 +21,7 @@
 
 #include <atomic>
 #include <condition_variable>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -79,6 +80,11 @@ namespace xue_hua_navite_video_player {
 		std::atomic<bool> drain_posted_{ false };
 		std::atomic<bool> render_posted_{ false };
 		DWORD platform_thread_id_ = 0;
+
+		std::mutex probe_mutex_;
+		std::vector<std::thread> probe_threads_;
+		void LaunchProbe(std::function<void()> fn);
+		void JoinProbeWorkers();
 
 		bool brightness_saved_ = false;
 		DWORD saved_brightness_ = 0;

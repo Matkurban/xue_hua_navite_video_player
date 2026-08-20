@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:cross_file/cross_file.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:signals_flutter/signals_flutter.dart';
 
@@ -22,21 +23,31 @@ import 'player_event.dart';
 ///
 /// Process-wide: one active native session (see [PlayerBackend]).
 class PlaybackSession {
+  static PlaybackSession? _activeNativeSession;
+
   final PlayerBackend _backend;
   final FullscreenCoordinator _fullscreen;
   final BrightnessController _brightness;
 
   StreamSubscription<PlayerEvent>? _eventSubscription;
+  Timer? _readyFallbackTimer;
 
   bool _disposed = false;
+  bool _holdsNativeSession = false;
   int _openEpoch = 0;
+  int _activeEventEpoch = 0;
 
   bool _hasPlayedSinceOpen = false;
   bool _hasReadySinceOpen = false;
+  bool _hasReceivedMetadata = false;
   bool _backendPlaying = false;
   bool _backendBuffering = false;
   Duration _backendDuration = Duration.zero;
   double _volumeBeforeMute = 1.0;
+
+  /// Live / audio-only streams may never emit a positive duration.
+  @visibleForTesting
+  static Duration readyFallbackDelay = const Duration(seconds: 3);
 
   final FlutterSignal<PlayState> playState = signal(PlayState.idle);
   final FlutterSignal<Duration> position = signal(Duration.zero);
@@ -96,9 +107,19 @@ class PlaybackSession {
     if (_disposed) {
       throw StateError('PlaybackSession has been disposed.');
     }
-    await _backend.create();
+    _acquireNativeSession();
+    // Listen before create() so broadcast events emitted during create are not lost.
     await _eventSubscription?.cancel();
     _eventSubscription = _backend.events.listen(_onPlayerEvent);
+    try {
+      await _backend.create();
+    } catch (_) {
+      await _eventSubscription?.cancel();
+      _eventSubscription = null;
+      _releaseNativeSession();
+      rethrow;
+    }
+    if (_disposed) return;
     // Sync initial aspect mode to native.
     await _backend.setAspectRatioMode(aspectRatioMode.value);
     try {
@@ -106,8 +127,30 @@ class PlaybackSession {
     } catch (_) {}
   }
 
+  void _acquireNativeSession() {
+    if (_backend is! ChannelPlayerBackend) return;
+    if (_holdsNativeSession) return;
+    if (_activeNativeSession != null && _activeNativeSession != this) {
+      throw StateError(
+        'Process-wide invariant: only one native PlaybackSession may be active. '
+        'Dispose the existing controller before creating another.',
+      );
+    }
+    _activeNativeSession = this;
+    _holdsNativeSession = true;
+  }
+
+  void _releaseNativeSession() {
+    if (!_holdsNativeSession) return;
+    _holdsNativeSession = false;
+    if (_activeNativeSession == this) {
+      _activeNativeSession = null;
+    }
+  }
+
   void _onPlayerEvent(PlayerEvent event) {
     if (_disposed) return;
+    if (_activeEventEpoch != _openEpoch) return;
     switch (event) {
       case PlayerPlayingEvent(:final playing):
         _backendPlaying = playing;
@@ -122,6 +165,11 @@ class PlaybackSession {
           return;
         }
         if (!_hasReadySinceOpen) {
+          // Live / audio-only: native may report paused after metadata without
+          // a positive duration.
+          if (_hasReceivedMetadata) {
+            _markReadySinceOpen();
+          }
           return;
         }
         // Keep explicit stop / natural EOS; do not collapse into paused.
@@ -140,8 +188,9 @@ class PlaybackSession {
         if (!_hasReadySinceOpen) return;
         this.position.value = position;
       case PlayerDurationEvent(:final duration):
+        _hasReceivedMetadata = true;
         _backendDuration = duration;
-        if (duration > Duration.zero && !_hasReadySinceOpen) {
+        if (!_hasReadySinceOpen) {
           _markReadySinceOpen();
         }
         if (!_hasReadySinceOpen) return;
@@ -161,8 +210,11 @@ class PlaybackSession {
       case PlayerVideoSizeEvent(:final size, :final rotationDegrees):
         videoSize.value = size;
         this.rotationDegrees.value = rotationDegrees;
-        if (size.width > 0 && size.height > 0 && !_hasReadySinceOpen) {
-          _markReadySinceOpen();
+        if (size.width > 0 && size.height > 0) {
+          _hasReceivedMetadata = true;
+          if (!_hasReadySinceOpen) {
+            _markReadySinceOpen();
+          }
         }
     }
   }
@@ -226,6 +278,8 @@ class PlaybackSession {
 
       await _backend.open(mediaUrl);
       if (_disposed || epoch != _openEpoch) return;
+      _activeEventEpoch = epoch;
+      _scheduleReadyFallback(epoch);
 
       // Re-apply session volume/speed/aspect; native players usually reset on open.
       await _backend.setVolume(muted.value ? 0 : volume.value);
@@ -346,14 +400,16 @@ class PlaybackSession {
   Future<void> enterFullscreen() async {
     if (_disposed || isFullscreen.value) return;
     final landscape = videoAspectRatio.value > 1.0;
-    await _fullscreen.enter(landscapeVideo: landscape);
+    // Signal UI first so OverlayPortal can reparent the PlatformView before
+    // the orientation change queues a VirtualDisplay resize.
     isFullscreen.value = true;
+    await _fullscreen.enter(landscapeVideo: landscape);
   }
 
   Future<void> exitFullscreen() async {
     if (_disposed || !isFullscreen.value) return;
-    await _fullscreen.exit();
     isFullscreen.value = false;
+    await _fullscreen.exit();
   }
 
   Future<void> toggleFullscreen() async {
@@ -403,14 +459,30 @@ class PlaybackSession {
     }
     _disposed = true;
     _openEpoch++;
+    _readyFallbackTimer?.cancel();
+    _readyFallbackTimer = null;
     await _eventSubscription?.cancel();
     _eventSubscription = null;
     await _backend.dispose();
+    _releaseNativeSession();
+  }
+
+  void _scheduleReadyFallback(int epoch) {
+    _readyFallbackTimer?.cancel();
+    _readyFallbackTimer = Timer(readyFallbackDelay, () {
+      if (_disposed || epoch != _openEpoch) return;
+      if (!_hasReadySinceOpen && playState.value == PlayState.loading) {
+        _markReadySinceOpen();
+      }
+    });
   }
 
   void reset() {
+    _readyFallbackTimer?.cancel();
+    _readyFallbackTimer = null;
     _hasPlayedSinceOpen = false;
     _hasReadySinceOpen = false;
+    _hasReceivedMetadata = false;
     _backendPlaying = false;
     _backendBuffering = false;
     _backendDuration = Duration.zero;

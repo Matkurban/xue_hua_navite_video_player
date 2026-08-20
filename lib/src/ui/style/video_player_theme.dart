@@ -100,11 +100,11 @@ class VideoPlayerTheme extends ThemeExtension<VideoPlayerTheme> {
   const VideoPlayerTheme({
     this.foregroundColor = Colors.white,
     this.backgroundColor = Colors.black,
-    this.centerControlsSpacing = 56,
-    this.centerPlayButtonIconSize = 48,
-    this.centerSkipButtonIconSize = 32,
+    this.centerControlsSpacing = 48,
+    this.centerPlayButtonIconSize = 24,
+    this.centerSkipButtonIconSize = 22,
     this.centerButtonBackgroundColor = const Color(0x4D000000), // Colors.black38
-    this.chromeIconSize = 22,
+    this.chromeIconSize = 20,
     this.topBarPadding = const EdgeInsets.fromLTRB(12, 12, 12, 12),
     this.bottomBarPadding = const EdgeInsets.fromLTRB(16, 6, 16, 14),
     this.timeTextStyle = const TextStyle(
@@ -132,11 +132,11 @@ class VideoPlayerTheme extends ThemeExtension<VideoPlayerTheme> {
       fontSize: 14,
       fontWeight: FontWeight.w500,
     ),
-    this.menuIconSize = 18,
+    this.menuIconSize = 20,
     this.hudBackgroundColor = const Color(0xB3000000), // black 0.7
     this.hudBorderRadius = const BorderRadius.all(Radius.circular(12)),
     this.hudPadding = const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-    this.hudIconSize = 24,
+    this.hudIconSize = 20,
     this.hudIconGap = 8,
     this.hudTextStyle = const TextStyle(color: Colors.white, fontSize: 16),
   });

@@ -121,6 +121,7 @@ namespace xue_hua_navite_video_player {
 	XueHuaNaviteVideoPlayerPlugin::~XueHuaNaviteVideoPlayerPlugin() {
 		RestoreBrightness();
 		DisposePlayer();
+		JoinProbeWorkers();
 		if (message_window_) {
 			KillTimer(message_window_, 1);
 			DestroyWindow(message_window_);
@@ -233,11 +234,26 @@ namespace xue_hua_navite_video_player {
 
 	int64_t XueHuaNaviteVideoPlayerPlugin::CreateTextureIfNeeded() {
 		EnsurePlayer();
+		if (!player_) return -1;
 		if (texture_id_ >= 0) return texture_id_;
+		{
+			std::lock_guard<std::mutex> lk(pixel_mutex_);
+			if (pixel_buffer_.buffer == nullptr) {
+				pixel_buffer_data_.assign({ 0, 0, 0, 255 });
+				pixel_buffer_.buffer = pixel_buffer_data_.data();
+				pixel_buffer_.width = 1;
+				pixel_buffer_.height = 1;
+			}
+		}
 		texture_variant_ = std::make_unique<flutter::TextureVariant>(flutter::PixelBufferTexture(
 			[this](size_t, size_t) -> const FlutterDesktopPixelBuffer* {
 				std::lock_guard<std::mutex> lk(pixel_mutex_);
-				if (pixel_buffer_.buffer == nullptr) return nullptr;
+				if (pixel_buffer_.buffer == nullptr) {
+					static const uint8_t kPlaceholder[] = { 0, 0, 0, 255 };
+					static FlutterDesktopPixelBuffer placeholder{
+						kPlaceholder, 1, 1, nullptr, nullptr };
+					return &placeholder;
+				}
 				return &pixel_buffer_;
 			}));
 		texture_id_ = texture_registrar_->RegisterTexture(texture_variant_.get());
@@ -286,8 +302,11 @@ namespace xue_hua_navite_video_player {
 		std::shared_ptr<flutter::MethodResult<flutter::EncodableValue>> result,
 		flutter::EncodableValue value) {
 		if (!result) return;
-		if (GetCurrentThreadId() == platform_thread_id_ || !message_window_) {
+		if (GetCurrentThreadId() == platform_thread_id_) {
 			result->Success(std::move(value));
+			return;
+		}
+		if (!message_window_) {
 			return;
 		}
 		auto* payload = new std::pair<
@@ -295,6 +314,22 @@ namespace xue_hua_navite_video_player {
 			flutter::EncodableValue>(std::move(result), std::move(value));
 		if (!PostMessageW(message_window_, kMsgMethodReply, 0, reinterpret_cast<LPARAM>(payload))) {
 			delete payload;
+		}
+	}
+
+	void XueHuaNaviteVideoPlayerPlugin::LaunchProbe(std::function<void()> fn) {
+		std::lock_guard<std::mutex> lock(probe_mutex_);
+		probe_threads_.emplace_back(std::move(fn));
+	}
+
+	void XueHuaNaviteVideoPlayerPlugin::JoinProbeWorkers() {
+		std::vector<std::thread> threads;
+		{
+			std::lock_guard<std::mutex> lock(probe_mutex_);
+			threads.swap(probe_threads_);
+		}
+		for (auto& t : threads) {
+			if (t.joinable()) t.join();
 		}
 	}
 
@@ -372,7 +407,15 @@ namespace xue_hua_navite_video_player {
 		const auto& name = call.method_name();
 		const auto* args = std::get_if<flutter::EncodableMap>(call.arguments());
 
-		if (name == "create") { result->Success(flutter::EncodableValue(CreateTextureIfNeeded())); return; }
+		if (name == "create") {
+			const int64_t id = CreateTextureIfNeeded();
+			if (id < 0) {
+				result->Error("CREATE_FAIL", "Failed to initialize native player");
+				return;
+			}
+			result->Success(flutter::EncodableValue(id));
+			return;
+		}
 		if (name == "open") {
 			EnsurePlayer();
 			if (args) {
@@ -468,7 +511,7 @@ namespace xue_hua_navite_video_player {
 			else { std::error_code ec; std::filesystem::create_directories(Utf8ToWide(output_dir), ec); }
 
 			auto shared = std::shared_ptr<flutter::MethodResult<flutter::EncodableValue>>(result.release());
-			std::thread([this, url, count, candidates, min_brightness, output_dir, shared]() {
+			LaunchProbe([this, url, count, candidates, min_brightness, output_dir, shared]() {
 				auto frames = MpvPlayer::ExtractCovers(url, count, candidates, min_brightness, output_dir);
 				flutter::EncodableList list;
 				for (const auto& f : frames) {
@@ -479,7 +522,7 @@ namespace xue_hua_navite_video_player {
 					list.emplace_back(std::move(m));
 				}
 				ReplyOnPlatformThread(shared, flutter::EncodableValue(std::move(list)));
-				}).detach();
+			});
 			return;
 		}
 		if (name == "getDuration") {
@@ -491,7 +534,7 @@ namespace xue_hua_navite_video_player {
 				else if (const auto* v64 = GetArg<int64_t>(args, "timeoutMs")) timeout_ms = static_cast<int>(*v64);
 			}
 			auto shared = std::shared_ptr<flutter::MethodResult<flutter::EncodableValue>>(result.release());
-			std::thread([this, url, timeout_ms, shared]() {
+			LaunchProbe([this, url, timeout_ms, shared]() {
 				int64_t duration_ms = 0;
 				if (!url.empty()) {
 					duration_ms = MpvPlayer::GetDurationMs(url, timeout_ms);
@@ -502,7 +545,7 @@ namespace xue_hua_navite_video_player {
 				else {
 					ReplyOnPlatformThread(shared, flutter::EncodableValue());
 				}
-				}).detach();
+			});
 			return;
 		}
 		if (name == "getPlatformVersion") {

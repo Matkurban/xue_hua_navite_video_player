@@ -49,7 +49,9 @@ std::string TempFilePath(const char* suffix) {
   char tmp[MAX_PATH] = {0};
   GetTempPathA(MAX_PATH, tmp);
   char name[MAX_PATH] = {0};
-  GetTempFileNameA(tmp, "fcv", 0, name);
+  if (GetTempFileNameA(tmp, "fcv", 0, name) == 0) {
+    return {};
+  }
   std::string p(name);
   // GetTempFileName creates the file with a .tmp extension; replace.
   auto pos = p.find_last_of('.');
@@ -59,10 +61,11 @@ std::string TempFilePath(const char* suffix) {
 #else
   char buf[] = "/tmp/fcv-XXXXXX";
   int fd = mkstemp(buf);
-  if (fd >= 0) {
-    close(fd);
-    mpv_unlink(buf);
+  if (fd < 0) {
+    return {};
   }
+  close(fd);
+  mpv_unlink(buf);
   std::string p(buf);
   p += suffix;
   return p;
@@ -608,6 +611,10 @@ bool MpvPlayer::TakeSnapshot(std::vector<uint8_t>* out, std::string* error) {
     return false;
   }
   std::string path = TempFilePath(".png");
+  if (path.empty()) {
+    if (error) *error = "failed to create temp file";
+    return false;
+  }
   const char* cmd[] = {"screenshot-to-file", path.c_str(), "video", nullptr};
   int rc = mpv_command(mpv_, cmd);
   if (rc < 0) {

@@ -14,8 +14,9 @@ import 'player_event.dart';
 abstract class PlayerBackend {
   /// Flutter texture id after [create]; `null` before create or after dispose.
   ///
-  /// On PlatformView platforms (iOS/macOS/Android) this may stay `null` while
-  /// the native view is shown via [platformViewType].
+  /// On PlatformView platforms (iOS/macOS/Android) native `create` returns `0`
+  /// (not a Flutter [Texture] id). The picture is shown via the registered
+  /// PlatformView (`plugins.xuehua/navite_video_player`).
   FlutterSignal<int?> get textureId;
 
   /// Typed events from the native (or fake) player.

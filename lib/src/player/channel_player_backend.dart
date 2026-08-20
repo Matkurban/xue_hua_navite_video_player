@@ -34,12 +34,14 @@ class ChannelPlayerBackend implements PlayerBackend {
       _events = StreamController<PlayerEvent>.broadcast();
     }
 
+    // Subscribe before create() so native ready events are not dropped.
+    _listenEvents();
+
     final id = await _methodChannel.invokeMethod<int>('create');
     if (id == null) {
       throw StateError('Native player create() returned a null texture id.');
     }
     _textureId.value = id;
-    _listenEvents();
     return id;
   }
 

@@ -10,10 +10,14 @@ public class XueHuaNaviteVideoPlayerPlugin: NSObject, FlutterPlugin {
     private var registrar: FlutterPluginRegistrar?
     private var videoPlayer: NativeVideoPlayer?
     private var savedBrightness: CGFloat?
+    private var interruptionObserver: NSObjectProtocol?
+    private var backgroundObserver: NSObjectProtocol?
 
     public static func register(with registrar: FlutterPluginRegistrar) {
         let instance = XueHuaNaviteVideoPlayerPlugin()
         instance.registrar = registrar
+        instance.configureAudioSession()
+        instance.observeAppLifecycle()
 
         let methodChannel = FlutterMethodChannel(
             name: "xue_hua_navite_video_player/player",
@@ -37,6 +41,49 @@ public class XueHuaNaviteVideoPlayerPlugin: NSObject, FlutterPlugin {
             ),
             withId: kPlayerPlatformViewType
         )
+    }
+
+    public func detachFromEngine(for _: FlutterPluginRegistrar) {
+        restoreBrightness()
+        videoPlayer?.dispose()
+        methodChannel?.setMethodCallHandler(nil)
+        eventChannel?.setStreamHandler(nil)
+        if let interruptionObserver {
+            NotificationCenter.default.removeObserver(interruptionObserver)
+        }
+        if let backgroundObserver {
+            NotificationCenter.default.removeObserver(backgroundObserver)
+        }
+        interruptionObserver = nil
+        backgroundObserver = nil
+    }
+
+    private func configureAudioSession() {
+        let session = AVAudioSession.sharedInstance()
+        try? session.setCategory(.playback, mode: .moviePlayback, options: [])
+        try? session.setActive(true)
+    }
+
+    private func observeAppLifecycle() {
+        interruptionObserver = NotificationCenter.default.addObserver(
+            forName: AVAudioSession.interruptionNotification,
+            object: AVAudioSession.sharedInstance(),
+            queue: .main
+        ) { [weak self] notification in
+            guard let info = notification.userInfo,
+                  let raw = info[AVAudioSessionInterruptionTypeKey] as? UInt,
+                  let type = AVAudioSession.InterruptionType(rawValue: raw),
+                  type == .began
+            else { return }
+            self?.videoPlayer?.pause()
+        }
+        backgroundObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.videoPlayer?.pause()
+        }
     }
 
     public func handle(
@@ -269,6 +316,7 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler {
     private weak var hostedPlayerLayer: AVPlayerLayer?
     private var videoGravity: AVLayerVideoGravity = .resizeAspect
     private var currentUrl: String?
+    private var snapshotGeneration = 0
 
     override init() {
         super.init()
@@ -278,6 +326,15 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler {
         hostedPlayerLayer = layer
         layer.videoGravity = videoGravity
         layer.player = player
+    }
+
+    func detachPlayerLayer(_ layer: AVPlayerLayer) {
+        if hostedPlayerLayer === layer {
+            hostedPlayerLayer = nil
+        }
+        if layer.player === player {
+            layer.player = nil
+        }
     }
 
     func setAspectRatioMode(_ mode: String) {
@@ -328,8 +385,9 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler {
             guard let self = self else { return }
             switch item.status {
             case .readyToPlay:
-                let durationMs = Int(CMTimeGetSeconds(item.duration) * 1000)
-                self.sendEvent(event: "duration", value: durationMs)
+                if let durationMs = self.milliseconds(from: item.duration) {
+                    self.sendEvent(event: "duration", value: durationMs)
+                }
                 self.publishBuffering()
             case .failed:
                 self.sendEvent(
@@ -372,8 +430,9 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler {
             forInterval: interval,
             queue: .main
         ) { [weak self] time in
-            let ms = Int(CMTimeGetSeconds(time) * 1000)
-            self?.sendEvent(event: "position", value: ms)
+            if let ms = self?.milliseconds(from: time) {
+                self?.sendEvent(event: "position", value: ms)
+            }
         }
 
         timeControlObservation = player?.observe(
@@ -451,8 +510,15 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler {
     }
 
     func dispose() {
+        snapshotGeneration += 1
         cleanupPlayer()
         currentUrl = nil
+    }
+
+    private func milliseconds(from time: CMTime) -> Int? {
+        let seconds = CMTimeGetSeconds(time)
+        guard seconds.isFinite, seconds >= 0 else { return nil }
+        return Int((seconds * 1000).rounded())
     }
 
     private func emitTimeControlStatus(_ status: AVPlayer.TimeControlStatus) {
@@ -522,7 +588,7 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler {
 
     /// Snapshot via AVAssetImageGenerator at the current playhead.
     func takeSnapshot(result: @escaping FlutterResult) {
-        guard let urlString = currentUrl, let mediaUrl = URL(string: urlString) else {
+        guard currentUrl != nil else {
             result(
                 FlutterError(
                     code: "NO_MEDIA",
@@ -532,15 +598,32 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler {
             )
             return
         }
+        snapshotGeneration += 1
+        let generation = snapshotGeneration
         let time = player?.currentTime() ?? .zero
-        let asset = AVURLAsset(url: mediaUrl)
+        let asset: AVAsset
+        if let itemAsset = playerItem?.asset {
+            asset = itemAsset
+        } else if let urlString = currentUrl, let mediaUrl = URL(string: urlString) {
+            asset = AVURLAsset(url: mediaUrl)
+        } else {
+            result(
+                FlutterError(
+                    code: "NO_MEDIA",
+                    message: "No media loaded",
+                    details: nil
+                )
+            )
+            return
+        }
         let generator = AVAssetImageGenerator(asset: asset)
         generator.appliesPreferredTrackTransform = true
         generator.requestedTimeToleranceBefore = .zero
         generator.requestedTimeToleranceAfter = .zero
         generator.generateCGImagesAsynchronously(forTimes: [NSValue(time: time)]) {
-            _, cgImage, _, status, error in
+            [weak self] _, cgImage, _, status, error in
             DispatchQueue.main.async {
+                guard let self, generation == self.snapshotGeneration else { return }
                 guard status == .succeeded, let cgImage = cgImage else {
                     result(
                         FlutterError(
@@ -583,8 +666,8 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler {
                 return
             }
             let asset = AVURLAsset(url: mediaURL)
-            let durationSeconds = CMTimeGetSeconds(asset.duration)
-            guard durationSeconds.isFinite, durationSeconds > 0 else {
+            guard let durationSeconds = loadDurationSeconds(asset: asset, timeoutMs: 15000)
+            else {
                 DispatchQueue.main.async { result([]) }
                 return
             }
@@ -658,6 +741,7 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler {
             }
 
             group.notify(queue: .main) {
+                Self.trimCoverCache(in: outputDir)
                 // Sort by brightness descending and trim to count.
                 let sorted = frames.sorted { a, b -> Bool in
                     let ab = (a["brightness"] as? Double) ?? 0
@@ -684,32 +768,48 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler {
                 return
             }
             let asset = AVURLAsset(url: mediaURL)
-            let semaphore = DispatchSemaphore(value: 0)
-            var finished = false
-            asset.loadValuesAsynchronously(forKeys: ["duration"]) {
-                finished = true
-                semaphore.signal()
-            }
-            let waitResult = semaphore.wait(
-                timeout: .now() + .milliseconds(timeoutMs)
-            )
-            guard waitResult == .success, finished else {
+            guard let seconds = loadDurationSeconds(asset: asset, timeoutMs: timeoutMs) else {
                 DispatchQueue.main.async { result(nil) }
                 return
             }
-            var error: NSError?
-            let status = asset.statusOfValue(forKey: "duration", error: &error)
-            guard status == .loaded else {
-                DispatchQueue.main.async { result(nil) }
-                return
-            }
-            let seconds = CMTimeGetSeconds(asset.duration)
-            guard seconds.isFinite, seconds > 0 else {
-                DispatchQueue.main.async { result(nil) }
-                return
-            }
-            let ms = Int(seconds * 1000)
+            let ms = Int((seconds * 1000).rounded())
             DispatchQueue.main.async { result(ms) }
+        }
+    }
+
+    static func loadDurationSeconds(asset: AVURLAsset, timeoutMs: Int) -> Double? {
+        let semaphore = DispatchSemaphore(value: 0)
+        var finished = false
+        asset.loadValuesAsynchronously(forKeys: ["duration"]) {
+            finished = true
+            semaphore.signal()
+        }
+        let waitResult = semaphore.wait(timeout: .now() + .milliseconds(timeoutMs))
+        guard waitResult == .success, finished else { return nil }
+        var error: NSError?
+        let status = asset.statusOfValue(forKey: "duration", error: &error)
+        guard status == .loaded else { return nil }
+        let seconds = CMTimeGetSeconds(asset.duration)
+        guard seconds.isFinite, seconds > 0 else { return nil }
+        return seconds
+    }
+
+    static func trimCoverCache(in outputDir: String, keep: Int = 40) {
+        let fm = FileManager.default
+        guard let items = try? fm.contentsOfDirectory(atPath: outputDir) else { return }
+        let covers = items.filter { $0.hasPrefix("cover-") && $0.hasSuffix(".png") }
+        if covers.count <= keep { return }
+        let urls = covers.map { (outputDir as NSString).appendingPathComponent($0) }
+            .compactMap { path -> (String, Date)? in
+                let attrs = try? fm.attributesOfItem(atPath: path)
+                let date = attrs?[.modificationDate] as? Date ?? .distantPast
+                return (path, date)
+            }
+            .sorted { $0.1 < $1.1 }
+        let extra = urls.count - keep
+        if extra <= 0 { return }
+        for i in 0 ..< extra {
+            try? fm.removeItem(atPath: urls[i].0)
         }
     }
 

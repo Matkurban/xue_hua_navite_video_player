@@ -7,6 +7,12 @@ import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
+import android.view.PixelCopy
+import android.view.SurfaceView
+import android.view.TextureView
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
@@ -27,6 +33,9 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.abs
 
 /// 插件主类：ExoPlayer + PlatformView（PlayerView.resizeMode）。
@@ -34,19 +43,22 @@ class XueHuaNaviteVideoPlayerPlugin :
     FlutterPlugin,
     MethodCallHandler,
     EventChannel.StreamHandler,
-    ActivityAware {
+    ActivityAware,
+    DefaultLifecycleObserver {
 
     private lateinit var methodChannel: MethodChannel
     private lateinit var eventChannel: EventChannel
     private var exoPlayer: ExoPlayer? = null
     private var eventSink: EventChannel.EventSink? = null
     private val mainHandler = Handler(Looper.getMainLooper())
-    private val workerExecutor = Executors.newSingleThreadExecutor()
+    private var workerExecutor = Executors.newCachedThreadPool()
+    private val engineGeneration = AtomicInteger(0)
     private var currentUrl: String? = null
     private var flutterPluginBinding: FlutterPlugin.FlutterPluginBinding? = null
     private var playerView: PlayerView? = null
     private var resizeMode: Int = AspectRatioFrameLayout.RESIZE_MODE_FIT
     private var activity: Activity? = null
+    private var lifecycleOwner: LifecycleOwner? = null
     private var savedBrightness: Float? = null
 
     fun attachPlayerView(view: PlayerView) {
@@ -75,6 +87,9 @@ class XueHuaNaviteVideoPlayerPlugin :
 
     override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         flutterPluginBinding = binding
+        if (workerExecutor.isShutdown || workerExecutor.isTerminated) {
+            workerExecutor = Executors.newCachedThreadPool()
+        }
 
         methodChannel = MethodChannel(binding.binaryMessenger, "xue_hua_navite_video_player/player")
         methodChannel.setMethodCallHandler(this)
@@ -89,27 +104,51 @@ class XueHuaNaviteVideoPlayerPlugin :
     }
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
+        engineGeneration.incrementAndGet()
         methodChannel.setMethodCallHandler(null)
         eventChannel.setStreamHandler(null)
         restoreBrightness()
         releasePlayer()
         flutterPluginBinding = null
+        workerExecutor.shutdownNow()
     }
 
     override fun onAttachedToActivity(binding: ActivityPluginBinding) {
-        activity = binding.activity
+        bindActivity(binding.activity)
     }
 
     override fun onDetachedFromActivityForConfigChanges() {
-        activity = null
+        unbindActivity(restoreWindowBrightness = false)
     }
 
     override fun onReattachedToActivityForConfigChanges(binding: ActivityPluginBinding) {
-        activity = binding.activity
+        bindActivity(binding.activity)
     }
 
     override fun onDetachedFromActivity() {
-        restoreBrightness()
+        unbindActivity(restoreWindowBrightness = true)
+    }
+
+    override fun onStop(owner: LifecycleOwner) {
+        val player = exoPlayer ?: return
+        if (player.isPlaying) {
+            player.pause()
+        }
+    }
+
+    private fun bindActivity(act: Activity) {
+        activity = act
+        val owner = act as? LifecycleOwner
+        lifecycleOwner = owner
+        owner?.lifecycle?.addObserver(this)
+    }
+
+    private fun unbindActivity(restoreWindowBrightness: Boolean) {
+        lifecycleOwner?.lifecycle?.removeObserver(this)
+        lifecycleOwner = null
+        if (restoreWindowBrightness) {
+            restoreBrightness()
+        }
         activity = null
     }
 
@@ -143,6 +182,15 @@ class XueHuaNaviteVideoPlayerPlugin :
         }
     }
 
+    private fun requirePlayer(result: Result): ExoPlayer? {
+        val player = exoPlayer
+        if (player == null) {
+            result.error("NO_PLAYER", "Player not initialized", null)
+            return null
+        }
+        return player
+    }
+
     /// 创建 ExoPlayer；画面由 PlatformView（PlayerView）显示。
     private fun handleCreate(result: Result) {
         val binding = flutterPluginBinding ?: run {
@@ -153,6 +201,13 @@ class XueHuaNaviteVideoPlayerPlugin :
         releasePlayer()
 
         val player = ExoPlayer.Builder(binding.applicationContext).build()
+        player.setAudioAttributes(
+            AudioAttributes.Builder()
+                .setUsage(C.USAGE_MEDIA)
+                .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
+                .build(),
+            /* handleAudioFocus= */ true,
+        )
         player.addListener(playerListener)
         exoPlayer = player
         playerView?.player = player
@@ -163,56 +218,50 @@ class XueHuaNaviteVideoPlayerPlugin :
     }
 
     /// 打开媒体 URL。
-    /// Opens the media URL.
     private fun handleOpen(call: MethodCall, result: Result) {
         val url = call.argument<String>("url") ?: run {
             result.error("INVALID_ARG", "url is required", null)
             return
         }
+        val player = requirePlayer(result) ?: return
         currentUrl = url
-        exoPlayer?.let { player ->
-            val mediaItem = MediaItem.fromUri(url)
-            player.setMediaItem(mediaItem)
-            player.playWhenReady = false
-            player.prepare()
-        }
+        val mediaItem = MediaItem.fromUri(url)
+        player.setMediaItem(mediaItem)
+        player.playWhenReady = false
+        player.prepare()
         result.success(null)
     }
 
-    /// 开始播放。
-    /// Starts playback.
     private fun handlePlay(result: Result) {
-        exoPlayer?.play()
+        val player = requirePlayer(result) ?: return
+        player.play()
         result.success(null)
     }
 
-    /// 暂停播放。
-    /// Pauses playback.
     private fun handlePause(result: Result) {
-        exoPlayer?.pause()
+        val player = requirePlayer(result) ?: return
+        player.pause()
         result.success(null)
     }
 
-    /// 跳转到指定位置（毫秒）。
-    /// Seeks to the specified position in milliseconds.
     private fun handleSeek(call: MethodCall, result: Result) {
+        val player = requirePlayer(result) ?: return
         val position = call.argument<Number>("position")?.toLong() ?: 0L
-        exoPlayer?.seekTo(position)
+        player.seekTo(position)
         result.success(null)
     }
 
-    /// 设置音量（0.0 ~ 1.0）。
-    /// Sets the volume (0.0 – 1.0).
     private fun handleSetVolume(call: MethodCall, result: Result) {
+        val player = requirePlayer(result) ?: return
         val volume = call.argument<Double>("volume") ?: 1.0
-        exoPlayer?.volume = volume.toFloat()
+        player.volume = volume.toFloat().coerceIn(0f, 1f)
         result.success(null)
     }
 
-    /// 设置播放速度。
     private fun handleSetSpeed(call: MethodCall, result: Result) {
+        val player = requirePlayer(result) ?: return
         val speed = call.argument<Double>("speed") ?: 1.0
-        exoPlayer?.setPlaybackSpeed(speed.toFloat())
+        player.setPlaybackSpeed(speed.toFloat())
         result.success(null)
     }
 
@@ -227,7 +276,6 @@ class XueHuaNaviteVideoPlayerPlugin :
         result.success(null)
     }
 
-    /// 释放播放器资源。
     private fun handleDispose(result: Result) {
         restoreBrightness()
         releasePlayer()
@@ -299,6 +347,7 @@ class XueHuaNaviteVideoPlayerPlugin :
         exoPlayer?.removeListener(playerListener)
         exoPlayer?.release()
         exoPlayer = null
+        currentUrl = null
     }
 
     private fun sendEvent(event: String, value: Any?) {
@@ -307,6 +356,14 @@ class XueHuaNaviteVideoPlayerPlugin :
             data["event"] = event
             data["value"] = value
             eventSink?.success(data)
+        }
+    }
+
+    private fun postWorkerResult(generation: Int, block: () -> Unit) {
+        mainHandler.post {
+            if (generation != engineGeneration.get()) return@post
+            if (flutterPluginBinding == null) return@post
+            block()
         }
     }
 
@@ -321,15 +378,12 @@ class XueHuaNaviteVideoPlayerPlugin :
         sendEvent("buffering", buffering)
     }
 
-    /// ExoPlayer 事件监听器，将状态变更转发给 Dart EventChannel。
-    /// ExoPlayer event listener forwarding state changes to the Dart EventChannel.
     private val playerListener = object : Player.Listener {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             sendEvent("playing", isPlaying)
         }
 
         override fun onIsLoadingChanged(isLoading: Boolean) {
-            // Media3 loading covers network rebuffer; combine with playback state.
             publishBuffering(exoPlayer)
         }
 
@@ -363,22 +417,57 @@ class XueHuaNaviteVideoPlayerPlugin :
             val par = if (videoSize.pixelWidthHeightRatio > 0f) videoSize.pixelWidthHeightRatio else 1f
             val displayW = (rawW * par).toInt().coerceAtLeast(1)
 
-            var rotationDegrees = 0
-            // PlayerView handles rotation; report 0 for display orientation.
-
             val size = HashMap<String, Any>()
             size["width"] = displayW
             size["height"] = rawH
-            size["rotationDegrees"] = rotationDegrees
+            size["rotationDegrees"] = videoSize.unappliedRotationDegrees
             sendEvent("videoSize", size)
         }
     }
 
     // region Snapshot / Covers
 
-    /// 对当前播放位置抽取一帧，返回 PNG 字节。
-    /// Snapshot the current playback position and return PNG bytes.
     private fun handleTakeSnapshot(result: Result) {
+        val generation = engineGeneration.get()
+        when (val surface = playerView?.videoSurfaceView) {
+            is TextureView -> {
+                val bmp = surface.bitmap
+                if (bmp != null) {
+                    val baos = ByteArrayOutputStream()
+                    bmp.compress(Bitmap.CompressFormat.PNG, 100, baos)
+                    bmp.recycle()
+                    result.success(baos.toByteArray())
+                    return
+                }
+            }
+            is SurfaceView -> {
+                val w = surface.width
+                val h = surface.height
+                if (w > 0 && h > 0 && surface.holder.surface?.isValid == true) {
+                    val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+                    PixelCopy.request(surface, bmp, { copyResult ->
+                        if (generation != engineGeneration.get() || flutterPluginBinding == null) {
+                            bmp.recycle()
+                            return@request
+                        }
+                        if (copyResult == PixelCopy.SUCCESS) {
+                            val baos = ByteArrayOutputStream()
+                            bmp.compress(Bitmap.CompressFormat.PNG, 100, baos)
+                            bmp.recycle()
+                            result.success(baos.toByteArray())
+                        } else {
+                            bmp.recycle()
+                            snapshotViaRetriever(result, generation)
+                        }
+                    }, mainHandler)
+                    return
+                }
+            }
+        }
+        snapshotViaRetriever(result, generation)
+    }
+
+    private fun snapshotViaRetriever(result: Result, generation: Int) {
         val url = currentUrl
         val positionUs = (exoPlayer?.currentPosition ?: 0L) * 1000L
         val appContext = flutterPluginBinding?.applicationContext
@@ -392,7 +481,7 @@ class XueHuaNaviteVideoPlayerPlugin :
                 setDataSourceForUrl(retriever, url, appContext)
                 val bmp = retriever.getFrameAtTime(positionUs, MediaMetadataRetriever.OPTION_CLOSEST)
                 if (bmp == null) {
-                    mainHandler.post {
+                    postWorkerResult(generation) {
                         result.error("NO_FRAME", "Failed to extract frame", null)
                     }
                     return@execute
@@ -401,9 +490,9 @@ class XueHuaNaviteVideoPlayerPlugin :
                 bmp.compress(Bitmap.CompressFormat.PNG, 100, baos)
                 bmp.recycle()
                 val bytes = baos.toByteArray()
-                mainHandler.post { result.success(bytes) }
+                postWorkerResult(generation) { result.success(bytes) }
             } catch (t: Throwable) {
-                mainHandler.post {
+                postWorkerResult(generation) {
                     result.error("SNAPSHOT_FAIL", t.message ?: "snapshot failed", null)
                 }
             } finally {
@@ -415,39 +504,44 @@ class XueHuaNaviteVideoPlayerPlugin :
         }
     }
 
-    /// 读取视频总时长（毫秒）。失败返回 `null`。
-    /// Read total media duration (ms). Returns null on failure.
     private fun handleGetDuration(call: MethodCall, result: Result) {
         val url = call.argument<String>("url")
+        val timeoutMs = call.argument<Number>("timeoutMs")?.toLong() ?: 15_000L
         val appContext = flutterPluginBinding?.applicationContext
         if (url.isNullOrEmpty()) {
             result.success(null)
             return
         }
+        val generation = engineGeneration.get()
         workerExecutor.execute {
-            val retriever = MediaMetadataRetriever()
-            try {
-                setDataSourceForUrl(retriever, url, appContext)
-                val durMs = retriever
-                    .extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
-                    ?.toLongOrNull()
-                mainHandler.post {
-                    if (durMs == null || durMs <= 0) result.success(null)
-                    else result.success(durMs)
-                }
-            } catch (_: Throwable) {
-                mainHandler.post { result.success(null) }
-            } finally {
+            val future = workerExecutor.submit<Long?> {
+                val retriever = MediaMetadataRetriever()
                 try {
-                    retriever.release()
-                } catch (_: Throwable) {
+                    setDataSourceForUrl(retriever, url, appContext)
+                    retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                        ?.toLongOrNull()
+                } finally {
+                    try {
+                        retriever.release()
+                    } catch (_: Throwable) {
+                    }
                 }
+            }
+            val durMs = try {
+                future.get(timeoutMs.coerceAtLeast(1L), TimeUnit.MILLISECONDS)
+            } catch (_: TimeoutException) {
+                future.cancel(true)
+                null
+            } catch (_: Throwable) {
+                null
+            }
+            postWorkerResult(generation) {
+                if (durMs == null || durMs <= 0) result.success(null)
+                else result.success(durMs)
             }
         }
     }
 
-    /// 抽取视频候选封面帧列表。
-    /// Extract cover candidate frames from a media URL.
     private fun handleExtractCovers(call: MethodCall, result: Result) {
         val url = call.argument<String>("url")
         val count = call.argument<Int>("count") ?: 5
@@ -459,6 +553,7 @@ class XueHuaNaviteVideoPlayerPlugin :
             result.success(emptyList<Any>())
             return
         }
+        val generation = engineGeneration.get()
         workerExecutor.execute {
             val frames = ArrayList<Map<String, Any>>()
             val retriever = MediaMetadataRetriever()
@@ -467,7 +562,7 @@ class XueHuaNaviteVideoPlayerPlugin :
                 val durMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
                     ?.toLongOrNull() ?: 0L
                 if (durMs <= 0) {
-                    mainHandler.post { result.success(emptyList<Any>()) }
+                    postWorkerResult(generation) { result.success(emptyList<Any>()) }
                     return@execute
                 }
                 val dir = File(outputDir.ifEmpty { appContext?.cacheDir?.absolutePath ?: "/tmp" })
@@ -504,11 +599,12 @@ class XueHuaNaviteVideoPlayerPlugin :
                         bmp.recycle()
                     }
                 }
+                trimCoverCache(dir)
                 frames.sortByDescending { (it["brightness"] as? Double) ?: 0.0 }
                 val trimmed = frames.take(count)
-                mainHandler.post { result.success(trimmed) }
-            } catch (t: Throwable) {
-                mainHandler.post { result.success(emptyList<Any>()) }
+                postWorkerResult(generation) { result.success(trimmed) }
+            } catch (_: Throwable) {
+                postWorkerResult(generation) { result.success(emptyList<Any>()) }
             } finally {
                 try {
                     retriever.release()
@@ -518,6 +614,16 @@ class XueHuaNaviteVideoPlayerPlugin :
         }
     }
 
+    private fun trimCoverCache(dir: File, keep: Int = 40) {
+        val files = dir.listFiles { f ->
+            f.isFile && f.name.startsWith("cover-") && f.name.endsWith(".png")
+        } ?: return
+        if (files.size <= keep) return
+        files.sortedBy { it.lastModified() }
+            .take(files.size - keep)
+            .forEach { it.delete() }
+    }
+
     private fun setDataSourceForUrl(
         retriever: MediaMetadataRetriever,
         url: String,
@@ -525,7 +631,10 @@ class XueHuaNaviteVideoPlayerPlugin :
     ) {
         val uri = Uri.parse(url)
         when (uri.scheme?.lowercase()) {
-            "file" -> retriever.setDataSource(uri.path ?: url)
+            "file" -> {
+                if (appContext != null) retriever.setDataSource(appContext, uri)
+                else retriever.setDataSource(uri.path ?: url)
+            }
             "http", "https" -> retriever.setDataSource(url, HashMap())
             "content" -> {
                 if (appContext != null) retriever.setDataSource(appContext, uri)

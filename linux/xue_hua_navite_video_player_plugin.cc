@@ -3,6 +3,7 @@
 #include "include/xue_hua_navite_video_player/xue_hua_navite_video_player_plugin.h"
 
 #include <flutter_linux/flutter_linux.h>
+#include <gio/gio.h>
 #include <gtk/gtk.h>
 #include <sys/stat.h>
 #include <sys/utsname.h>
@@ -13,6 +14,7 @@
 #include <cstring>
 #include <memory>
 #include <string>
+#include <vector>
 
 #ifdef HAS_XRANDR
 #include <X11/Xlib.h>
@@ -426,8 +428,78 @@ static void plugin_restore_brightness(XueHuaNaviteVideoPlayerPlugin* self) {
 #endif
 }
 
+namespace {
+
+struct DurationJob {
+  std::string url;
+  int timeout_ms = 15000;
+};
+
+struct CoversJob {
+  std::string url;
+  int count = 5;
+  int candidates = 15;
+  double min_brightness = 0.08;
+  std::string output_dir;
+};
+
+void duration_job_thread(GTask* task, gpointer, gpointer task_data, GCancellable*) {
+  auto* job = static_cast<DurationJob*>(task_data);
+  int64_t ms = 0;
+  if (!job->url.empty()) {
+    ms = MpvPlayer::GetDurationMs(job->url, job->timeout_ms);
+  }
+  g_task_return_int(task, static_cast<gssize>(ms));
+}
+
+void duration_job_done(GObject*, GAsyncResult* res, gpointer user_data) {
+  g_autoptr(FlMethodCall) method_call = FL_METHOD_CALL(user_data);
+  const gssize ms = g_task_propagate_int(G_TASK(res), nullptr);
+  g_autoptr(FlMethodResponse) response = nullptr;
+  if (ms > 0) {
+    g_autoptr(FlValue) out = fl_value_new_int(static_cast<int64_t>(ms));
+    response = FL_METHOD_RESPONSE(fl_method_success_response_new(out));
+  } else {
+    response = FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
+  }
+  fl_method_call_respond(method_call, response, nullptr);
+}
+
+void covers_job_thread(GTask* task, gpointer, gpointer task_data, GCancellable*) {
+  auto* job = static_cast<CoversJob*>(task_data);
+  auto* frames = new std::vector<CoverFrame>(
+      MpvPlayer::ExtractCovers(job->url, job->count, job->candidates,
+                               job->min_brightness, job->output_dir));
+  g_task_return_pointer(task, frames, [](gpointer p) {
+    delete static_cast<std::vector<CoverFrame>*>(p);
+  });
+}
+
+void covers_job_done(GObject*, GAsyncResult* res, gpointer user_data) {
+  g_autoptr(FlMethodCall) method_call = FL_METHOD_CALL(user_data);
+  auto* frames = static_cast<std::vector<CoverFrame>*>(
+      g_task_propagate_pointer(G_TASK(res), nullptr));
+  g_autoptr(FlValue) list = fl_value_new_list();
+  if (frames) {
+    for (const auto& f : *frames) {
+      g_autoptr(FlValue) m = fl_value_new_map();
+      fl_value_set_string_take(m, "path", fl_value_new_string(f.path.c_str()));
+      fl_value_set_string_take(m, "positionMs", fl_value_new_int(f.position_ms));
+      fl_value_set_string_take(m, "brightness", fl_value_new_float(f.brightness));
+      fl_value_append(list, m);
+    }
+    delete frames;
+  }
+  g_autoptr(FlMethodResponse) response =
+      FL_METHOD_RESPONSE(fl_method_success_response_new(list));
+  fl_method_call_respond(method_call, response, nullptr);
+}
+
+}  // namespace
+
 static void handle_method_call(XueHuaNaviteVideoPlayerPlugin* self, FlMethodCall* method_call) {
   g_autoptr(FlMethodResponse) response = nullptr;
+  gboolean async_reply = FALSE;
   const gchar* method = fl_method_call_get_name(method_call);
 
   if (strcmp(method, "create") == 0) {
@@ -541,16 +613,11 @@ static void handle_method_call(XueHuaNaviteVideoPlayerPlugin* self, FlMethodCall
     if (output_dir.empty()) { g_autofree gchar* d = default_cover_dir(); output_dir = d; }
     else g_mkdir_with_parents(output_dir.c_str(), 0700);
 
-    auto frames = MpvPlayer::ExtractCovers(url, count, candidates, min_brightness, output_dir);
-    g_autoptr(FlValue) list = fl_value_new_list();
-    for (const auto& f : frames) {
-      g_autoptr(FlValue) m = fl_value_new_map();
-      fl_value_set_string_take(m, "path", fl_value_new_string(f.path.c_str()));
-      fl_value_set_string_take(m, "positionMs", fl_value_new_int(f.position_ms));
-      fl_value_set_string_take(m, "brightness", fl_value_new_float(f.brightness));
-      fl_value_append(list, m);
-    }
-    response = FL_METHOD_RESPONSE(fl_method_success_response_new(list));
+    auto* job = new CoversJob{url, count, candidates, min_brightness, output_dir};
+    g_autoptr(GTask) task = g_task_new(nullptr, nullptr, covers_job_done, g_object_ref(method_call));
+    g_task_set_task_data(task, job, [](gpointer p) { delete static_cast<CoversJob*>(p); });
+    g_task_run_in_thread(task, covers_job_thread);
+    async_reply = TRUE;
   } else if (strcmp(method, "getDuration") == 0) {
     FlValue* args = fl_method_call_get_args(method_call);
     const gchar* url = "";
@@ -561,22 +628,19 @@ static void handle_method_call(XueHuaNaviteVideoPlayerPlugin* self, FlMethodCall
       if (v_url) url = fl_value_get_string(v_url);
       if (v_to) timeout_ms = static_cast<int>(fl_value_get_int(v_to));
     }
-    int64_t duration_ms = 0;
-    if (url && *url) {
-      duration_ms = MpvPlayer::GetDurationMs(url, timeout_ms);
-    }
-    if (duration_ms > 0) {
-      g_autoptr(FlValue) out = fl_value_new_int(duration_ms);
-      response = FL_METHOD_RESPONSE(fl_method_success_response_new(out));
-    } else {
-      response = FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
-    }
+    auto* job = new DurationJob{url ? url : "", timeout_ms};
+    g_autoptr(GTask) task = g_task_new(nullptr, nullptr, duration_job_done, g_object_ref(method_call));
+    g_task_set_task_data(task, job, [](gpointer p) { delete static_cast<DurationJob*>(p); });
+    g_task_run_in_thread(task, duration_job_thread);
+    async_reply = TRUE;
   } else if (strcmp(method, "getPlatformVersion") == 0) {
     response = get_platform_version();
   } else {
     response = FL_METHOD_RESPONSE(fl_method_not_implemented_response_new());
   }
-  fl_method_call_respond(method_call, response, nullptr);
+  if (!async_reply) {
+    fl_method_call_respond(method_call, response, nullptr);
+  }
 }
 
 FlMethodResponse* get_platform_version() {

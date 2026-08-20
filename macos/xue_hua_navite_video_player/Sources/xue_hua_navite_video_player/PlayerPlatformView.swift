@@ -6,6 +6,11 @@ let kPlayerPlatformViewType = "plugins.xuehua/navite_video_player"
 
 final class PlayerContainerView: NSView {
     let playerLayer = AVPlayerLayer()
+    var onDetach: (() -> Void)?
+
+    deinit {
+        onDetach?()
+    }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -43,6 +48,9 @@ final class PlayerPlatformViewFactory: NSObject, FlutterPlatformViewFactory {
         let container = PlayerContainerView(frame: .zero)
         if let player = playerProvider() {
             player.attachPlayerLayer(container.playerLayer)
+            container.onDetach = { [weak player, layer = container.playerLayer] in
+                player?.detachPlayerLayer(layer)
+            }
         }
         return container
     }

@@ -8,6 +8,7 @@ import 'package:xue_hua_navite_video_player/src/data/enums/skip_second_type.dart
 import 'package:xue_hua_navite_video_player/src/player/brightness_controller.dart';
 import 'package:xue_hua_navite_video_player/src/player/channel_player_backend.dart';
 import 'package:xue_hua_navite_video_player/src/player/fullscreen_coordinator.dart';
+import 'package:xue_hua_navite_video_player/src/player/playback_session.dart';
 import 'package:xue_hua_navite_video_player/src/player/player_backend.dart';
 import 'package:xue_hua_navite_video_player/src/player/player_event.dart';
 import 'package:xue_hua_navite_video_player/src/player/video_player_controller.dart';
@@ -284,6 +285,72 @@ void main() {
       await controller.dispose();
     });
 
+    test('events emitted during create() are not dropped', () async {
+      final backend = _EmitOnCreateBackend();
+      final controller = VideoPlayerController(backend: backend);
+
+      await controller.initialize();
+      await Future<void>.delayed(Duration.zero);
+
+      expect(controller.playState.value, PlayState.playing);
+
+      await controller.dispose();
+    });
+
+    test('zero duration (live) still leaves loading', () async {
+      final backend = _FakePlayerBackend();
+      final controller = VideoPlayerController(backend: backend);
+
+      await controller.initialize();
+      await controller.openFile(mediaFile.path);
+      backend.emit(const PlayerEvent.duration(Duration.zero));
+      await Future<void>.delayed(Duration.zero);
+
+      expect(controller.playState.value, PlayState.paused);
+      expect(controller.duration.value, Duration.zero);
+
+      await controller.dispose();
+    });
+
+    test('stale events from a superseded open are ignored', () async {
+      final backend = _FakePlayerBackend(openDelay: const Duration(milliseconds: 40));
+      final controller = VideoPlayerController(backend: backend);
+
+      await controller.initialize();
+      final first = controller.openFile(mediaFile.path);
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      final second = controller.openFile(mediaFileB.path);
+
+      backend.emit(const PlayerEvent.duration(Duration(seconds: 99)));
+      await Future.wait([first, second]);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(controller.duration.value, Duration.zero);
+
+      backend.emit(const PlayerEvent.duration(Duration(seconds: 3)));
+      await Future<void>.delayed(Duration.zero);
+      expect(controller.duration.value, const Duration(seconds: 3));
+
+      await controller.dispose();
+    });
+
+    test('ready fallback leaves loading when no metadata arrives', () async {
+      final previous = PlaybackSession.readyFallbackDelay;
+      PlaybackSession.readyFallbackDelay = const Duration(milliseconds: 20);
+      addTearDown(() => PlaybackSession.readyFallbackDelay = previous);
+
+      final backend = _FakePlayerBackend();
+      final controller = VideoPlayerController(backend: backend);
+      await controller.initialize();
+      await controller.openFile(mediaFile.path);
+      expect(controller.playState.value, PlayState.loading);
+
+      await Future<void>.delayed(const Duration(milliseconds: 40));
+      expect(controller.playState.value, PlayState.paused);
+
+      await controller.dispose();
+    });
+
     test('setBrightness updates signal via BrightnessController', () async {
       final backend = _FakePlayerBackend();
       final brightness = _FakeBrightness();
@@ -362,6 +429,15 @@ void main() {
       );
     });
   });
+}
+
+class _EmitOnCreateBackend extends _FakePlayerBackend {
+  @override
+  Future<int> create() async {
+    final id = await super.create();
+    emit(const PlayerEvent.playing(true));
+    return id;
+  }
 }
 
 class _FakePlayerBackend implements PlayerBackend {
