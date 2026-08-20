@@ -10,10 +10,9 @@ topics:
   - media
   - flutter-plugin
 
-
 environment:
   sdk: ^3.12.0
-  flutter: '>=3.44.0'
+  flutter: ">=3.44.0"
 
 dependencies:
   flutter:
@@ -22,8 +21,8 @@ dependencies:
     sdk: flutter
   web: ^1.1.1
   crypto: ^3.0.7
-  cross_file: ^0.3.5+2
-  path_provider: ^2.1.5
+  cross_file: ^0.3.5+4
+  path_provider: ^2.1.6
   signals_flutter: ^7.1.0
   chat_context_menu: ^3.0.1
 
