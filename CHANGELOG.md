@@ -1,13 +1,10 @@
 # Changelog
 
-## 1.1.2
+## 1.1.1
 
 - Fix Android crash when entering fullscreen: `NullPointerException` in Flutter's `SurfaceProducer.getWidth()` during Virtual Display resize after the PlatformView was disposed.
 - Reparent the player surface with a `GlobalKey` in the same frame (`OverlayPortal.show` before suppressing inline; un-suppress before hide). Set `isFullscreen` before applying orientation.
 - Android uses default `AndroidView` plus Media3 `TextureView` (not expensive Hybrid Composition, which caused NativeAlloc GC about every 70ms while playing).
-
-## 1.1.1
-
 - Stabilize the Dart session: listen to native events before `create()`, ignore stale events after a superseded `open`, and leave `loading` for live/audio-only streams (zero duration, metadata, or a short ready fallback).
 - Enforce the process-wide single native session in `PlaybackSession.initialize()`.
 - `MediaProbe` now times out on the Dart side even if native ignores `timeoutMs`.
