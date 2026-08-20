@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.1.1
+## 1.2.0
 
 - Fix Android crash when entering fullscreen: `NullPointerException` in Flutter's `SurfaceProducer.getWidth()` during Virtual Display resize after the PlatformView was disposed.
 - Reparent the player surface with a `GlobalKey` in the same frame (`OverlayPortal.show` before suppressing inline; un-suppress before hide). Set `isFullscreen` before applying orientation.
