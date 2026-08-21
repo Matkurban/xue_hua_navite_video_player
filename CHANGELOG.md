@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.1
+
+- The Gradle tool version has been downgraded to 8.13.2.
+
 ## 1.2.0
 
 - Fix Android crash when entering fullscreen: `NullPointerException` in Flutter's `SurfaceProducer.getWidth()` during Virtual Display resize after the PlatformView was disposed.

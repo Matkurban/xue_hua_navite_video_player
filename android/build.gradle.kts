@@ -6,7 +6,7 @@ plugins {
 }
 
 buildscript {
-    val kotlinVersion = "2.2.20"
+    val kotlinVersion = "2.3.20"
     repositories {
         google()
         mavenCentral()
