@@ -164,7 +164,9 @@ sudo pacman -S mpv
 
 ### Windows
 
-Playback uses libmpv software rendering. Ensure the mpv runtime can be loaded with your build. If playback fails, check missing mpv native dependencies first.
+Playback uses libmpv software rendering. The first Windows build downloads a prebuilt libmpv SDK from [shinchiro/mpv-winbuild-cmake](https://github.com/shinchiro/mpv-winbuild-cmake/releases) (`mpv-dev-x86_64` or `mpv-dev-aarch64`, matching `FLUTTER_TARGET_PLATFORM`) into `windows/mpv-dev-<arch>/`.
+
+If that download fails, get the matching `mpv-dev-*.7z` manually, extract it, and point CMake at the folder that contains `include/mpv/`: set the `MPV_DIR` environment variable or pass `-DMPV_DIR=<path>`. You can also override the archive with `-DMPV_DOWNLOAD_URL=` and `-DMPV_DOWNLOAD_SHA256=`. If playback fails after a successful build, check missing mpv native dependencies first.
 
 ### Web
 

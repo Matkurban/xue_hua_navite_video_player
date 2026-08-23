@@ -62,7 +62,12 @@ target_compile_definitions(${PLUGIN_NAME} PRIVATE
 # If MPV_DIR is not provided (via -DMPV_DIR=... or the MPV_DIR environment
 # variable), the plugin will automatically download and extract a pinned
 # prebuilt libmpv SDK from https://github.com/shinchiro/mpv-winbuild-cmake
-# into `windows/mpv-dev` inside the plugin source tree (cached across builds).
+# into `windows/mpv-dev-<arch>` (x86_64 or aarch64) inside the plugin source
+# tree (cached across builds).
+#
+# Upstream keeps only about the latest 30 GitHub releases, so this pin will
+# 404 once that tag is pruned — bump the URL/SHA below, or download the
+# archive manually and set -DMPV_DIR=<path>.
 #
 # You can override the source by setting:
 #   -DMPV_DOWNLOAD_URL=<url to 7z archive>
@@ -74,24 +79,55 @@ target_compile_definitions(${PLUGIN_NAME} PRIVATE
 # on Windows ("Cannot extract through symlink").
 get_filename_component(_FCVP_PLUGIN_WINDOWS_DIR
   "${CMAKE_CURRENT_SOURCE_DIR}" REALPATH)
+
+# Flutter passes -DFLUTTER_TARGET_PLATFORM=windows-x64|windows-arm64 and
+# -A x64|ARM64. Pick the matching shinchiro mpv-dev archive.
+if(FLUTTER_TARGET_PLATFORM STREQUAL "windows-arm64" OR
+   CMAKE_GENERATOR_PLATFORM STREQUAL "ARM64")
+  set(_FCVP_MPV_ARCH "aarch64")
+elseif(FLUTTER_TARGET_PLATFORM STREQUAL "windows-x64" OR
+       CMAKE_GENERATOR_PLATFORM STREQUAL "x64" OR
+       CMAKE_GENERATOR_PLATFORM STREQUAL "")
+  set(_FCVP_MPV_ARCH "x86_64")
+else()
+  message(FATAL_ERROR
+    "No prebuilt libmpv SDK for FLUTTER_TARGET_PLATFORM="
+    "'${FLUTTER_TARGET_PLATFORM}' / CMAKE_GENERATOR_PLATFORM="
+    "'${CMAKE_GENERATOR_PLATFORM}'. Download a matching mpv-dev archive "
+    "and set -DMPV_DIR=<path>.")
+endif()
+
 if(NOT DEFINED MPV_DIR)
   if(DEFINED ENV{MPV_DIR})
     set(MPV_DIR "$ENV{MPV_DIR}")
   else()
-    set(MPV_DIR "${_FCVP_PLUGIN_WINDOWS_DIR}/mpv-dev")
+    set(MPV_DIR "${_FCVP_PLUGIN_WINDOWS_DIR}/mpv-dev-${_FCVP_MPV_ARCH}")
   endif()
 endif()
 set(MPV_DIR "${MPV_DIR}" CACHE PATH "Path to the libmpv SDK")
 
-# Pinned default prebuilt libmpv SDK (shinchiro/mpv-winbuild-cmake 20260417).
-set(_FCVP_MPV_DEFAULT_URL
-  "https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/20260417/mpv-dev-x86_64-20260417-git-c865008.7z")
-set(_FCVP_MPV_DEFAULT_SHA256
-  "a50490e08b93476191dce06f762bac73f4621d1e47a7b73f4ce7714e3fdb86d0")
-set(MPV_DOWNLOAD_URL "${_FCVP_MPV_DEFAULT_URL}"
-    CACHE STRING "URL of the libmpv dev archive to auto-download when MPV_DIR is missing")
-set(MPV_DOWNLOAD_SHA256 "${_FCVP_MPV_DEFAULT_SHA256}"
-    CACHE STRING "Expected SHA256 of the libmpv dev archive (leave empty to skip verification)")
+# Pinned shinchiro/mpv-winbuild-cmake latest (20260814). Asset names include
+# the date and git hash, so there is no stable latest/download/ URL.
+if(_FCVP_MPV_ARCH STREQUAL "aarch64")
+  set(_FCVP_MPV_DEFAULT_URL
+    "https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/20260814/mpv-dev-aarch64-20260814-git-7b8915bc1d.7z")
+  set(_FCVP_MPV_DEFAULT_SHA256
+    "112fe269538cc8331bc7ca2773c1d787f8bde99db520e6e447f1e4692ef80f98")
+else()
+  set(_FCVP_MPV_DEFAULT_URL
+    "https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/20260814/mpv-dev-x86_64-20260814-git-7b8915bc1d.7z")
+  set(_FCVP_MPV_DEFAULT_SHA256
+    "0af22b28e920620036d3ae08fd9283156dc9af0420bf4df84b0e02282094599c")
+endif()
+# Do not persist defaults in CACHE — a failed first configure would otherwise
+# lock the old URL after the pin is bumped. Honor -D / cache only when set.
+if(NOT MPV_DOWNLOAD_URL)
+  set(MPV_DOWNLOAD_URL "${_FCVP_MPV_DEFAULT_URL}")
+endif()
+if(NOT DEFINED MPV_DOWNLOAD_SHA256 AND
+   MPV_DOWNLOAD_URL STREQUAL _FCVP_MPV_DEFAULT_URL)
+  set(MPV_DOWNLOAD_SHA256 "${_FCVP_MPV_DEFAULT_SHA256}")
+endif()
 
 if(NOT EXISTS "${MPV_DIR}/include/mpv/client.h")
   if(NOT MPV_DOWNLOAD_URL)
@@ -233,7 +269,7 @@ target_include_directories(${TEST_RUNNER} PRIVATE
   "${CMAKE_CURRENT_SOURCE_DIR}"
   "${MPV_DIR}/include")
 target_link_libraries(${TEST_RUNNER} PRIVATE flutter_wrapper_plugin
-  "${MPV_LIBRARY}")
+  "${MPV_LIBRARY}" dxva2)
 target_link_libraries(${TEST_RUNNER} PRIVATE gtest_main gmock)
 # flutter_wrapper_plugin has link dependencies on the Flutter DLL.
 add_custom_command(TARGET ${TEST_RUNNER} POST_BUILD

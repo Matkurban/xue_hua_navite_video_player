@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.2
+
+- Windows: refresh the pinned libmpv SDK download to shinchiro/mpv-winbuild-cmake 20260814, and fetch `mpv-dev-aarch64` when targeting `windows-arm64`.
+- Windows: link `dxva2` into the plugin test runner so the example can finish linking.
+- Document the first-build libmpv download and manual `MPV_DIR` override.
+
 ## 1.2.1
 
 - The Gradle tool version has been downgraded to 8.13.2.

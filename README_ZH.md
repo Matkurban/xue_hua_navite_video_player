@@ -172,7 +172,9 @@ sudo pacman -S mpv
 
 ### Windows
 
-插件通过 libmpv 软件渲染。请确保运行环境能加载对应的 mpv 动态库（随插件 / 构建配置提供）。若播放失败，优先检查本机是否缺少 mpv 运行时依赖。
+插件通过 libmpv 软件渲染。首次 Windows 构建会从 [shinchiro/mpv-winbuild-cmake](https://github.com/shinchiro/mpv-winbuild-cmake/releases) 按 `FLUTTER_TARGET_PLATFORM` 下载对应的预编译 SDK（`mpv-dev-x86_64` 或 `mpv-dev-aarch64`）到 `windows/mpv-dev-<arch>/`。
+
+若自动下载失败，请手动下载对应的 `mpv-dev-*.7z`，解压后把 CMake 指到含 `include/mpv/` 的目录：设置环境变量 `MPV_DIR`，或传入 `-DMPV_DIR=<path>`。也可用 `-DMPV_DOWNLOAD_URL=` / `-DMPV_DOWNLOAD_SHA256=` 覆盖下载源。构建成功后仍无法播放时，优先检查本机是否缺少 mpv 运行时依赖。
 
 ### Web
 

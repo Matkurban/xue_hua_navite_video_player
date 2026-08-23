@@ -2,6 +2,7 @@ flutter/
 
 # Auto-downloaded libmpv SDK (see windows/CMakeLists.txt).
 mpv-dev/
+mpv-dev-*/
 mpv-dev-*.7z
 
 # Visual Studio user-specific files.
