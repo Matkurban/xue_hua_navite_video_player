@@ -285,6 +285,24 @@ void main() {
       await controller.dispose();
     });
 
+    test('external fullscreen exit clears isFullscreen without calling exit', () async {
+      final backend = _FakePlayerBackend();
+      final fs = _FakeFullscreen();
+      final controller = VideoPlayerController(backend: backend, fullscreen: fs);
+      await controller.initialize();
+
+      await controller.enterFullscreen();
+      expect(controller.isFullscreen.value, isTrue);
+      expect(fs.exitCount, 0);
+
+      fs.external.add(false);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(controller.isFullscreen.value, isFalse);
+      expect(fs.exitCount, 0);
+      await controller.dispose();
+    });
+
     test('events emitted during create() are not dropped', () async {
       final backend = _EmitOnCreateBackend();
       final controller = VideoPlayerController(backend: backend);
@@ -538,6 +556,11 @@ class _FakePlayerBackend implements PlayerBackend {
 class _FakeFullscreen implements FullscreenCoordinator {
   bool entered = false;
   bool? lastLandscape;
+  int exitCount = 0;
+  final StreamController<bool> external = StreamController<bool>.broadcast();
+
+  @override
+  Stream<bool> get externalChanges => external.stream;
 
   @override
   Future<void> enter({required bool landscapeVideo}) async {
@@ -548,6 +571,12 @@ class _FakeFullscreen implements FullscreenCoordinator {
   @override
   Future<void> exit() async {
     entered = false;
+    exitCount++;
+  }
+
+  @override
+  void dispose() {
+    external.close();
   }
 }
 

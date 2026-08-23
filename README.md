@@ -6,7 +6,7 @@ A cross-platform Flutter audio/video player plugin. Dart exposes a unified contr
 
 | | |
 |---|---|
-| Version | `1.1.0` |
+| Version | `1.3.0` |
 | Flutter | `>= 3.44.0` |
 | Dart SDK | `^3.12.0` |
 | Repository | [GitHub](https://github.com/MatkurbanWeiXin/xue_hua_navite_video_player) |
@@ -47,7 +47,7 @@ A cross-platform Flutter audio/video player plugin. Dart exposes a unified contr
 - **Controls** — play / pause / seek / volume / mute / speed / brightness / aspect mode / snapshot
 - **Built-in UI** — drop-in `VideoPlayer` and bare `CorePlayer`
 - **Theming** — `VideoPlayerTheme` via `ThemeData.extensions`
-- **Fullscreen** — controller owns orientation / immersive system UI; visual Overlay fullscreen requires a mounted `VideoPlayer`
+- **Fullscreen** — mobile orientation / immersive UI, desktop window fullscreen, and the browser Fullscreen API; visual Overlay chrome requires a mounted `VideoPlayer`
 - **Utilities** — duration probing and cover-frame extraction without starting playback
 - **Reactive state** — playback state exposed with [`signals_flutter`](https://pub.dev/packages/signals_flutter)
 
@@ -438,7 +438,7 @@ CorePlayer(
 );
 ```
 
-> With `CorePlayer` only, `enterFullscreen()` still changes orientation / immersive UI, but **does not** host a visual edge-to-edge Overlay.
+> With `CorePlayer` only, `enterFullscreen()` still changes orientation / window / browser fullscreen, but **does not** host a visual edge-to-edge Overlay.
 
 ### `VideoPlayer` — full chrome
 
@@ -518,18 +518,22 @@ final theme = VideoPlayerTheme.of(context);
 ## Fullscreen contract
 
 ```dart
-await controller.enterFullscreen(); // isFullscreen + system chrome / orientation
+await controller.enterFullscreen(); // isFullscreen + platform fullscreen host
 await controller.exitFullscreen();
 ```
 
 | Call site | Effect |
 |-----------|--------|
-| Mounted `VideoPlayer` under an `Overlay` | Immersive UI **and** edge-to-edge Overlay host |
-| Controller / `CorePlayer` only | Immersive UI only — no visual Overlay host |
+| Mounted `VideoPlayer` under an `Overlay` | Platform fullscreen **and** edge-to-edge Overlay chrome |
+| Controller / `CorePlayer` only | Platform fullscreen only — no visual Overlay host |
 
-Orientation prefers landscape/portrait based on `videoAspectRatio`.
+Platform host:
 
-Gestures (mobile) are active only while fullscreen **and** a `VideoPlayer` is mounted. Keyboard shortcuts (desktop / web) work in fullscreen or inline when the player is focused.
+- **Mobile** — preferred orientation from `videoAspectRatio`, plus immersive system UI
+- **Desktop** — OS window fullscreen (Windows borderless, macOS native fullscreen, Linux `gtk_window_fullscreen`)
+- **Web** — browser Fullscreen API on the Flutter document (not the `<video>` element)
+
+Gestures (mobile) are active only while fullscreen **and** a `VideoPlayer` is mounted. Keyboard shortcuts (desktop / web) work in fullscreen or inline when the player is focused. Escape leaves fullscreen.
 
 ---
 
@@ -551,6 +555,7 @@ Gestures (mobile) are active only while fullscreen **and** a `VideoPlayer` is mo
 | `Space` | Play / pause |
 | `←` / `→` | Seek backward / forward |
 | `↑` / `↓` | Volume ±0.05 |
+| `Esc` | Exit fullscreen |
 
 ---
 
@@ -647,7 +652,7 @@ flutter run
 Process-wide single native session. Reuse serially and `dispose()` on leave.
 
 **Fullscreen does not go edge-to-edge?**  
-Use mounted `VideoPlayer` under an `Overlay`, then `toggleFullscreen()` / `enterFullscreen()`.
+Use mounted `VideoPlayer` under an `Overlay`, then `toggleFullscreen()` / `enterFullscreen()`. On desktop / web this also makes the window or browser document fullscreen.
 
 **Asset playback fails?**  
 Declare the asset in `pubspec.yaml` with a matching path. First play extracts to temp storage.

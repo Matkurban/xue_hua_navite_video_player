@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.0
+
+- Desktop fullscreen now enters true window fullscreen (Windows borderless, macOS native space, Linux `gtk_window_fullscreen`) instead of only Overlay + SystemChrome.
+- Web fullscreen uses the browser Fullscreen API on the Flutter document. The `<video>` element ignores pointer events so Overlay chrome stays clickable.
+- Escape exits fullscreen. OS / browser leaving fullscreen (Esc, swipe out of a macOS space) syncs `isFullscreen` without a second `exit()` call.
+
 ## 1.2.2
 
 - Windows: refresh the pinned libmpv SDK download to shinchiro/mpv-winbuild-cmake 20260814, and fetch `mpv-dev-aarch64` when targeting `windows-arm64`.

@@ -24,6 +24,7 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 #include <utility>
@@ -64,6 +65,13 @@ namespace xue_hua_navite_video_player {
 		bool QueryMonitorBrightness(DWORD* min_out, DWORD* current_out, DWORD* max_out);
 		bool ApplyMonitorBrightness(DWORD value);
 
+		HWND RootWindow() const;
+		void SetWindowFullscreen(bool enable);
+		void RestoreWindowFullscreen();
+		void NotifyWindowFullscreen(bool fullscreen);
+		void CheckWindowFullscreenLost();
+		std::optional<LRESULT> OnTopLevelWindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam);
+
 		flutter::PluginRegistrarWindows* registrar_;
 		flutter::TextureRegistrar* texture_registrar_;
 		std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>> method_channel_;
@@ -88,6 +96,14 @@ namespace xue_hua_navite_video_player {
 
 		bool brightness_saved_ = false;
 		DWORD saved_brightness_ = 0;
+
+		int window_proc_id_ = -1;
+		bool window_fullscreen_ = false;
+		bool applying_window_fullscreen_ = false;
+		bool window_state_saved_ = false;
+		WINDOWPLACEMENT saved_placement_{};
+		LONG_PTR saved_style_ = 0;
+		LONG_PTR saved_ex_style_ = 0;
 
 		// Dedicated render worker. mpv's SW render is a *heavy* operation (decode +
 		// full-frame RGBA memcpy); running it on the Flutter platform thread blocks

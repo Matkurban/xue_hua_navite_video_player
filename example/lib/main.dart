@@ -213,8 +213,8 @@ class _PlayerPageState extends State<PlayerPage> {
                   ),
                   title: Text(
                     _controller.isFullscreen.value
-                        ? 'Exit immersive'
-                        : 'Enter immersive',
+                        ? 'Exit fullscreen'
+                        : 'Enter fullscreen',
                   ),
                   onTap: () {
                     Navigator.pop(ctx);

@@ -153,6 +153,8 @@ struct _XueHuaNaviteVideoPlayerPlugin {
   XRRCrtcGamma* saved_gamma;
   RRCrtc saved_crtc;
 #endif
+  FlPluginRegistrar* registrar;
+  gulong window_state_handler_id;
 };
 
 G_DEFINE_TYPE(XueHuaNaviteVideoPlayerPlugin, xue_hua_navite_video_player_plugin, g_object_get_type())
@@ -164,6 +166,59 @@ static void send_event(XueHuaNaviteVideoPlayerPlugin* self, const gchar* name, F
   fl_value_set_string_take(map, "value", value);
   fl_event_channel_send(self->event_channel, map, nullptr, nullptr);
 }
+static GtkWindow* plugin_window(XueHuaNaviteVideoPlayerPlugin* self) {
+  if (!self->registrar) return nullptr;
+  FlView* view = fl_plugin_registrar_get_view(self->registrar);
+  if (!view) return nullptr;
+  GtkWidget* toplevel = gtk_widget_get_toplevel(GTK_WIDGET(view));
+  if (!GTK_IS_WINDOW(toplevel)) return nullptr;
+  return GTK_WINDOW(toplevel);
+}
+
+static void plugin_notify_window_fullscreen(XueHuaNaviteVideoPlayerPlugin* self, gboolean fullscreen) {
+  if (!self->method_channel) return;
+  g_autoptr(FlValue) args = fl_value_new_bool(fullscreen);
+  fl_method_channel_invoke_method(self->method_channel, "onWindowFullscreen", args,
+                                  nullptr, nullptr, nullptr);
+}
+
+static gboolean plugin_on_window_state(GtkWidget* /*widget*/, GdkEventWindowState* event,
+                                       gpointer user_data) {
+  auto* self = XUE_HUA_NAVITE_VIDEO_PLAYER_PLUGIN(user_data);
+  if ((event->changed_mask & GDK_WINDOW_STATE_FULLSCREEN) == 0) {
+    return FALSE;
+  }
+  const gboolean fs = (event->new_window_state & GDK_WINDOW_STATE_FULLSCREEN) != 0;
+  plugin_notify_window_fullscreen(self, fs);
+  return FALSE;
+}
+
+static void plugin_bind_window_state(XueHuaNaviteVideoPlayerPlugin* self) {
+  if (self->window_state_handler_id != 0) return;
+  GtkWindow* window = plugin_window(self);
+  if (!window) return;
+  self->window_state_handler_id = g_signal_connect(
+      window, "window-state-event", G_CALLBACK(plugin_on_window_state), self);
+}
+
+static void plugin_set_window_fullscreen(XueHuaNaviteVideoPlayerPlugin* self, gboolean enable) {
+  plugin_bind_window_state(self);
+  GtkWindow* window = plugin_window(self);
+  if (!window) return;
+  if (enable) {
+    gtk_window_fullscreen(window);
+  } else {
+    gtk_window_unfullscreen(window);
+  }
+}
+
+static void plugin_restore_window_fullscreen(XueHuaNaviteVideoPlayerPlugin* self) {
+  GtkWindow* window = plugin_window(self);
+  if (window) {
+    gtk_window_unfullscreen(window);
+  }
+}
+
 static void send_event_int(XueHuaNaviteVideoPlayerPlugin* s, const gchar* n, int64_t v) { send_event(s, n, fl_value_new_int(v)); }
 static void send_event_bool(XueHuaNaviteVideoPlayerPlugin* s, const gchar* n, gboolean v) { send_event(s, n, fl_value_new_bool(v)); }
 static void send_event_null(XueHuaNaviteVideoPlayerPlugin* s, const gchar* n) { send_event(s, n, fl_value_new_null()); }
@@ -579,6 +634,15 @@ static void handle_method_call(XueHuaNaviteVideoPlayerPlugin* self, FlMethodCall
       plugin_set_brightness(self, fl_value_get_float(value));
     }
     response = FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
+  } else if (strcmp(method, "setWindowFullscreen") == 0) {
+    FlValue* args = fl_method_call_get_args(method_call);
+    FlValue* value = args ? fl_value_lookup_string(args, "value") : nullptr;
+    gboolean enable = FALSE;
+    if (value && fl_value_get_type(value) == FL_VALUE_TYPE_BOOL) {
+      enable = fl_value_get_bool(value);
+    }
+    plugin_set_window_fullscreen(self, enable);
+    response = FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
   } else if (strcmp(method, "takeSnapshot") == 0) {
     if (!self->player) {
       response = FL_METHOD_RESPONSE(fl_method_error_response_new("NO_PLAYER", "Player not initialized", nullptr));
@@ -653,11 +717,20 @@ FlMethodResponse* get_platform_version() {
 
 static void xue_hua_navite_video_player_plugin_dispose(GObject* object) {
   auto* self = XUE_HUA_NAVITE_VIDEO_PLAYER_PLUGIN(object);
+  plugin_restore_window_fullscreen(self);
+  if (self->window_state_handler_id != 0) {
+    GtkWindow* window = plugin_window(self);
+    if (window) {
+      g_signal_handler_disconnect(window, self->window_state_handler_id);
+    }
+    self->window_state_handler_id = 0;
+  }
   plugin_restore_brightness(self);
   g_clear_pointer(&self->backlight_path, g_free);
   player_dispose(self);
   g_clear_object(&self->method_channel);
   g_clear_object(&self->event_channel);
+  g_clear_object(&self->registrar);
   G_OBJECT_CLASS(xue_hua_navite_video_player_plugin_parent_class)->dispose(object);
 }
 
@@ -681,6 +754,8 @@ static void xue_hua_navite_video_player_plugin_init(XueHuaNaviteVideoPlayerPlugi
   self->saved_gamma = nullptr;
   self->saved_crtc = None;
 #endif
+  self->registrar = nullptr;
+  self->window_state_handler_id = 0;
 }
 
 static void method_call_cb(FlMethodChannel*, FlMethodCall* method_call, gpointer user_data) {
@@ -702,6 +777,8 @@ void xue_hua_navite_video_player_plugin_register_with_registrar(FlPluginRegistra
       g_object_new(xue_hua_navite_video_player_plugin_get_type(), nullptr));
 
   plugin->texture_registrar = fl_plugin_registrar_get_texture_registrar(registrar);
+  plugin->registrar = FL_PLUGIN_REGISTRAR(g_object_ref(registrar));
+  plugin_bind_window_state(plugin);
 
   g_autoptr(FlStandardMethodCodec) codec = fl_standard_method_codec_new();
 

@@ -97,6 +97,9 @@ class XueHuaNaviteVideoPlayerWeb {
         return 1.0;
       case 'setBrightness':
         return null;
+      case 'setWindowFullscreen':
+        // Browser fullscreen is applied from Dart via the Fullscreen API.
+        return null;
       case 'getPlatformVersion':
         return 'Web';
       default:
@@ -115,6 +118,7 @@ class XueHuaNaviteVideoPlayerWeb {
       ..style.width = '100%'
       ..style.height = '100%'
       ..style.setProperty('object-fit', 'contain')
+      ..style.setProperty('pointer-events', 'none')
       ..style.backgroundColor = 'black'
       ..autoplay = false;
 

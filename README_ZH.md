@@ -6,7 +6,7 @@
 
 | 项 | 说明 |
 |----|------|
-| 当前版本 | `1.1.0` |
+| 当前版本 | `1.3.0` |
 | Flutter | `>= 3.44.0` |
 | Dart SDK | `^3.12.0` |
 | 仓库 | [GitHub](https://github.com/MatkurbanWeiXin/xue_hua_navite_video_player) |
@@ -47,7 +47,7 @@
 - **完整控制**：播放 / 暂停 / 跳转 / 音量 / 静音 / 倍速 / 亮度 / 画面适应模式 / 截图
 - **内置 UI**：开箱即用的 `VideoPlayer`（带控件层）与纯画面 `CorePlayer`
 - **主题扩展**：通过 `ThemeData.extensions` 注册 `VideoPlayerTheme`
-- **全屏**：控制器管理方向与沉浸式系统 UI；视觉全屏 Overlay 需挂载 `VideoPlayer`
+- **全屏**：移动端方向 / 沉浸式 UI、桌面窗口全屏、以及浏览器 Fullscreen API；视觉 Overlay 控件需挂载 `VideoPlayer`
 - **工具能力**：不启动播放会话即可探测时长、抽取封面候选帧
 - **响应式状态**：基于 [`signals_flutter`](https://pub.dev/packages/signals_flutter) 暴露播放状态，便于自定义 UI
 
@@ -454,7 +454,7 @@ CorePlayer(
 );
 ```
 
-> 仅使用 `CorePlayer` 时，调用 `enterFullscreen()` **只会**改变系统方向 / 沉浸式 UI，**不会**出现边缘到边缘的视觉全屏 Overlay。
+> 仅使用 `CorePlayer` 时，调用 `enterFullscreen()` **仍会**切换方向 / 窗口 / 浏览器全屏，**不会**出现边缘到边缘的视觉全屏 Overlay。
 
 ### `VideoPlayer` — 完整控件
 
@@ -560,18 +560,22 @@ final theme = VideoPlayerTheme.of(context);
 ## 全屏契约
 
 ```dart
-await controller.enterFullscreen(); // 更新 isFullscreen + 系统 UI / 方向
+await controller.enterFullscreen(); // 更新 isFullscreen + 平台全屏宿主
 await controller.exitFullscreen();
 ```
 
 | 调用场景 | 效果 |
 |----------|------|
-| 已挂载 `VideoPlayer`，且存在 `Overlay` 祖先 | 方向 / 沉浸式 UI **以及** 铺满的视觉全屏 Overlay |
-| 仅控制器，或只有 `CorePlayer` | 仅方向 / 沉浸式 UI，**无**视觉全屏宿主 |
+| 已挂载 `VideoPlayer`，且存在 `Overlay` 祖先 | 平台全屏 **以及** 铺满的视觉 Overlay 控件 |
+| 仅控制器，或只有 `CorePlayer` | 仅平台全屏，**无**视觉全屏宿主 |
 
-方向策略会参考 `videoAspectRatio`（横竖屏视频选择合适的 `preferredOrientations`）。
+平台宿主：
 
-手势（移动端）仅在 **全屏且 `VideoPlayer` 已挂载** 时生效。快捷键（桌面 / Web）在全屏或非全屏下均可使用，需 **`VideoPlayer` 已挂载且获得焦点**（点击播放器区域即可）。
+- **移动端** — 按 `videoAspectRatio` 选择方向，并进入沉浸式系统 UI
+- **桌面** — 操作系统窗口全屏（Windows 无边框、macOS 原生全屏、Linux `gtk_window_fullscreen`）
+- **Web** — 对 Flutter 文档根使用浏览器 Fullscreen API（不是 `<video>` 元素）
+
+手势（移动端）仅在 **全屏且 `VideoPlayer` 已挂载** 时生效。快捷键（桌面 / Web）在全屏或非全屏下均可使用，需 **`VideoPlayer` 已挂载且获得焦点**（点击播放器区域即可）。`Esc` 退出全屏。
 
 ---
 
@@ -595,6 +599,7 @@ await controller.exitFullscreen();
 | `Space` | 播放 / 暂停 |
 | `←` / `→` | 按步进后退 / 前进 |
 | `↑` / `↓` | 音量 ±0.05 |
+| `Esc` | 退出全屏 |
 
 ---
 
@@ -714,6 +719,7 @@ flutter run
 1. 使用的是 `VideoPlayer`（不是单独的 `CorePlayer`）
 2. 组件已挂载，且祖先树中有 `Overlay`（`MaterialApp` 默认提供）
 3. 通过 `controller.enterFullscreen()` / `toggleFullscreen()` 进入
+4. 桌面 / Web 会同时进入窗口或浏览器文档全屏
 
 ### Asset 播放失败？
 

@@ -36,7 +36,7 @@ class VideoPlayerSlotContext {
 /// the in-tree surface into the overlay host in the same frame (via [GlobalKey])
 /// so Android PlatformViews are not disposed and immediately resized.
 /// Controller-only fullscreen without this widget still applies orientation /
-/// immersive UI.
+/// window / browser fullscreen, without Overlay chrome.
 class VideoPlayer extends StatefulWidget {
   final VideoPlayerController controller;
   final double? aspectRatio;

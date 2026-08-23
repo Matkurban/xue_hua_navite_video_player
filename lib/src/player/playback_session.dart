@@ -30,6 +30,7 @@ class PlaybackSession {
   final BrightnessController _brightness;
 
   StreamSubscription<PlayerEvent>? _eventSubscription;
+  StreamSubscription<bool>? _fullscreenExternalSub;
   Timer? _readyFallbackTimer;
 
   bool _disposed = false;
@@ -99,7 +100,9 @@ class PlaybackSession {
     BrightnessController? brightness,
   }) : _backend = backend ?? ChannelPlayerBackend(),
        _fullscreen = fullscreen ?? SystemChromeFullscreenCoordinator(),
-       _brightness = brightness ?? ChannelBrightnessController();
+       _brightness = brightness ?? ChannelBrightnessController() {
+    _fullscreenExternalSub = _fullscreen.externalChanges.listen(_onExternalFullscreen);
+  }
 
   FlutterSignal<int?> get textureId => _backend.textureId;
 
@@ -449,6 +452,12 @@ class PlaybackSession {
     return _backend.takeSnapshot(savePath: savePath);
   }
 
+  void _onExternalFullscreen(bool fullscreen) {
+    if (_disposed) return;
+    if (isFullscreen.value == fullscreen) return;
+    isFullscreen.value = fullscreen;
+  }
+
   Future<void> dispose() async {
     if (_disposed) return;
     if (isFullscreen.value) {
@@ -461,6 +470,9 @@ class PlaybackSession {
     _openEpoch++;
     _readyFallbackTimer?.cancel();
     _readyFallbackTimer = null;
+    await _fullscreenExternalSub?.cancel();
+    _fullscreenExternalSub = null;
+    _fullscreen.dispose();
     await _eventSubscription?.cancel();
     _eventSubscription = null;
     await _backend.dispose();

@@ -97,15 +97,17 @@ class VideoPlayerController {
     required double devicePixelRatio,
   }) => _session.setVideoViewSize(width: width, height: height, devicePixelRatio: devicePixelRatio);
 
-  /// Enters fullscreen mode: updates [isFullscreen] and applies system chrome /
-  /// preferred orientation (based on [videoAspectRatio]).
+  /// Enters fullscreen mode: updates [isFullscreen], then applies the platform
+  /// host (mobile orientation / immersive UI, desktop window fullscreen, or
+  /// the browser Fullscreen API).
   ///
   /// Visual fullscreen (edge-to-edge Overlay + chrome / gestures) requires a
   /// mounted [VideoPlayer] under an [Overlay] ancestor. Calling this with only
-  /// a [CorePlayer] (or no UI) still changes orientation / immersive UI.
+  /// a [CorePlayer] (or no UI) still changes the window / browser / orientation.
   Future<void> enterFullscreen() => _session.enterFullscreen();
 
-  /// Leaves fullscreen: restores system UI and clears [isFullscreen].
+  /// Leaves fullscreen: restores the window / browser / system UI and clears
+  /// [isFullscreen].
   Future<void> exitFullscreen() => _session.exitFullscreen();
 
   Future<void> toggleFullscreen() => _session.toggleFullscreen();

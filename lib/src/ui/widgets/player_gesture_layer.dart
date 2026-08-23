@@ -218,6 +218,12 @@ KeyEventResult handlePlayerKeyEvent(VideoPlayerController controller, KeyEvent e
     case LogicalKeyboardKey.arrowDown:
       controller.setVolume(math.max(0.0, controller.volume.value - 0.05));
       return KeyEventResult.handled;
+    case LogicalKeyboardKey.escape:
+      if (controller.isFullscreen.value) {
+        controller.exitFullscreen();
+        return KeyEventResult.handled;
+      }
+      return KeyEventResult.ignored;
     default:
       return KeyEventResult.ignored;
   }

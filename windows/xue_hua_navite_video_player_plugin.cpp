@@ -15,8 +15,9 @@
 #include <windows.h>
 
 #include <algorithm>
-
+#include <cmath>
 #include <cstring>
+#include <optional>
 #include <filesystem>
 #include <memory>
 #include <sstream>
@@ -116,9 +117,20 @@ namespace xue_hua_navite_video_player {
 			// callback, so this does not burn CPU on video decode.
 			SetTimer(message_window_, /*id=*/1, /*ms=*/100, nullptr);
 		}
+		if (registrar_) {
+			window_proc_id_ = registrar_->RegisterTopLevelWindowProcDelegate(
+				[this](HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam) -> std::optional<LRESULT> {
+					return OnTopLevelWindowProc(hwnd, message, wparam, lparam);
+				});
+		}
 	}
 
 	XueHuaNaviteVideoPlayerPlugin::~XueHuaNaviteVideoPlayerPlugin() {
+		RestoreWindowFullscreen();
+		if (window_proc_id_ >= 0 && registrar_) {
+			registrar_->UnregisterTopLevelWindowProcDelegate(window_proc_id_);
+			window_proc_id_ = -1;
+		}
 		RestoreBrightness();
 		DisposePlayer();
 		JoinProbeWorkers();
@@ -401,6 +413,115 @@ namespace xue_hua_navite_video_player {
 		ApplyMonitorBrightness(saved_brightness_);
 	}
 
+	namespace {
+		bool RectsAlmostEqual(const RECT& a, const RECT& b, int slop = 2) {
+			return std::abs(a.left - b.left) <= slop && std::abs(a.top - b.top) <= slop &&
+				std::abs(a.right - b.right) <= slop && std::abs(a.bottom - b.bottom) <= slop;
+		}
+
+		bool IsBorderlessMonitorFullscreen(HWND hwnd) {
+			MONITORINFO mi{};
+			mi.cbSize = sizeof(mi);
+			if (!GetMonitorInfoW(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST), &mi)) {
+				return false;
+			}
+			RECT wr{};
+			if (!GetWindowRect(hwnd, &wr)) return false;
+			const LONG_PTR style = GetWindowLongPtrW(hwnd, GWL_STYLE);
+			const bool no_caption = (style & WS_CAPTION) == 0;
+			return no_caption && RectsAlmostEqual(wr, mi.rcMonitor);
+		}
+	}  // namespace
+
+	HWND XueHuaNaviteVideoPlayerPlugin::RootWindow() const {
+		HWND hwnd = nullptr;
+		if (registrar_ && registrar_->GetView()) {
+			hwnd = registrar_->GetView()->GetNativeWindow();
+		}
+		if (!hwnd) return nullptr;
+		HWND root = GetAncestor(hwnd, GA_ROOT);
+		return root ? root : hwnd;
+	}
+
+	void XueHuaNaviteVideoPlayerPlugin::NotifyWindowFullscreen(bool fullscreen) {
+		if (!method_channel_) return;
+		method_channel_->InvokeMethod(
+			"onWindowFullscreen",
+			std::make_unique<flutter::EncodableValue>(fullscreen));
+	}
+
+	void XueHuaNaviteVideoPlayerPlugin::RestoreWindowFullscreen() {
+		HWND hwnd = RootWindow();
+		if (!window_state_saved_ || !hwnd) {
+			window_fullscreen_ = false;
+			window_state_saved_ = false;
+			return;
+		}
+		SetWindowLongPtrW(hwnd, GWL_STYLE, saved_style_);
+		SetWindowLongPtrW(hwnd, GWL_EXSTYLE, saved_ex_style_);
+		SetWindowPlacement(hwnd, &saved_placement_);
+		SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
+			SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+		window_fullscreen_ = false;
+		window_state_saved_ = false;
+	}
+
+	void XueHuaNaviteVideoPlayerPlugin::SetWindowFullscreen(bool enable) {
+		HWND hwnd = RootWindow();
+		if (!hwnd) return;
+
+		applying_window_fullscreen_ = true;
+		if (enable) {
+			if (!window_fullscreen_) {
+				saved_placement_.length = sizeof(WINDOWPLACEMENT);
+				GetWindowPlacement(hwnd, &saved_placement_);
+				saved_style_ = GetWindowLongPtrW(hwnd, GWL_STYLE);
+				saved_ex_style_ = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+				window_state_saved_ = true;
+
+				MONITORINFO mi{};
+				mi.cbSize = sizeof(mi);
+				GetMonitorInfoW(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST), &mi);
+
+				SetWindowLongPtrW(hwnd, GWL_STYLE,
+					saved_style_ & ~(WS_CAPTION | WS_THICKFRAME | WS_SYSMENU | WS_MAXIMIZEBOX | WS_MINIMIZEBOX));
+				SetWindowLongPtrW(hwnd, GWL_EXSTYLE,
+					saved_ex_style_ & ~(WS_EX_DLGMODALFRAME | WS_EX_WINDOWEDGE | WS_EX_CLIENTEDGE | WS_EX_STATICEDGE));
+				SetWindowPos(hwnd, HWND_TOP,
+					mi.rcMonitor.left, mi.rcMonitor.top,
+					mi.rcMonitor.right - mi.rcMonitor.left,
+					mi.rcMonitor.bottom - mi.rcMonitor.top,
+					SWP_FRAMECHANGED | SWP_NOOWNERZORDER);
+				window_fullscreen_ = true;
+			}
+		} else {
+			RestoreWindowFullscreen();
+		}
+		applying_window_fullscreen_ = false;
+	}
+
+	void XueHuaNaviteVideoPlayerPlugin::CheckWindowFullscreenLost() {
+		if (applying_window_fullscreen_ || !window_fullscreen_) return;
+		HWND hwnd = RootWindow();
+		if (!hwnd) return;
+		if (IsBorderlessMonitorFullscreen(hwnd)) return;
+		applying_window_fullscreen_ = true;
+		RestoreWindowFullscreen();
+		applying_window_fullscreen_ = false;
+		NotifyWindowFullscreen(false);
+	}
+
+	std::optional<LRESULT> XueHuaNaviteVideoPlayerPlugin::OnTopLevelWindowProc(
+		HWND /*hwnd*/, UINT message, WPARAM /*wparam*/, LPARAM /*lparam*/) {
+		if (applying_window_fullscreen_ || !window_fullscreen_) {
+			return std::nullopt;
+		}
+		if (message == WM_WINDOWPOSCHANGED || message == WM_SIZE || message == WM_EXITSIZEMOVE) {
+			CheckWindowFullscreenLost();
+		}
+		return std::nullopt;
+	}
+
 	void XueHuaNaviteVideoPlayerPlugin::HandleMethodCall(
 		const flutter::MethodCall<flutter::EncodableValue>& call,
 		std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
@@ -482,6 +603,15 @@ namespace xue_hua_navite_video_player {
 				if (const auto* v = GetArg<double>(args, "value")) value = *v;
 			}
 			SetBrightness(value);
+			result->Success();
+			return;
+		}
+		if (name == "setWindowFullscreen") {
+			bool enable = false;
+			if (args) {
+				if (const auto* v = GetArg<bool>(args, "value")) enable = *v;
+			}
+			SetWindowFullscreen(enable);
 			result->Success();
 			return;
 		}

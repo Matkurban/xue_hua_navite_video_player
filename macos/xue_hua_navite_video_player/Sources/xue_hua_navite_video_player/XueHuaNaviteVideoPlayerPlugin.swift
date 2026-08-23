@@ -49,6 +49,9 @@ public class XueHuaNaviteVideoPlayerPlugin: NSObject, FlutterPlugin {
     private var registrar: FlutterPluginRegistrar?
     private var videoPlayer: NativeVideoPlayer?
     private var savedBrightness: Float?
+    private var enterFullscreenObserver: NSObjectProtocol?
+    private var exitFullscreenObserver: NSObjectProtocol?
+    private var windowFullscreen = false
 
     public static func register(with registrar: FlutterPluginRegistrar) {
         let instance = XueHuaNaviteVideoPlayerPlugin()
@@ -75,9 +78,12 @@ public class XueHuaNaviteVideoPlayerPlugin: NSObject, FlutterPlugin {
             ),
             withId: kPlayerPlatformViewType
         )
+        instance.startObservingWindowFullscreen()
     }
 
     public func detachFromEngine(for _: FlutterPluginRegistrar) {
+        restoreWindowFullscreen()
+        stopObservingWindowFullscreen()
         restoreBrightness()
         videoPlayer?.dispose()
         methodChannel?.setMethodCallHandler(nil)
@@ -207,6 +213,10 @@ public class XueHuaNaviteVideoPlayerPlugin: NSObject, FlutterPlugin {
             }
             applyBrightness(value)
             result(nil)
+        case "setWindowFullscreen":
+            let value = (call.arguments as? [String: Any])?["value"] as? Bool ?? false
+            setWindowFullscreen(value)
+            result(nil)
         case "takeSnapshot":
             player.takeSnapshot(result: result)
         case "extractCovers":
@@ -298,6 +308,70 @@ public class XueHuaNaviteVideoPlayerPlugin: NSObject, FlutterPlugin {
             restore()
         } else {
             DispatchQueue.main.sync(execute: restore)
+        }
+    }
+
+    private func hostWindow() -> NSWindow? {
+        registrar?.view?.window ?? NSApp.keyWindow ?? NSApp.mainWindow
+    }
+
+    private func notifyWindowFullscreen(_ value: Bool) {
+        methodChannel?.invokeMethod("onWindowFullscreen", arguments: value)
+    }
+
+    private func setWindowFullscreen(_ enable: Bool) {
+        guard let window = hostWindow() else { return }
+        window.collectionBehavior.insert(.fullScreenPrimary)
+        let isFs = window.styleMask.contains(.fullScreen)
+        if enable != isFs {
+            window.toggleFullScreen(nil)
+        }
+        windowFullscreen = enable
+    }
+
+    private func restoreWindowFullscreen() {
+        guard let window = hostWindow(), window.styleMask.contains(.fullScreen) else {
+            windowFullscreen = false
+            return
+        }
+        window.toggleFullScreen(nil)
+        windowFullscreen = false
+    }
+
+    private func startObservingWindowFullscreen() {
+        let center = NotificationCenter.default
+        enterFullscreenObserver = center.addObserver(
+            forName: NSWindow.didEnterFullScreenNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let self else { return }
+            guard let window = notification.object as? NSWindow, window == self.hostWindow()
+            else { return }
+            self.windowFullscreen = true
+            self.notifyWindowFullscreen(true)
+        }
+        exitFullscreenObserver = center.addObserver(
+            forName: NSWindow.didExitFullScreenNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let self else { return }
+            guard let window = notification.object as? NSWindow, window == self.hostWindow()
+            else { return }
+            self.windowFullscreen = false
+            self.notifyWindowFullscreen(false)
+        }
+    }
+
+    private func stopObservingWindowFullscreen() {
+        if let enterFullscreenObserver {
+            NotificationCenter.default.removeObserver(enterFullscreenObserver)
+            self.enterFullscreenObserver = nil
+        }
+        if let exitFullscreenObserver {
+            NotificationCenter.default.removeObserver(exitFullscreenObserver)
+            self.exitFullscreenObserver = nil
         }
     }
 
