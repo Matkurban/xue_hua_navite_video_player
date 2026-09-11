@@ -1,5 +1,5 @@
 import 'package:chat_context_menu/chat_context_menu.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../style/video_player_theme.dart';
 

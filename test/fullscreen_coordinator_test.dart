@@ -12,18 +12,22 @@ void main() {
 
   tearDown(() {
     debugDefaultTargetPlatformOverride = null;
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(channel, null);
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
+      channel,
+      null,
+    );
   });
 
   test('desktop enter / exit invokes setWindowFullscreen', () async {
     debugDefaultTargetPlatformOverride = TargetPlatform.windows;
     final calls = <MethodCall>[];
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(channel, (call) async {
-          calls.add(call);
-          return null;
-        });
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
+      channel,
+      (call) async {
+        calls.add(call);
+        return null;
+      },
+    );
 
     final coord = SystemChromeFullscreenCoordinator(channel: channel, isWeb: false);
     await coord.enter(landscapeVideo: true);
@@ -59,9 +63,7 @@ void main() {
 
     await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.handlePlatformMessage(
       channel.name,
-      const StandardMethodCodec().encodeMethodCall(
-        const MethodCall('onWindowFullscreen', false),
-      ),
+      const StandardMethodCodec().encodeMethodCall(const MethodCall('onWindowFullscreen', false)),
       (_) {},
     );
     await Future<void>.delayed(Duration.zero);

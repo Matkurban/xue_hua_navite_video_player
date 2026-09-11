@@ -1,8 +1,13 @@
 include: package:flutter_lints/flutter.yaml
 
 analyzer:
-  plugins:
-    - signals_lint
+  exclude:
+    - build/**
+    - android/**
+    - ios/**
+    - windows/**
+    - macos/**
+    - linux/**
 
 formatter: 
   page_width: 100

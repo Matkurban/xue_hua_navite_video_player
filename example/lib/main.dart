@@ -1,5 +1,5 @@
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:xue_hua_navite_video_player/xue_hua_navite_video_player.dart';
 import 'package:signals_flutter/signals_flutter.dart';
 
@@ -259,9 +259,8 @@ class _PlayerPageState extends State<PlayerPage> {
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Snapshot failed: $e')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Snapshot failed: $e')));
     }
   }
 

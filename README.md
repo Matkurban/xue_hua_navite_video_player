@@ -6,9 +6,9 @@ A cross-platform Flutter audio/video player plugin. Dart exposes a unified contr
 
 | | |
 |---|---|
-| Version | `1.3.0` |
-| Flutter | `>= 3.44.0` |
-| Dart SDK | `^3.12.0` |
+| Version | `2.0.0` |
+| Flutter | `>= 3.47.0` |
+| Dart SDK | `^3.13.0` |
 | Repository | [GitHub](https://github.com/MatkurbanWeiXin/xue_hua_navite_video_player) |
 | Homepage | [jsontodart.cn](https://jsontodart.cn) |
 | License | Apache 2.0 |
@@ -17,25 +17,47 @@ A cross-platform Flutter audio/video player plugin. Dart exposes a unified contr
 
 ## Table of contents
 
-- [Features](#features)
-- [Platform engines & rendering](#platform-engines--rendering)
-- [Architecture](#architecture)
-- [Installation](#installation)
-- [Platform setup](#platform-setup)
-- [Quick start](#quick-start)
-- [Important: single active session](#important-single-active-session)
-- [VideoSource](#videosource)
-- [VideoPlayerController](#videoplayercontroller)
-- [PlayState](#playstate)
-- [Widgets](#widgets)
-- [VideoPlayerTheme](#videoplayertheme)
-- [Fullscreen contract](#fullscreen-contract)
-- [Gestures & keyboard](#gestures--keyboard)
-- [Snapshots & media probe](#snapshots--media-probe)
-- [Custom UI with Signals](#custom-ui-with-signals)
-- [Example](#example)
-- [FAQ](#faq)
-- [License](#license)
+- [xue\_hua\_navite\_video\_player](#xue_hua_navite_video_player)
+  - [Table of contents](#table-of-contents)
+  - [Features](#features)
+  - [Platform engines \& rendering](#platform-engines--rendering)
+  - [Architecture](#architecture)
+  - [Installation](#installation)
+  - [Platform setup](#platform-setup)
+    - [Android](#android)
+    - [iOS](#ios)
+    - [macOS](#macos)
+    - [Linux](#linux)
+    - [Windows](#windows)
+    - [Web](#web)
+  - [Quick start](#quick-start)
+  - [Important: single active session](#important-single-active-session)
+  - [VideoSource](#videosource)
+  - [VideoPlayerController](#videoplayercontroller)
+    - [Lifecycle](#lifecycle)
+    - [Open \& play](#open--play)
+    - [Volume, mute, speed, brightness](#volume-mute-speed-brightness)
+    - [Skip step \& aspect mode](#skip-step--aspect-mode)
+    - [Fullscreen](#fullscreen)
+    - [Snapshot](#snapshot)
+    - [Reactive signals](#reactive-signals)
+  - [PlayState](#playstate)
+  - [Widgets](#widgets)
+    - [`CorePlayer` — surface only](#coreplayer--surface-only)
+    - [`VideoPlayer` — full chrome](#videoplayer--full-chrome)
+  - [VideoPlayerTheme](#videoplayertheme)
+  - [Fullscreen contract](#fullscreen-contract)
+  - [Gestures \& keyboard](#gestures--keyboard)
+    - [Mobile (fullscreen)](#mobile-fullscreen)
+    - [Desktop / Web (focused — fullscreen or inline)](#desktop--web-focused--fullscreen-or-inline)
+  - [Snapshots \& media probe](#snapshots--media-probe)
+    - [Current-frame snapshot](#current-frame-snapshot)
+    - [Cover candidates (no playback session)](#cover-candidates-no-playback-session)
+    - [Duration probe (no playback session)](#duration-probe-no-playback-session)
+  - [Custom UI with Signals](#custom-ui-with-signals)
+  - [Example](#example)
+  - [FAQ](#faq)
+  - [License](#license)
 
 ---
 

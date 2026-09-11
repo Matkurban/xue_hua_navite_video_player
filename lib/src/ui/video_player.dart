@@ -1,8 +1,8 @@
 import 'dart:async';
 
-import 'package:flutter/cupertino.dart';
+import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:xue_hua_navite_video_player/src/data/enums/aspect_ratio_mode.dart';
 import 'package:xue_hua_navite_video_player/src/data/enums/skip_second_type.dart';
 import 'package:xue_hua_navite_video_player/src/ui/core_player.dart';

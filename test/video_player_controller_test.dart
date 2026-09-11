@@ -12,6 +12,7 @@ import 'package:xue_hua_navite_video_player/src/player/playback_session.dart';
 import 'package:xue_hua_navite_video_player/src/player/player_backend.dart';
 import 'package:xue_hua_navite_video_player/src/player/player_event.dart';
 import 'package:xue_hua_navite_video_player/src/player/video_player_controller.dart';
+
 import 'dart:async';
 import 'dart:io';
 

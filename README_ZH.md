@@ -6,9 +6,9 @@
 
 | 项 | 说明 |
 |----|------|
-| 当前版本 | `1.3.0` |
-| Flutter | `>= 3.44.0` |
-| Dart SDK | `^3.12.0` |
+| 当前版本 | `2.0.0` |
+| Flutter | `>= 3.47.0` |
+| Dart SDK | `^3.13.0` |
 | 仓库 | [GitHub](https://github.com/MatkurbanWeiXin/xue_hua_navite_video_player) |
 | 主页 | [jsontodart.cn](https://jsontodart.cn) |
 | 许可证 | Apache 2.0 |
@@ -17,25 +17,55 @@
 
 ## 目录
 
-- [功能一览](#功能一览)
-- [平台引擎与渲染方式](#平台引擎与渲染方式)
-- [架构概览](#架构概览)
-- [安装](#安装)
-- [平台配置](#平台配置)
-- [快速开始](#快速开始)
-- [重要约束：单一活跃会话](#重要约束单一活跃会话)
-- [媒体来源 VideoSource](#媒体来源-videosource)
-- [控制器 VideoPlayerController](#控制器-videoplayercontroller)
-- [播放状态 PlayState](#播放状态-playstate)
-- [UI 组件](#ui-组件)
-- [主题 VideoPlayerTheme](#主题-videoplayertheme)
-- [全屏契约](#全屏契约)
-- [手势与快捷键](#手势与快捷键)
-- [截图与媒体探测](#截图与媒体探测)
-- [自定义 UI（Signals）](#自定义-ui-signals)
-- [示例应用](#示例应用)
-- [常见问题](#常见问题)
-- [许可证](#许可证)
+- [xue\_hua\_navite\_video\_player](#xue_hua_navite_video_player)
+  - [目录](#目录)
+  - [功能一览](#功能一览)
+  - [平台引擎与渲染方式](#平台引擎与渲染方式)
+  - [架构概览](#架构概览)
+  - [安装](#安装)
+  - [平台配置](#平台配置)
+    - [Android](#android)
+    - [iOS](#ios)
+    - [macOS](#macos)
+    - [Linux](#linux)
+    - [Windows](#windows)
+    - [Web](#web)
+  - [快速开始](#快速开始)
+  - [重要约束：单一活跃会话](#重要约束单一活跃会话)
+  - [媒体来源 VideoSource](#媒体来源-videosource)
+  - [控制器 VideoPlayerController](#控制器-videoplayercontroller)
+    - [生命周期](#生命周期)
+    - [打开与播放](#打开与播放)
+    - [音量、静音、倍速、亮度](#音量静音倍速亮度)
+    - [跳过步进与画面模式](#跳过步进与画面模式)
+    - [全屏](#全屏)
+    - [截图](#截图)
+    - [响应式 Signals](#响应式-signals)
+  - [播放状态 PlayState](#播放状态-playstate)
+  - [UI 组件](#ui-组件)
+    - [`CorePlayer` — 纯画面](#coreplayer--纯画面)
+    - [`VideoPlayer` — 完整控件](#videoplayer--完整控件)
+      - [自定义槽位](#自定义槽位)
+      - [视觉全屏](#视觉全屏)
+  - [主题 VideoPlayerTheme](#主题-videoplayertheme)
+  - [全屏契约](#全屏契约)
+  - [手势与快捷键](#手势与快捷键)
+    - [移动端（全屏）](#移动端全屏)
+    - [桌面 / Web（已聚焦 — 全屏或非全屏）](#桌面--web已聚焦--全屏或非全屏)
+  - [截图与媒体探测](#截图与媒体探测)
+    - [当前帧截图](#当前帧截图)
+    - [封面候选帧（无需起播）](#封面候选帧无需起播)
+    - [探测时长（无需起播）](#探测时长无需起播)
+  - [自定义 UI（Signals）](#自定义-uisignals)
+  - [示例应用](#示例应用)
+  - [常见问题](#常见问题)
+    - [为什么同时创建两个控制器，第二个会打断第一个？](#为什么同时创建两个控制器第二个会打断第一个)
+    - [全屏后画面没有铺满？](#全屏后画面没有铺满)
+    - [Asset 播放失败？](#asset-播放失败)
+    - [Linux 编译报找不到 mpv？](#linux-编译报找不到-mpv)
+    - [Web 上无法截图或黑屏？](#web-上无法截图或黑屏)
+    - [`initialize()` 要调几次？](#initialize-要调几次)
+  - [许可证](#许可证)
 
 ---
 

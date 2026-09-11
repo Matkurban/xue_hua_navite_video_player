@@ -2,10 +2,10 @@ name: xue_hua_navite_video_player_example
 description: "Demonstrates how to use the xue_hua_navite_video_player plugin."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
-publish_to: 'none' # Remove this line if you wish to publish to pub.dev
+publish_to: "none" # Remove this line if you wish to publish to pub.dev
 
 environment:
-  sdk: ^3.11.4
+  sdk: ^3.13.0
 
 # Dependencies specify other packages that your package needs in order to work.
 # To automatically upgrade your package dependencies to the latest versions
@@ -30,6 +30,8 @@ dependencies:
   cupertino_icons: ^1.0.9
   signals_flutter: ^7.0.0
 
+  material_ui: any
+
 dev_dependencies:
   integration_test:
     sdk: flutter
@@ -48,7 +50,6 @@ dev_dependencies:
 
 # The following section is specific to Flutter packages.
 flutter:
-
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in
   # the material Icons class.
