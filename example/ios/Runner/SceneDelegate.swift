@@ -1,4 +1,6 @@
 import Flutter
 import UIKit
 
-class SceneDelegate: FlutterSceneDelegate {}
+class SceneDelegate: FlutterSceneDelegate {
+
+}
