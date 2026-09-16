@@ -3,7 +3,6 @@ package com.kurban.xue_hua_navite_video_player
 import android.app.Activity
 import android.graphics.Bitmap
 import android.media.MediaMetadataRetriever
-import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
@@ -18,6 +17,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.VideoSize
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
@@ -37,8 +37,19 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.abs
+import androidx.core.graphics.createBitmap
+import androidx.core.net.toUri
+import androidx.core.graphics.scale
+import android.media.MediaFormat
+import androidx.media3.exoplayer.DefaultRenderersFactory
+import androidx.media3.exoplayer.mediacodec.DefaultMediaCodecAdapterFactory
+import androidx.media3.exoplayer.mediacodec.MediaCodecAdapter
+import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 
 /// 插件主类：ExoPlayer + PlatformView（PlayerView.resizeMode）。
+@UnstableApi
 class XueHuaNaviteVideoPlayerPlugin :
     FlutterPlugin,
     MethodCallHandler,
@@ -61,6 +72,11 @@ class XueHuaNaviteVideoPlayerPlugin :
     private var lifecycleOwner: LifecycleOwner? = null
     private var savedBrightness: Float? = null
 
+    private var lastReportedDuration: Long = -1L
+
+    private var isPollingPosition = false
+
+
     fun attachPlayerView(view: PlayerView) {
         playerView = view
         view.resizeMode = resizeMode
@@ -73,17 +89,6 @@ class XueHuaNaviteVideoPlayerPlugin :
         }
     }
 
-    private val positionRunnable = object : Runnable {
-        override fun run() {
-            exoPlayer?.let { player ->
-                val state = player.playbackState
-                if (state == Player.STATE_READY || state == Player.STATE_BUFFERING) {
-                    sendEvent("position", player.currentPosition)
-                }
-            }
-            mainHandler.postDelayed(this, 200)
-        }
-    }
 
     override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         flutterPluginBinding = binding
@@ -94,7 +99,8 @@ class XueHuaNaviteVideoPlayerPlugin :
         methodChannel = MethodChannel(binding.binaryMessenger, "xue_hua_navite_video_player/player")
         methodChannel.setMethodCallHandler(this)
 
-        eventChannel = EventChannel(binding.binaryMessenger, "xue_hua_navite_video_player/player/events")
+        eventChannel =
+            EventChannel(binding.binaryMessenger, "xue_hua_navite_video_player/player/events")
         eventChannel.setStreamHandler(this)
 
         binding.platformViewRegistry.registerViewFactory(
@@ -130,6 +136,7 @@ class XueHuaNaviteVideoPlayerPlugin :
     }
 
     override fun onStop(owner: LifecycleOwner) {
+        stopPositionPolling()
         val player = exoPlayer ?: return
         if (player.isPlaying) {
             player.pause()
@@ -154,7 +161,18 @@ class XueHuaNaviteVideoPlayerPlugin :
 
     override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
         eventSink = events
+        exoPlayer?.let { player ->
+            val dur = player.duration
+            if (dur != C.TIME_UNSET && dur > 0L) {
+                lastReportedDuration = dur
+                sendEvent("duration", dur)
+            }
+            sendEvent("position", player.currentPosition)
+            sendEvent("playing", player.isPlaying)
+            sendEvent("buffering", player.playbackState == Player.STATE_BUFFERING)
+        }
     }
+
 
     override fun onCancel(arguments: Any?) {
         eventSink = null
@@ -191,7 +209,6 @@ class XueHuaNaviteVideoPlayerPlugin :
         return player
     }
 
-    /// 创建 ExoPlayer；画面由 PlatformView（PlayerView）显示。
     private fun handleCreate(result: Result) {
         val binding = flutterPluginBinding ?: run {
             result.error("NO_ENGINE", "Flutter engine not attached", null)
@@ -200,7 +217,52 @@ class XueHuaNaviteVideoPlayerPlugin :
 
         releasePlayer()
 
-        val player = ExoPlayer.Builder(binding.applicationContext).build()
+        val context = binding.applicationContext
+        val defaultAdapterFactory = DefaultMediaCodecAdapterFactory(context)
+
+        // 1. 动态对齐奇数分辨率
+        val renderersFactory = object : DefaultRenderersFactory(context) {
+            override fun getCodecAdapterFactory(): MediaCodecAdapter.Factory {
+                return MediaCodecAdapter.Factory { configuration ->
+                    val mediaFormat = configuration.mediaFormat
+
+                    fun makeEven(key: String) {
+                        if (mediaFormat.containsKey(key)) {
+                            val value = mediaFormat.getInteger(key)
+                            if (value % 2 != 0) {
+                                mediaFormat.setInteger(key, value + 1)
+                            }
+                        }
+                    }
+
+                    makeEven(MediaFormat.KEY_WIDTH)
+                    makeEven(MediaFormat.KEY_MAX_WIDTH)
+                    makeEven(MediaFormat.KEY_HEIGHT)
+                    makeEven(MediaFormat.KEY_MAX_HEIGHT)
+
+                    defaultAdapterFactory.createAdapter(configuration)
+                }
+            }
+        }.apply {
+            setEnableDecoderFallback(true)
+        }
+
+        // 2. 配置 HttpDataSource，添加标准浏览器 User-Agent，允许跨协议 302 重定向
+        val httpDataSourceFactory = DefaultHttpDataSource.Factory()
+            .setUserAgent("Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36")
+            .setAllowCrossProtocolRedirects(true)
+            .setConnectTimeoutMs(15_000)
+            .setReadTimeoutMs(15_000)
+
+        val dataSourceFactory = DefaultDataSource.Factory(context, httpDataSourceFactory)
+        val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory)
+
+        // 3. 构建 ExoPlayer
+        val player = ExoPlayer.Builder(context)
+            .setRenderersFactory(renderersFactory)
+            .setMediaSourceFactory(mediaSourceFactory)
+            .build()
+
         player.setAudioAttributes(
             AudioAttributes.Builder()
                 .setUsage(C.USAGE_MEDIA)
@@ -213,9 +275,9 @@ class XueHuaNaviteVideoPlayerPlugin :
         playerView?.player = player
         playerView?.resizeMode = resizeMode
 
-        mainHandler.post(positionRunnable)
         result.success(0)
     }
+
 
     /// 打开媒体 URL。
     private fun handleOpen(call: MethodCall, result: Result) {
@@ -224,6 +286,7 @@ class XueHuaNaviteVideoPlayerPlugin :
             return
         }
         val player = requirePlayer(result) ?: return
+        lastReportedDuration = -1L
         currentUrl = url
         val mediaItem = MediaItem.fromUri(url)
         player.setMediaItem(mediaItem)
@@ -248,8 +311,11 @@ class XueHuaNaviteVideoPlayerPlugin :
         val player = requirePlayer(result) ?: return
         val position = call.argument<Number>("position")?.toLong() ?: 0L
         player.seekTo(position)
+        // 拖动时直接主动发一次
+        sendEvent("position", position)
         result.success(null)
     }
+
 
     private fun handleSetVolume(call: MethodCall, result: Result) {
         val player = requirePlayer(result) ?: return
@@ -342,7 +408,8 @@ class XueHuaNaviteVideoPlayerPlugin :
     }
 
     private fun releasePlayer() {
-        mainHandler.removeCallbacks(positionRunnable)
+        lastReportedDuration = -1L
+        stopPositionPolling()
         playerView?.player = null
         exoPlayer?.removeListener(playerListener)
         exoPlayer?.release()
@@ -367,46 +434,77 @@ class XueHuaNaviteVideoPlayerPlugin :
         }
     }
 
-    /// True while ExoPlayer is buffering or still loading media for playback.
-    private fun publishBuffering(player: ExoPlayer?) {
-        if (player == null) {
-            sendEvent("buffering", false)
-            return
+    private fun checkAndSendDuration() {
+        val player = exoPlayer ?: return
+        val dur = player.duration
+        if (dur != C.TIME_UNSET && dur > 0L && dur != lastReportedDuration) {
+            lastReportedDuration = dur
+            sendEvent("duration", dur)
         }
-        val buffering =
-            player.playbackState == Player.STATE_BUFFERING || player.isLoading
-        sendEvent("buffering", buffering)
     }
 
     private val playerListener = object : Player.Listener {
+        // 监听播放/暂停状态
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             sendEvent("playing", isPlaying)
-        }
-
-        override fun onIsLoadingChanged(isLoading: Boolean) {
-            publishBuffering(exoPlayer)
+            if (isPlaying) {
+                // 开始播放：立即发一次当前位置，并启动轮询
+                exoPlayer?.let { sendEvent("position", it.currentPosition) }
+                startPositionPolling()
+            } else {
+                // 暂停：立即发一次停止时刻的位置，并停止轮询
+                exoPlayer?.let { sendEvent("position", it.currentPosition) }
+                stopPositionPolling()
+            }
         }
 
         override fun onPlaybackStateChanged(playbackState: Int) {
             when (playbackState) {
-                Player.STATE_BUFFERING -> sendEvent("buffering", true)
+                Player.STATE_BUFFERING -> {
+                    sendEvent("buffering", true)
+                    stopPositionPolling() // 卡顿缓冲时暂停进度刷新
+                }
+
                 Player.STATE_READY -> {
-                    publishBuffering(exoPlayer)
-                    exoPlayer?.let { player ->
-                        val duration = player.duration
-                        if (duration != C.TIME_UNSET && duration >= 0L) {
-                            sendEvent("duration", duration)
-                        }
+                    sendEvent("buffering", false)
+                    checkAndSendDuration() // 由事件驱动获取时长
+                    if (exoPlayer?.isPlaying == true) {
+                        startPositionPolling()
                     }
                 }
 
-                Player.STATE_ENDED -> sendEvent("completed", null)
-                Player.STATE_IDLE -> { /* no-op */
+                Player.STATE_ENDED -> {
+                    stopPositionPolling()
+                    sendEvent("buffering", false)
+                    // 播放结束时，直接发送总时长作为最终位置
+                    exoPlayer?.duration?.takeIf { it > 0 }?.let { sendEvent("position", it) }
+                    sendEvent("completed", null)
+                }
+
+                Player.STATE_IDLE -> {
+                    stopPositionPolling()
+                    sendEvent("buffering", false)
                 }
             }
         }
 
+        // 媒体源解析就绪时立即获取总时长（完全自触发）
+        override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
+            checkAndSendDuration()
+        }
+
+        // 拖动进度条（Seek）触发的不连续点，主动回传
+        override fun onPositionDiscontinuity(
+            oldPosition: Player.PositionInfo,
+            newPosition: Player.PositionInfo,
+            reason: Int
+        ) {
+            sendEvent("position", newPosition.positionMs)
+        }
+
         override fun onPlayerError(error: PlaybackException) {
+            stopPositionPolling()
+            sendEvent("buffering", false)
             sendEvent("error", error.message ?: "Unknown playback error")
         }
 
@@ -414,16 +512,18 @@ class XueHuaNaviteVideoPlayerPlugin :
             val rawW = videoSize.width
             val rawH = videoSize.height
             if (rawW <= 0 || rawH <= 0) return
-            val par = if (videoSize.pixelWidthHeightRatio > 0f) videoSize.pixelWidthHeightRatio else 1f
+            val par =
+                if (videoSize.pixelWidthHeightRatio > 0f) videoSize.pixelWidthHeightRatio else 1f
             val displayW = (rawW * par).toInt().coerceAtLeast(1)
 
             val size = HashMap<String, Any>()
             size["width"] = displayW
             size["height"] = rawH
-            size["rotationDegrees"] = videoSize.unappliedRotationDegrees
+            size["rotationDegrees"] = exoPlayer?.videoFormat?.rotationDegrees ?: 0
             sendEvent("videoSize", size)
         }
     }
+
 
     // region Snapshot / Covers
 
@@ -440,11 +540,12 @@ class XueHuaNaviteVideoPlayerPlugin :
                     return
                 }
             }
+
             is SurfaceView -> {
                 val w = surface.width
                 val h = surface.height
                 if (w > 0 && h > 0 && surface.holder.surface?.isValid == true) {
-                    val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+                    val bmp = createBitmap(w, h)
                     PixelCopy.request(surface, bmp, { copyResult ->
                         if (generation != engineGeneration.get() || flutterPluginBinding == null) {
                             bmp.recycle()
@@ -479,7 +580,8 @@ class XueHuaNaviteVideoPlayerPlugin :
             val retriever = MediaMetadataRetriever()
             try {
                 setDataSourceForUrl(retriever, url, appContext)
-                val bmp = retriever.getFrameAtTime(positionUs, MediaMetadataRetriever.OPTION_CLOSEST)
+                val bmp =
+                    retriever.getFrameAtTime(positionUs, MediaMetadataRetriever.OPTION_CLOSEST)
                 if (bmp == null) {
                     postWorkerResult(generation) {
                         result.error("NO_FRAME", "Failed to extract frame", null)
@@ -574,8 +676,9 @@ class XueHuaNaviteVideoPlayerPlugin :
                 val n = maxOf(candidates, count)
                 for (i in 0 until n) {
                     val t = lower + (span * (i + 0.5) / n).toLong()
-                    val bmp = retriever.getFrameAtTime(t * 1000L, MediaMetadataRetriever.OPTION_CLOSEST)
-                        ?: continue
+                    val bmp =
+                        retriever.getFrameAtTime(t * 1000L, MediaMetadataRetriever.OPTION_CLOSEST)
+                            ?: continue
                     val brightness = averageBrightness(bmp)
                     if (brightness < minBrightness) {
                         bmp.recycle()
@@ -629,12 +732,13 @@ class XueHuaNaviteVideoPlayerPlugin :
         url: String,
         appContext: android.content.Context?
     ) {
-        val uri = Uri.parse(url)
+        val uri = url.toUri()
         when (uri.scheme?.lowercase()) {
             "file" -> {
                 if (appContext != null) retriever.setDataSource(appContext, uri)
                 else retriever.setDataSource(uri.path ?: url)
             }
+
             "http", "https" -> retriever.setDataSource(url, HashMap())
             "content" -> {
                 if (appContext != null) retriever.setDataSource(appContext, uri)
@@ -648,7 +752,7 @@ class XueHuaNaviteVideoPlayerPlugin :
     private fun averageBrightness(bmp: Bitmap): Double {
         val w = 64
         val h = 64
-        val scaled = Bitmap.createScaledBitmap(bmp, w, h, false)
+        val scaled = bmp.scale(w, h, false)
         val pixels = IntArray(w * h)
         scaled.getPixels(pixels, 0, w, 0, 0, w, h)
         var total = 0.0
@@ -662,5 +766,28 @@ class XueHuaNaviteVideoPlayerPlugin :
         return total / pixels.size
     }
 
-    // endregion
+    private val positionRunnable = object : Runnable {
+        override fun run() {
+            val player = exoPlayer
+            if (player != null && player.isPlaying) {
+                sendEvent("position", player.currentPosition)
+                mainHandler.postDelayed(this, 200)
+            } else {
+                isPollingPosition = false
+            }
+        }
+    }
+
+    private fun startPositionPolling() {
+        if (!isPollingPosition) {
+            isPollingPosition = true
+            mainHandler.removeCallbacks(positionRunnable)
+            mainHandler.post(positionRunnable)
+        }
+    }
+
+    private fun stopPositionPolling() {
+        isPollingPosition = false
+        mainHandler.removeCallbacks(positionRunnable)
+    }
 }

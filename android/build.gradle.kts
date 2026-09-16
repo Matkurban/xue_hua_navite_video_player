@@ -75,10 +75,10 @@ kotlin {
 
 
 dependencies {
-    implementation("androidx.media3:media3-exoplayer:1.10.0")
-    implementation("androidx.media3:media3-common:1.10.0")
-    implementation("androidx.media3:media3-ui:1.10.0")
-    implementation("androidx.lifecycle:lifecycle-common:2.8.7")
+    implementation("androidx.media3:media3-exoplayer:1.11.1")
+    implementation("androidx.media3:media3-common:1.11.1")
+    implementation("androidx.media3:media3-ui:1.11.1")
+    implementation("androidx.lifecycle:lifecycle-common:2.11.0")
     testImplementation("org.jetbrains.kotlin:kotlin-test")
     testImplementation("org.mockito:mockito-core:5.23.0")
 }

@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:xue_hua_navite_video_player/xue_hua_navite_video_player.dart';
 import 'package:signals_flutter/signals_flutter.dart';
+import 'package:xue_hua_navite_video_player/xue_hua_navite_video_player.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -59,10 +59,6 @@ class _DemoItem {
 
 const List<_DemoItem> _demoPlaylist = <_DemoItem>[
   _DemoItem(
-    'ce shi',
-    'https://jsontodart.cn/api/object/7976982000/msg_video_dd802bb84715adfbbf71fa7413eb1d29.mp4',
-  ),
-  _DemoItem(
     'Pexels · 4K Landscape',
     'https://videos.pexels.com/video-files/29603233/12740435_3840_2160_30fps.mp4',
   ),
@@ -85,14 +81,6 @@ const List<_DemoItem> _demoPlaylist = <_DemoItem>[
   _DemoItem(
     'Flutter · Butterfly',
     'https://www.w3schools.com/html/mov_bbb.mp4',
-  ),
-  _DemoItem(
-    '横屏',
-    'https://jsontodart.cn/api/object/7976982000/msg_video_7976982000_1782918277290246.mp4',
-  ),
-  _DemoItem(
-    '竖屏',
-    'https://jsontodart.cn/api/object/7976982000/msg_video_7976982000_1782632016859201.mp4',
   ),
 ];
 

@@ -4,13 +4,15 @@ import android.content.Context
 import android.graphics.Color
 import android.view.LayoutInflater
 import android.view.View
+import android.widget.FrameLayout
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import io.flutter.plugin.common.StandardMessageCodec
 import io.flutter.plugin.platform.PlatformView
 import io.flutter.plugin.platform.PlatformViewFactory
 
-/** Shared view type used by Dart PlatformView / [UiKitView]. */
+
 const val PLAYER_PLATFORM_VIEW_TYPE = "plugins.xuehua/navite_video_player"
 
 /**
@@ -20,13 +22,17 @@ const val PLAYER_PLATFORM_VIEW_TYPE = "plugins.xuehua/navite_video_player"
  * Inflated with `surface_type=texture_view` so Flutter chrome can overlay the
  * video; SurfaceView punches through the Flutter layer.
  */
+@UnstableApi
 class PlayerPlatformView(
     context: Context,
     private val plugin: XueHuaNaviteVideoPlayerPlugin,
 ) : PlatformView {
     private val playerView: PlayerView =
-        (LayoutInflater.from(context).inflate(R.layout.xue_hua_player_view, null, false)
-            as PlayerView).apply {
+        (LayoutInflater.from(context).inflate(
+            R.layout.xue_hua_player_view,
+            FrameLayout(context), false
+        )
+                as PlayerView).apply {
             useController = false
             setBackgroundColor(Color.BLACK)
             setShutterBackgroundColor(Color.BLACK)
@@ -45,6 +51,7 @@ class PlayerPlatformView(
     }
 }
 
+@UnstableApi
 class PlayerPlatformViewFactory(
     private val plugin: XueHuaNaviteVideoPlayerPlugin,
 ) : PlatformViewFactory(StandardMessageCodec.INSTANCE) {

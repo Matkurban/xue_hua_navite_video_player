@@ -1,6 +1,7 @@
 ## 2.0.1
 
 * update package version
+* fix android player buffering bugs
 
 ## 2.0.0
 
