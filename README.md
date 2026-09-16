@@ -4,14 +4,11 @@
 
 A cross-platform Flutter audio/video player plugin. Dart exposes a unified controller and optional UI; each platform decodes and renders with a native engine (ExoPlayer / AVPlayer / libmpv / HTML5).
 
-| | |
-|---|---|
-| Version | `2.0.0` |
-| Flutter | `>= 3.47.0` |
-| Dart SDK | `^3.13.0` |
+|            |                                                                          |
+|------------|--------------------------------------------------------------------------|
 | Repository | [GitHub](https://github.com/MatkurbanWeiXin/xue_hua_navite_video_player) |
-| Homepage | [jsontodart.cn](https://jsontodart.cn) |
-| License | Apache 2.0 |
+| Homepage   | [jsontodart.cn](https://jsontodart.cn)                                   |
+| License    | Apache 2.0                                                               |
 
 ---
 
@@ -77,14 +74,14 @@ A cross-platform Flutter audio/video player plugin. Dart exposes a unified contr
 
 ## Platform engines & rendering
 
-| Platform | Native engine | Surface |
-|----------|---------------|---------|
-| Android | ExoPlayer (Media3) | `AndroidView` PlatformView (`TextureView`) |
-| iOS | AVPlayer | `UiKitView` PlatformView |
-| macOS | AVPlayer | `AppKitView` PlatformView |
-| Linux | libmpv (software) | Flutter `Texture` |
-| Windows | libmpv (software) | Flutter `Texture` |
-| Web | HTML5 `<video>` | `HtmlElementView` |
+| Platform | Native engine      | Surface                                    |
+|----------|--------------------|--------------------------------------------|
+| Android  | ExoPlayer (Media3) | `AndroidView` PlatformView (`TextureView`) |
+| iOS      | AVPlayer           | `UiKitView` PlatformView                   |
+| macOS    | AVPlayer           | `AppKitView` PlatformView                  |
+| Linux    | libmpv (software)  | Flutter `Texture`                          |
+| Windows  | libmpv (software)  | Flutter `Texture`                          |
+| Web      | HTML5 `<video>`    | `HtmlElementView`                          |
 
 `AspectRatioMode` (`fit` / `fill` / `stretch`) maps to each platform’s native fit property (videoGravity, resizeMode, object-fit, mpv keepaspect/panscan, etc.).
 
@@ -112,14 +109,14 @@ XueHuaNaviteVideoPlayer.instance
   └── MediaProbe (duration / covers; does not own the play session)
 ```
 
-| Term | Meaning |
-|------|---------|
-| **VideoSource** | Sealed source model (network / file / asset) resolved to a native URL |
-| **PlayState** | High-level playback state owned by `PlaybackSession` |
-| **PlayerBackend** | Session transport: create / open / play / pause / seek / volume / speed / snapshot |
-| **PlaybackSession** | Owns open → ready → playing / paused / stopped / completed / error |
-| **VideoPlayerController** | Stable public API for apps and UI |
-| **MediaProbe** | Probe APIs that do not create a live play session |
+| Term                      | Meaning                                                                            |
+|---------------------------|------------------------------------------------------------------------------------|
+| **VideoSource**           | Sealed source model (network / file / asset) resolved to a native URL              |
+| **PlayState**             | High-level playback state owned by `PlaybackSession`                               |
+| **PlayerBackend**         | Session transport: create / open / play / pause / seek / volume / speed / snapshot |
+| **PlaybackSession**       | Owns open → ready → playing / paused / stopped / completed / error                 |
+| **VideoPlayerController** | Stable public API for apps and UI                                                  |
+| **MediaProbe**            | Probe APIs that do not create a live play session                                  |
 
 See [CONTEXT.md](CONTEXT.md) for domain notes.
 
@@ -282,11 +279,11 @@ Multi-instance concurrent players (e.g. PiP + list preview) are **not** supporte
 
 Sealed source types:
 
-| Type | Factory | Notes |
-|------|---------|-------|
+| Type                 | Factory                    | Notes                                         |
+|----------------------|----------------------------|-----------------------------------------------|
 | `NetworkVideoSource` | `VideoSource.network(url)` | HTTP(S); opened directly by the native player |
-| `FileVideoSource` | `VideoSource.file(path)` | Absolute path or `file://` URI |
-| `AssetVideoSource` | `VideoSource.asset(path)` | Flutter asset; extracted to temp on first use |
+| `FileVideoSource`    | `VideoSource.file(path)`   | Absolute path or `file://` URI                |
+| `AssetVideoSource`   | `VideoSource.asset(path)`  | Flutter asset; extracted to temp on first use |
 
 ```dart
 final network = VideoSource.network('https://example.com/a.mp4');
@@ -332,17 +329,17 @@ VideoPlayerController({
 
 ### Open & play
 
-| API | Behavior |
-|-----|----------|
-| `playNetwork(url)` | Open network source and start |
-| `openNetwork(url)` | Open only; call `play()` later |
-| `playFile` / `openFile` | Local file |
-| `playAsset` / `openAsset` | Flutter asset |
-| `playSource` / `openSource` | Generic entry |
-| `play` / `pause` / `playOrPause` | Transport |
-| `stop` | Explicit stop (vs natural completion) |
-| `seek` | Absolute seek |
-| `seekForward` / `seekBackward` | Step by `skipSecondType` |
+| API                              | Behavior                              |
+|----------------------------------|---------------------------------------|
+| `playNetwork(url)`               | Open network source and start         |
+| `openNetwork(url)`               | Open only; call `play()` later        |
+| `playFile` / `openFile`          | Local file                            |
+| `playAsset` / `openAsset`        | Flutter asset                         |
+| `playSource` / `openSource`      | Generic entry                         |
+| `play` / `pause` / `playOrPause` | Transport                             |
+| `stop`                           | Explicit stop (vs natural completion) |
+| `seek`                           | Absolute seek                         |
+| `seekForward` / `seekBackward`   | Step by `skipSecondType`              |
 
 ```dart
 await controller.openNetwork('https://example.com/video.mp4');
@@ -390,27 +387,27 @@ final XFile saved = await controller.takeSnapshot(savePath: '/tmp/frame.png');
 
 ### Reactive signals
 
-| Signal / computed | Type | Meaning |
-|-------------------|------|---------|
-| `playState` | `PlayState` | Playback state |
-| `position` / `duration` | `Duration` | Progress / total |
-| `volume` / `speed` | `double` | Volume / rate |
-| `isBuffering` | `bool` | Buffering |
-| `errorMessage` | `String?` | Error text |
-| `currentUrl` | `String?` | Current native URL |
-| `mimeType` | `String?` | MIME type |
-| `videoSize` | `Size` | Video size |
-| `rotationDegrees` | `int` | Rotation |
-| `videoAspectRatio` | `double` | Ratio after rotation |
-| `isVideo` / `isAudio` | `bool` | From mime |
-| `isPlaying` | `bool` | Playing |
-| `progressPercent` | `double` | 0.0 – 1.0 |
-| `muted` | `bool` | Muted |
-| `skipSecondType` | `SkipSecondType` | Skip step |
-| `aspectRatioMode` | `AspectRatioMode` | Fit mode |
-| `isFullscreen` | `bool` | Fullscreen |
-| `brightness` | `double` | Screen brightness |
-| `textureId` | `int?` | Texture id (desktop) |
+| Signal / computed       | Type              | Meaning              |
+|-------------------------|-------------------|----------------------|
+| `playState`             | `PlayState`       | Playback state       |
+| `position` / `duration` | `Duration`        | Progress / total     |
+| `volume` / `speed`      | `double`          | Volume / rate        |
+| `isBuffering`           | `bool`            | Buffering            |
+| `errorMessage`          | `String?`         | Error text           |
+| `currentUrl`            | `String?`         | Current native URL   |
+| `mimeType`              | `String?`         | MIME type            |
+| `videoSize`             | `Size`            | Video size           |
+| `rotationDegrees`       | `int`             | Rotation             |
+| `videoAspectRatio`      | `double`          | Ratio after rotation |
+| `isVideo` / `isAudio`   | `bool`            | From mime            |
+| `isPlaying`             | `bool`            | Playing              |
+| `progressPercent`       | `double`          | 0.0 – 1.0            |
+| `muted`                 | `bool`            | Muted                |
+| `skipSecondType`        | `SkipSecondType`  | Skip step            |
+| `aspectRatioMode`       | `AspectRatioMode` | Fit mode             |
+| `isFullscreen`          | `bool`            | Fullscreen           |
+| `brightness`            | `double`          | Screen brightness    |
+| `textureId`             | `int?`            | Texture id (desktop) |
 
 ```dart
 SignalBuilder(
@@ -430,15 +427,15 @@ SignalBuilder(
 enum PlayState { idle, loading, playing, paused, stopped, completed, error }
 ```
 
-| State | Meaning |
-|-------|---------|
-| `idle` | Initial / after reset |
-| `loading` | Opening / preparing |
-| `playing` | Playing |
-| `paused` | Paused |
-| `stopped` | Explicit `stop()` |
+| State       | Meaning                                    |
+|-------------|--------------------------------------------|
+| `idle`      | Initial / after reset                      |
+| `loading`   | Opening / preparing                        |
+| `playing`   | Playing                                    |
+| `paused`    | Paused                                     |
+| `stopped`   | Explicit `stop()`                          |
 | `completed` | Natural end-of-stream (UI may show replay) |
-| `error` | Failure; see `errorMessage` |
+| `error`     | Failure; see `errorMessage`                |
 
 `isBuffering` can overlap other states (e.g. playing + buffering).
 
@@ -522,14 +519,14 @@ MaterialApp(
 );
 ```
 
-| Group | Examples |
-|-------|----------|
-| Base | `foregroundColor`, `backgroundColor` |
-| Center | `centerControlsSpacing`, `centerPlayButtonIconSize`, `centerSkipButtonIconSize` |
-| Bars | `chromeIconSize`, `topBarPadding`, `bottomBarPadding`, `timeTextStyle` |
-| Scrubber | active / buffered / inactive / thumb colors and sizes |
-| Menu | `menuBackgroundColor`, `menuBorderRadius`, `menuItemTextStyle` |
-| Gesture HUD | `hudBackgroundColor`, `hudPadding`, `hudTextStyle` |
+| Group       | Examples                                                                        |
+|-------------|---------------------------------------------------------------------------------|
+| Base        | `foregroundColor`, `backgroundColor`                                            |
+| Center      | `centerControlsSpacing`, `centerPlayButtonIconSize`, `centerSkipButtonIconSize` |
+| Bars        | `chromeIconSize`, `topBarPadding`, `bottomBarPadding`, `timeTextStyle`          |
+| Scrubber    | active / buffered / inactive / thumb colors and sizes                           |
+| Menu        | `menuBackgroundColor`, `menuBorderRadius`, `menuItemTextStyle`                  |
+| Gesture HUD | `hudBackgroundColor`, `hudPadding`, `hudTextStyle`                              |
 
 ```dart
 final theme = VideoPlayerTheme.of(context);
@@ -544,10 +541,10 @@ await controller.enterFullscreen(); // isFullscreen + platform fullscreen host
 await controller.exitFullscreen();
 ```
 
-| Call site | Effect |
-|-----------|--------|
+| Call site                                | Effect                                                  |
+|------------------------------------------|---------------------------------------------------------|
 | Mounted `VideoPlayer` under an `Overlay` | Platform fullscreen **and** edge-to-edge Overlay chrome |
-| Controller / `CorePlayer` only | Platform fullscreen only — no visual Overlay host |
+| Controller / `CorePlayer` only           | Platform fullscreen only — no visual Overlay host       |
 
 Platform host:
 
@@ -563,21 +560,21 @@ Gestures (mobile) are active only while fullscreen **and** a `VideoPlayer` is mo
 
 ### Mobile (fullscreen)
 
-| Gesture | Zone | Action |
-|---------|------|--------|
+| Gesture         | Zone                      | Action                            |
+|-----------------|---------------------------|-----------------------------------|
 | Horizontal drag | Anywhere (past threshold) | Seek (scaled by `skipSecondType`) |
-| Vertical drag | Left ~40% | Brightness |
-| Vertical drag | Right ~40% | Volume |
-| Tap | — | Toggle chrome |
+| Vertical drag   | Left ~40%                 | Brightness                        |
+| Vertical drag   | Right ~40%                | Volume                            |
+| Tap             | —                         | Toggle chrome                     |
 
 ### Desktop / Web (focused — fullscreen or inline)
 
-| Key | Action |
-|-----|--------|
-| `Space` | Play / pause |
+| Key       | Action                  |
+|-----------|-------------------------|
+| `Space`   | Play / pause            |
 | `←` / `→` | Seek backward / forward |
-| `↑` / `↓` | Volume ±0.05 |
-| `Esc` | Exit fullscreen |
+| `↑` / `↓` | Volume ±0.05            |
+| `Esc`     | Exit fullscreen         |
 
 ---
 

@@ -4,14 +4,11 @@
 
 跨平台 Flutter 音视频播放插件。Dart 侧提供统一的控制器与可选 UI；各端由原生引擎负责解码与渲染（ExoPlayer / AVPlayer / libmpv / HTML5）。
 
-| 项 | 说明 |
-|----|------|
-| 当前版本 | `2.0.0` |
-| Flutter | `>= 3.47.0` |
-| Dart SDK | `^3.13.0` |
-| 仓库 | [GitHub](https://github.com/MatkurbanWeiXin/xue_hua_navite_video_player) |
-| 主页 | [jsontodart.cn](https://jsontodart.cn) |
-| 许可证 | Apache 2.0 |
+| 项     | 说明                                                                     |
+|--------|--------------------------------------------------------------------------|
+| 仓库   | [GitHub](https://github.com/MatkurbanWeiXin/xue_hua_navite_video_player) |
+| 主页   | [jsontodart.cn](https://jsontodart.cn)                                   |
+| 许可证 | Apache 2.0                                                               |
 
 ---
 
@@ -85,14 +82,14 @@
 
 ## 平台引擎与渲染方式
 
-| 平台 | 原生引擎 | 画面承载 |
-|------|----------|----------|
+| 平台    | 原生引擎           | 画面承载                                    |
+|---------|--------------------|---------------------------------------------|
 | Android | ExoPlayer (Media3) | `AndroidView` PlatformView（`TextureView`） |
-| iOS | AVPlayer | `UiKitView` PlatformView |
-| macOS | AVPlayer | `AppKitView` PlatformView |
-| Linux | libmpv（软件渲染） | Flutter `Texture` |
-| Windows | libmpv（软件渲染） | Flutter `Texture` |
-| Web | HTML5 `<video>` | `HtmlElementView` |
+| iOS     | AVPlayer           | `UiKitView` PlatformView                    |
+| macOS   | AVPlayer           | `AppKitView` PlatformView                   |
+| Linux   | libmpv（软件渲染） | Flutter `Texture`                           |
+| Windows | libmpv（软件渲染） | Flutter `Texture`                           |
+| Web     | HTML5 `<video>`    | `HtmlElementView`                           |
 
 画面适应模式 `AspectRatioMode`（`fit` / `fill` / `stretch`）会映射到各端原生属性（如 videoGravity、resizeMode、object-fit、mpv keepaspect/panscan）。
 
@@ -300,11 +297,11 @@ class _MyAppState extends State<MyApp> {
 
 `VideoSource` 是密封类型，三种实现：
 
-| 类型 | 工厂 | 说明 |
-|------|------|------|
-| `NetworkVideoSource` | `VideoSource.network(url)` | HTTP(S) URL，原生直连 |
-| `FileVideoSource` | `VideoSource.file(path)` | 绝对路径或 `file://` URI |
-| `AssetVideoSource` | `VideoSource.asset(path)` | Flutter asset，首次使用时抽取到临时目录 |
+| 类型                 | 工厂                       | 说明                                    |
+|----------------------|----------------------------|-----------------------------------------|
+| `NetworkVideoSource` | `VideoSource.network(url)` | HTTP(S) URL，原生直连                   |
+| `FileVideoSource`    | `VideoSource.file(path)`   | 绝对路径或 `file://` URI                |
+| `AssetVideoSource`   | `VideoSource.asset(path)`  | Flutter asset，首次使用时抽取到临时目录 |
 
 ```dart
 final network = VideoSource.network('https://example.com/a.mp4');
@@ -351,17 +348,17 @@ VideoPlayerController({
 
 ### 打开与播放
 
-| API | 行为 |
-|-----|------|
-| `playNetwork(url)` | 打开网络源并开始播放 |
-| `openNetwork(url)` | 仅打开，不自动开播 |
-| `playFile(path)` / `openFile(path)` | 本地文件 |
-| `playAsset(path, {bundle})` / `openAsset(...)` | Flutter asset |
-| `playSource(source)` / `openSource(source)` | 通用入口 |
-| `play()` / `pause()` / `playOrPause()` | 播放控制 |
-| `stop()` | 主动停止（区别于播完） |
-| `seek(position)` | 跳转到指定位置 |
-| `seekForward()` / `seekBackward()` | 按 `skipSecondType` 步进 |
+| API                                            | 行为                     |
+|------------------------------------------------|--------------------------|
+| `playNetwork(url)`                             | 打开网络源并开始播放     |
+| `openNetwork(url)`                             | 仅打开，不自动开播       |
+| `playFile(path)` / `openFile(path)`            | 本地文件                 |
+| `playAsset(path, {bundle})` / `openAsset(...)` | Flutter asset            |
+| `playSource(source)` / `openSource(source)`    | 通用入口                 |
+| `play()` / `pause()` / `playOrPause()`         | 播放控制                 |
+| `stop()`                                       | 主动停止（区别于播完）   |
+| `seek(position)`                               | 跳转到指定位置           |
+| `seekForward()` / `seekBackward()`             | 按 `skipSecondType` 步进 |
 
 ```dart
 // 打开后手动开播
@@ -414,27 +411,27 @@ final XFile saved = await controller.takeSnapshot(savePath: '/tmp/frame.png');
 
 控制器通过 Signals 暴露状态，可用 `SignalBuilder` / `effect` / `watch` 等订阅：
 
-| Signal / Computed | 类型 | 含义 |
-|-------------------|------|------|
-| `playState` | `PlayState` | 播放状态 |
-| `position` / `duration` | `Duration` | 进度与总时长 |
-| `volume` / `speed` | `double` | 音量与倍速 |
-| `isBuffering` | `bool` | 是否缓冲中 |
-| `errorMessage` | `String?` | 错误信息 |
-| `currentUrl` | `String?` | 当前原生 URL |
-| `mimeType` | `String?` | MIME 类型 |
-| `videoSize` | `Size` | 视频尺寸 |
-| `rotationDegrees` | `int` | 旋转角度 |
-| `videoAspectRatio` | `double` | 考虑旋转后的宽高比 |
-| `isVideo` / `isAudio` | `bool` | 根据 mime 推断 |
-| `isPlaying` | `bool` | 是否正在播放 |
-| `progressPercent` | `double` | 0.0 – 1.0 |
-| `muted` | `bool` | 是否静音 |
-| `skipSecondType` | `SkipSecondType` | 跳过步进 |
-| `aspectRatioMode` | `AspectRatioMode` | 画面模式 |
-| `isFullscreen` | `bool` | 是否全屏 |
-| `brightness` | `double` | 屏幕亮度 |
-| `textureId` | `int?` | Texture 平台的纹理 ID |
+| Signal / Computed       | 类型              | 含义                  |
+|-------------------------|-------------------|-----------------------|
+| `playState`             | `PlayState`       | 播放状态              |
+| `position` / `duration` | `Duration`        | 进度与总时长          |
+| `volume` / `speed`      | `double`          | 音量与倍速            |
+| `isBuffering`           | `bool`            | 是否缓冲中            |
+| `errorMessage`          | `String?`         | 错误信息              |
+| `currentUrl`            | `String?`         | 当前原生 URL          |
+| `mimeType`              | `String?`         | MIME 类型             |
+| `videoSize`             | `Size`            | 视频尺寸              |
+| `rotationDegrees`       | `int`             | 旋转角度              |
+| `videoAspectRatio`      | `double`          | 考虑旋转后的宽高比    |
+| `isVideo` / `isAudio`   | `bool`            | 根据 mime 推断        |
+| `isPlaying`             | `bool`            | 是否正在播放          |
+| `progressPercent`       | `double`          | 0.0 – 1.0             |
+| `muted`                 | `bool`            | 是否静音              |
+| `skipSecondType`        | `SkipSecondType`  | 跳过步进              |
+| `aspectRatioMode`       | `AspectRatioMode` | 画面模式              |
+| `isFullscreen`          | `bool`            | 是否全屏              |
+| `brightness`            | `double`          | 屏幕亮度              |
+| `textureId`             | `int?`            | Texture 平台的纹理 ID |
 
 ```dart
 SignalBuilder(
@@ -454,15 +451,15 @@ SignalBuilder(
 enum PlayState { idle, loading, playing, paused, stopped, completed, error }
 ```
 
-| 状态 | 含义 |
-|------|------|
-| `idle` | 初始 / 重置后 |
-| `loading` | 打开媒体、准备中 |
-| `playing` | 正在播放 |
-| `paused` | 已暂停 |
-| `stopped` | 调用 `stop()` 主动停止 |
+| 状态        | 含义                            |
+|-------------|---------------------------------|
+| `idle`      | 初始 / 重置后                   |
+| `loading`   | 打开媒体、准备中                |
+| `playing`   | 正在播放                        |
+| `paused`    | 已暂停                          |
+| `stopped`   | 调用 `stop()` 主动停止          |
 | `completed` | 自然播放到结尾（UI 可显示重播） |
-| `error` | 出错，见 `errorMessage` |
+| `error`     | 出错，见 `errorMessage`         |
 
 `isBuffering` 可与上述状态叠加（例如 `playing` + buffering）。
 
@@ -570,14 +567,14 @@ MaterialApp(
 
 常用字段分组：
 
-| 分组 | 字段示例 |
-|------|----------|
-| 基础色 | `foregroundColor`、`backgroundColor` |
-| 中央控件 | `centerControlsSpacing`、`centerPlayButtonIconSize`、`centerSkipButtonIconSize`、`centerButtonBackgroundColor` |
-| 顶栏 / 底栏 | `chromeIconSize`、`topBarPadding`、`bottomBarPadding`、`timeTextStyle` |
-| 进度条 | `scrubberActiveColor`、`scrubberBufferedColor`、`scrubberInactiveColor`、`scrubberThumbColor`、轨道/滑块尺寸 |
-| 菜单 | `menuBackgroundColor`、`menuBorderRadius`、`menuItemTextStyle`、`menuIconSize` |
-| 手势 HUD | `hudBackgroundColor`、`hudBorderRadius`、`hudPadding`、`hudIconSize`、`hudTextStyle` |
+| 分组        | 字段示例                                                                                                       |
+|-------------|----------------------------------------------------------------------------------------------------------------|
+| 基础色      | `foregroundColor`、`backgroundColor`                                                                           |
+| 中央控件    | `centerControlsSpacing`、`centerPlayButtonIconSize`、`centerSkipButtonIconSize`、`centerButtonBackgroundColor` |
+| 顶栏 / 底栏 | `chromeIconSize`、`topBarPadding`、`bottomBarPadding`、`timeTextStyle`                                         |
+| 进度条      | `scrubberActiveColor`、`scrubberBufferedColor`、`scrubberInactiveColor`、`scrubberThumbColor`、轨道/滑块尺寸   |
+| 菜单        | `menuBackgroundColor`、`menuBorderRadius`、`menuItemTextStyle`、`menuIconSize`                                 |
+| 手势 HUD    | `hudBackgroundColor`、`hudBorderRadius`、`hudPadding`、`hudIconSize`、`hudTextStyle`                           |
 
 在子树中读取：
 
@@ -594,10 +591,10 @@ await controller.enterFullscreen(); // 更新 isFullscreen + 平台全屏宿主
 await controller.exitFullscreen();
 ```
 
-| 调用场景 | 效果 |
-|----------|------|
+| 调用场景                                    | 效果                                      |
+|---------------------------------------------|-------------------------------------------|
 | 已挂载 `VideoPlayer`，且存在 `Overlay` 祖先 | 平台全屏 **以及** 铺满的视觉 Overlay 控件 |
-| 仅控制器，或只有 `CorePlayer` | 仅平台全屏，**无**视觉全屏宿主 |
+| 仅控制器，或只有 `CorePlayer`               | 仅平台全屏，**无**视觉全屏宿主            |
 
 平台宿主：
 
@@ -613,23 +610,23 @@ await controller.exitFullscreen();
 
 ### 移动端（全屏）
 
-| 手势 | 区域 | 作用 |
-|------|------|------|
+| 手势     | 区域             | 作用                                        |
+|----------|------------------|---------------------------------------------|
 | 水平滑动 | 任意（超过阈值） | 快进 / 快退（幅度受 `skipSecondType` 影响） |
-| 垂直滑动 | 左侧约 40% | 调节屏幕亮度 |
-| 垂直滑动 | 右侧约 40% | 调节音量 |
-| 单击 | — | 显隐控件 |
+| 垂直滑动 | 左侧约 40%       | 调节屏幕亮度                                |
+| 垂直滑动 | 右侧约 40%       | 调节音量                                    |
+| 单击     | —                | 显隐控件                                    |
 
 手势过程中会显示 HUD（亮度 / 音量 / 跳转秒数）。
 
 ### 桌面 / Web（已聚焦 — 全屏或非全屏）
 
-| 按键 | 作用 |
-|------|------|
-| `Space` | 播放 / 暂停 |
+| 按键      | 作用              |
+|-----------|-------------------|
+| `Space`   | 播放 / 暂停       |
 | `←` / `→` | 按步进后退 / 前进 |
-| `↑` / `↓` | 音量 ±0.05 |
-| `Esc` | 退出全屏 |
+| `↑` / `↓` | 音量 ±0.05        |
+| `Esc`     | 退出全屏          |
 
 ---
 

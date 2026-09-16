@@ -150,9 +150,9 @@ class _PlayerScrubberSliderState extends State<PlayerScrubberSlider> {
       builder: (context, constraints) {
         final width = constraints.maxWidth;
         final effectiveValue = _clamp(_dragValue ?? widget.value);
-        final effectiveBuffered = _clamp(widget.bufferedValue)
-            .clamp(effectiveValue, 1.0)
-            .toDouble();
+        final effectiveBuffered = _clamp(
+          widget.bufferedValue,
+        ).clamp(effectiveValue, 1.0).toDouble();
         final paintedTrackHeight = _dragging ? activeTrackHeight : trackHeight;
         final paintedThumbRadius = _dragging ? activeThumbRadius : thumbRadius;
 
