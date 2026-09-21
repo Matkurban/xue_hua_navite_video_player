@@ -45,3 +45,9 @@ app.*.map.json
 /android/app/release
 pubspec.lock
 .metadata
+
+# Installed package skills (local dart run skills@ get)
+.agents/
+.config/dart_skills/
+.cursor/skills/
+.claude/skills/

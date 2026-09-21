@@ -6,7 +6,7 @@ A cross-platform Flutter audio/video player plugin. Dart exposes a unified contr
 
 |            |                                                                          |
 |------------|--------------------------------------------------------------------------|
-| Repository | [GitHub](https://github.com/MatkurbanWeiXin/xue_hua_navite_video_player) |
+| Repository | [GitHub](https://github.com/Matkurban/xue_hua_navite_video_player) |
 | Homepage   | [jsontodart.cn](https://jsontodart.cn)                                   |
 | License    | Apache 2.0                                                               |
 
@@ -20,6 +20,7 @@ A cross-platform Flutter audio/video player plugin. Dart exposes a unified contr
   - [Platform engines \& rendering](#platform-engines--rendering)
   - [Architecture](#architecture)
   - [Installation](#installation)
+  - [Package skills](#package-skills)
   - [Platform setup](#platform-setup)
     - [Android](#android)
     - [iOS](#ios)
@@ -45,7 +46,7 @@ A cross-platform Flutter audio/video player plugin. Dart exposes a unified contr
   - [VideoPlayerTheme](#videoplayertheme)
   - [Fullscreen contract](#fullscreen-contract)
   - [Gestures \& keyboard](#gestures--keyboard)
-    - [Mobile (fullscreen)](#mobile-fullscreen)
+    - [Fullscreen gestures (all platforms except Web)](#fullscreen-gestures-all-platforms-except-web)
     - [Desktop / Web (focused — fullscreen or inline)](#desktop--web-focused--fullscreen-or-inline)
   - [Snapshots \& media probe](#snapshots--media-probe)
     - [Current-frame snapshot](#current-frame-snapshot)
@@ -62,7 +63,7 @@ A cross-platform Flutter audio/video player plugin. Dart exposes a unified contr
 
 - **6 platforms** — Android, iOS, macOS, Linux, Windows, Web
 - **Native rendering** — PlatformView on Android / iOS / macOS; Texture (libmpv) on Linux / Windows; HTML5 `<video>` on Web
-- **Sources** — network URL, local file, Flutter asset (assets are extracted to a temp directory)
+- **Sources** — network URL, local file, Flutter asset (native platforms extract assets to a temp file; Web / WASM uses the Flutter-hosted `assets/` URL)
 - **Controls** — play / pause / seek / volume / mute / speed / brightness / aspect mode / snapshot
 - **Built-in UI** — drop-in `VideoPlayer` and bare `CorePlayer`
 - **Theming** — `VideoPlayerTheme` via `ThemeData.extensions`
@@ -126,7 +127,7 @@ See [CONTEXT.md](CONTEXT.md) for domain notes.
 
 ```yaml
 dependencies:
-  xue_hua_navite_video_player: ^1.1.0
+  xue_hua_navite_video_player: ^2.0.2
 ```
 
 ```bash
@@ -137,7 +138,25 @@ flutter pub get
 import 'package:xue_hua_navite_video_player/xue_hua_navite_video_player.dart';
 ```
 
-Public exports include: `VideoSource`, `VideoPlayerController`, `VideoPlayer`, `CorePlayer`, `VideoPlayerTheme`, `PlayState`, `AspectRatioMode`, `SkipSecondType`, `VideoCoverFrame`, `XueHuaNaviteVideoPlayer`, and `XFile` (re-exported from `cross_file`).
+Public exports include: `VideoSource`, `VideoPlayerController`, `VideoPlayer`, `CorePlayer`, `VideoPlayerTheme`, `PlayState`, `AspectRatioMode`, `SkipSecondType`, `VideoCoverFrame`, `XueHuaNaviteVideoPlayer`, `PlayerScrubberSlider`, `VideoPlayerSlotContext`, and `XFile` (re-exported from `cross_file`).
+
+---
+
+## Package skills
+
+This package ships [Agent Skills](https://dart.dev/tools/pub/package-skills) that teach AI coding assistants the real public APIs (signatures, defaults, and pitfalls). After adding the dependency, install them in your app:
+
+```bash
+dart run skills@ get
+# or install everything without prompts
+dart run skills@ get --all
+```
+
+Skills:
+
+- `xue-hua-navite-video-player-setup` — install, platforms, initialize, single session
+- `xue-hua-navite-video-player-playback` — `VideoSource`, `VideoPlayerController`, probe APIs
+- `xue-hua-navite-video-player-ui` — `VideoPlayer`, `CorePlayer`, theme, scrubber
 
 ---
 
@@ -259,7 +278,7 @@ class _MyAppState extends State<MyApp> {
 }
 ```
 
-`XueHuaNaviteVideoPlayer.instance.initialize()` is an idempotent binding helper. The native player session is created by `VideoPlayerController.initialize()`.
+`XueHuaNaviteVideoPlayer.instance.initialize()` is an idempotent binding helper (`isInitialized` becomes true). It does **not** create the native player. The native session is created by `VideoPlayerController.initialize()`. `XueHuaNaviteVideoPlayer.dispose()` only clears that binding flag; always `dispose()` the controller to release the player.
 
 ---
 
@@ -283,7 +302,7 @@ Sealed source types:
 |----------------------|----------------------------|-----------------------------------------------|
 | `NetworkVideoSource` | `VideoSource.network(url)` | HTTP(S); opened directly by the native player |
 | `FileVideoSource`    | `VideoSource.file(path)`   | Absolute path or `file://` URI                |
-| `AssetVideoSource`   | `VideoSource.asset(path)`  | Flutter asset; extracted to temp on first use |
+| `AssetVideoSource`   | `VideoSource.asset(path)`  | Flutter asset; native extracts to temp; Web uses `assets/` URL |
 
 ```dart
 final network = VideoSource.network('https://example.com/a.mp4');
@@ -317,7 +336,7 @@ await controller.dispose();    // release native resources; instance unusable af
 controller.reset();            // reset Dart-side state without disposing the session
 ```
 
-Optional constructor deps (mainly for tests):
+Optional constructor deps (mainly for tests; `PlayerBackend` / `FullscreenCoordinator` / `BrightnessController` are **not** barrel-exported — leave them null in apps):
 
 ```dart
 VideoPlayerController({
@@ -340,6 +359,7 @@ VideoPlayerController({
 | `stop`                           | Explicit stop (vs natural completion) |
 | `seek`                           | Absolute seek                         |
 | `seekForward` / `seekBackward`   | Step by `skipSecondType`              |
+| `setVideoViewSize`               | Report Flutter view size to libmpv (Linux / Windows). `CorePlayer` Texture already calls this. |
 
 ```dart
 await controller.openNetwork('https://example.com/video.mp4');
@@ -394,7 +414,7 @@ final XFile saved = await controller.takeSnapshot(savePath: '/tmp/frame.png');
 | `volume` / `speed`      | `double`          | Volume / rate        |
 | `isBuffering`           | `bool`            | Buffering            |
 | `errorMessage`          | `String?`         | Error text           |
-| `currentUrl`            | `String?`         | Current native URL   |
+| `currentUrl`            | `String?`         | Source identity (`url` / `file://…` / `asset://…`) |
 | `mimeType`              | `String?`         | MIME type            |
 | `videoSize`             | `Size`            | Video size           |
 | `rotationDegrees`       | `int`             | Rotation             |
@@ -445,12 +465,11 @@ enum PlayState { idle, loading, playing, paused, stopped, completed, error }
 
 ### `CorePlayer` — surface only
 
-Renders the native frame plus loading / buffering / error. Use for fully custom chrome.
+Renders the native frame plus loading / buffering / error. Use for fully custom chrome. The widget **fills its parent**; `aspectRatio` is not a layout constraint (when null, the surface rebuilds on size/rotation). Wrap it yourself (`AspectRatio`, `Expanded`, …).
 
 ```dart
 CorePlayer(
   controller: controller,
-  aspectRatio: 16 / 9,
   backgroundColor: Colors.black,
   loadingBuilder: (context) => const CircularProgressIndicator(),
   errorBuilder: (context, message) => Text(message ?? 'Error'),
@@ -475,6 +494,7 @@ VideoPlayer(
   leading: null,
   title: const Text('Title'),
   actions: const [],
+  topBarActions: const [], // merged after actions (legacy)
   showAspectRatioMenu: true,
   enableFullscreen: true,
   skipSecondType: SkipSecondType.second10,
@@ -552,17 +572,19 @@ Platform host:
 - **Desktop** — OS window fullscreen (Windows borderless, macOS native fullscreen, Linux `gtk_window_fullscreen`)
 - **Web** — browser Fullscreen API on the Flutter document (not the `<video>` element)
 
-Gestures (mobile) are active only while fullscreen **and** a `VideoPlayer` is mounted. Keyboard shortcuts (desktop / web) work in fullscreen or inline when the player is focused. Escape leaves fullscreen.
+Gestures are active on non-Web platforms while fullscreen **and** a `VideoPlayer` is mounted. Keyboard shortcuts (desktop / web) work in fullscreen or inline when the player is focused. Escape leaves fullscreen.
 
 ---
 
 ## Gestures & keyboard
 
-### Mobile (fullscreen)
+### Fullscreen gestures (all platforms except Web)
+
+Active while fullscreen **and** a `VideoPlayer` is mounted (`kIsWeb` uses tap-only, no pan HUD).
 
 | Gesture         | Zone                      | Action                            |
 |-----------------|---------------------------|-----------------------------------|
-| Horizontal drag | Anywhere (past threshold) | Seek (scaled by `skipSecondType`) |
+| Horizontal drag | Anywhere (past 48px)      | Seek (scaled by `skipSecondType`) |
 | Vertical drag   | Left ~40%                 | Brightness                        |
 | Vertical drag   | Right ~40%                | Volume                            |
 | Tap             | —                         | Toggle chrome                     |
@@ -646,10 +668,26 @@ class MyPlayer extends StatelessWidget {
 }
 ```
 
-Exported scrubber:
+Exported scrubber (`required value`, **no** `controller` parameter). Commit seek in `onChangeEnd`. Press without drag does not seek.
 
 ```dart
-PlayerScrubberSlider(controller: controller);
+SignalBuilder(
+  builder: (context) {
+    final duration = controller.duration.value;
+    final position = controller.position.value;
+    final progress = duration.inMilliseconds == 0
+        ? 0.0
+        : (position.inMilliseconds / duration.inMilliseconds).clamp(0.0, 1.0);
+    return PlayerScrubberSlider(
+      value: progress,
+      onChangeEnd: (v) {
+        controller.seek(
+          Duration(milliseconds: (duration.inMilliseconds * v).round()),
+        );
+      },
+    );
+  },
+);
 ```
 
 ---
@@ -674,7 +712,7 @@ Process-wide single native session. Reuse serially and `dispose()` on leave.
 Use mounted `VideoPlayer` under an `Overlay`, then `toggleFullscreen()` / `enterFullscreen()`. On desktop / web this also makes the window or browser document fullscreen.
 
 **Asset playback fails?**  
-Declare the asset in `pubspec.yaml` with a matching path. First play extracts to temp storage.
+Declare the asset in `pubspec.yaml` with a matching path. Native platforms extract to temp storage on first play; Web uses the hosted `assets/` URL.
 
 **Linux build cannot find mpv?**  
 Install `libmpv-dev` (or distro equivalent).
@@ -683,7 +721,7 @@ Install `libmpv-dev` (or distro equivalent).
 Check CORS and whether the browser allows reading cross-origin media pixels.
 
 **How many `initialize()` calls?**  
-- Plugin `initialize()`: optional, once in `main`  
+- Plugin `initialize()`: optional, idempotent, once in `main`. Does not create the native player. `dispose()` on the plugin only clears `isInitialized`.  
 - Controller `initialize()`: once per controller lifetime; do not reuse after `dispose()`
 
 ---

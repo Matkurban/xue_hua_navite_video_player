@@ -1,3 +1,9 @@
+## 2.0.2
+
+* Ship Dart package skills (`skills/`) so AI coding agents can install official usage guidance with `dart run skills@ get`.
+* Document every barrel-exported type and method in skill `references/` (signatures, defaults, errors, and platform behavior).
+* Fix README / README_ZH mismatches with the public API: install constraint `^2.0.2`, `PlayerScrubberSlider` constructor (`value` not `controller`), Web asset URLs vs native temp extract, `setVideoViewSize`, plugin `isInitialized` / `dispose()`, `VideoPlayer.topBarActions`, `currentUrl` identity, and non-Web fullscreen gestures.
+
 ## 2.0.1
 
 * update package version

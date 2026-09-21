@@ -6,7 +6,7 @@
 
 | 项     | 说明                                                                     |
 |--------|--------------------------------------------------------------------------|
-| 仓库   | [GitHub](https://github.com/MatkurbanWeiXin/xue_hua_navite_video_player) |
+| 仓库   | [GitHub](https://github.com/Matkurban/xue_hua_navite_video_player) |
 | 主页   | [jsontodart.cn](https://jsontodart.cn)                                   |
 | 许可证 | Apache 2.0                                                               |
 
@@ -20,6 +20,7 @@
   - [平台引擎与渲染方式](#平台引擎与渲染方式)
   - [架构概览](#架构概览)
   - [安装](#安装)
+  - [Package skills](#package-skills)
   - [平台配置](#平台配置)
     - [Android](#android)
     - [iOS](#ios)
@@ -47,7 +48,7 @@
   - [主题 VideoPlayerTheme](#主题-videoplayertheme)
   - [全屏契约](#全屏契约)
   - [手势与快捷键](#手势与快捷键)
-    - [移动端（全屏）](#移动端全屏)
+    - [全屏手势（Web 除外）](#全屏手势web-除外)
     - [桌面 / Web（已聚焦 — 全屏或非全屏）](#桌面--web已聚焦--全屏或非全屏)
   - [截图与媒体探测](#截图与媒体探测)
     - [当前帧截图](#当前帧截图)
@@ -70,7 +71,7 @@
 
 - **六端支持**：Android、iOS、macOS、Linux、Windows、Web
 - **原生渲染**：Android / iOS / macOS 使用 PlatformView；Linux / Windows 使用 Texture（libmpv）；Web 使用 HTML5 `<video>`
-- **多来源播放**：网络 URL、本地文件、Flutter asset（asset 会自动抽取到临时目录）
+- **多来源播放**：网络 URL、本地文件、Flutter asset（原生平台抽取到临时文件；Web / WASM 使用 Flutter 托管的 `assets/` URL）
 - **完整控制**：播放 / 暂停 / 跳转 / 音量 / 静音 / 倍速 / 亮度 / 画面适应模式 / 截图
 - **内置 UI**：开箱即用的 `VideoPlayer`（带控件层）与纯画面 `CorePlayer`
 - **主题扩展**：通过 `ThemeData.extensions` 注册 `VideoPlayerTheme`
@@ -136,7 +137,7 @@ XueHuaNaviteVideoPlayer.instance
 
 ```yaml
 dependencies:
-  xue_hua_navite_video_player: ^1.1.0
+  xue_hua_navite_video_player: ^2.0.2
 ```
 
 然后执行：
@@ -151,7 +152,25 @@ flutter pub get
 import 'package:xue_hua_navite_video_player/xue_hua_navite_video_player.dart';
 ```
 
-公开导出主要包括：`VideoSource`、`VideoPlayerController`、`VideoPlayer`、`CorePlayer`、`VideoPlayerTheme`、`PlayState`、`AspectRatioMode`、`SkipSecondType`、`VideoCoverFrame`、`XueHuaNaviteVideoPlayer`，以及 `XFile`（来自 `cross_file`）。
+公开导出主要包括：`VideoSource`、`VideoPlayerController`、`VideoPlayer`、`CorePlayer`、`VideoPlayerTheme`、`PlayState`、`AspectRatioMode`、`SkipSecondType`、`VideoCoverFrame`、`XueHuaNaviteVideoPlayer`、`PlayerScrubberSlider`、`VideoPlayerSlotContext`，以及 `XFile`（来自 `cross_file`）。
+
+---
+
+## Package skills
+
+本包随版本发布 [Agent Skills](https://dart.dev/tools/pub/package-skills)，供 AI 编码助手按真实公开 API（签名、默认值、易错点）生成代码。应用加入依赖后执行：
+
+```bash
+dart run skills@ get
+# 或跳过交互安装全部
+dart run skills@ get --all
+```
+
+Skills：
+
+- `xue-hua-navite-video-player-setup` — 安装、平台配置、initialize、单会话
+- `xue-hua-navite-video-player-playback` — `VideoSource`、`VideoPlayerController`、探测 API
+- `xue-hua-navite-video-player-ui` — `VideoPlayer`、`CorePlayer`、主题、进度条
 
 ---
 
@@ -275,7 +294,7 @@ class _MyAppState extends State<MyApp> {
 }
 ```
 
-`XueHuaNaviteVideoPlayer.instance.initialize()` 是幂等的轻量初始化（确保 Flutter binding 就绪）。真正创建原生播放器的是 `VideoPlayerController.initialize()`。
+`XueHuaNaviteVideoPlayer.instance.initialize()` 是幂等的轻量初始化（`isInitialized` 变为 true，确保 Flutter binding 就绪）。它**不会**创建原生播放器。真正创建原生会话的是 `VideoPlayerController.initialize()`。`XueHuaNaviteVideoPlayer.dispose()` 只清除该 binding 标记；释放播放器必须 `dispose()` 控制器。
 
 ---
 
@@ -301,14 +320,14 @@ class _MyAppState extends State<MyApp> {
 |----------------------|----------------------------|-----------------------------------------|
 | `NetworkVideoSource` | `VideoSource.network(url)` | HTTP(S) URL，原生直连                   |
 | `FileVideoSource`    | `VideoSource.file(path)`   | 绝对路径或 `file://` URI                |
-| `AssetVideoSource`   | `VideoSource.asset(path)`  | Flutter asset，首次使用时抽取到临时目录 |
+| `AssetVideoSource`   | `VideoSource.asset(path)`  | Flutter asset；原生抽取到临时文件，Web 使用 `assets/` URL |
 
 ```dart
 final network = VideoSource.network('https://example.com/a.mp4');
 final file = VideoSource.file('/absolute/path/to/movie.mp4');
 final asset = VideoSource.asset('assets/videos/intro.mp4');
 
-// 解析为原生可播放 URL（asset 会触发抽取）
+// 解析为原生可播放 URL（原生 asset 会抽取；Web 返回 assets/ URL）
 final nativeUrl = await network.resolveToNativeUrl();
 ```
 
@@ -336,7 +355,7 @@ await controller.dispose();    // 释放原生资源；之后不可再用
 controller.reset();            // 重置 Dart 侧状态（不销毁会话）
 ```
 
-构造时可注入测试用依赖（一般应用无需关心）：
+构造时可注入测试用依赖（一般应用无需关心；`PlayerBackend` / `FullscreenCoordinator` / `BrightnessController` **未**从 barrel 导出，应用侧请保持默认）：
 
 ```dart
 VideoPlayerController({
@@ -359,6 +378,7 @@ VideoPlayerController({
 | `stop()`                                       | 主动停止（区别于播完）   |
 | `seek(position)`                               | 跳转到指定位置           |
 | `seekForward()` / `seekBackward()`             | 按 `skipSecondType` 步进 |
+| `setVideoViewSize`                             | 向 libmpv 上报 Flutter 视图尺寸（Linux / Windows）。`CorePlayer` 的 Texture 已自动调用 |
 
 ```dart
 // 打开后手动开播
@@ -418,7 +438,7 @@ final XFile saved = await controller.takeSnapshot(savePath: '/tmp/frame.png');
 | `volume` / `speed`      | `double`          | 音量与倍速            |
 | `isBuffering`           | `bool`            | 是否缓冲中            |
 | `errorMessage`          | `String?`         | 错误信息              |
-| `currentUrl`            | `String?`         | 当前原生 URL          |
+| `currentUrl`            | `String?`         | 来源 identity（`url` / `file://…` / `asset://…`） |
 | `mimeType`              | `String?`         | MIME 类型             |
 | `videoSize`             | `Size`            | 视频尺寸              |
 | `rotationDegrees`       | `int`             | 旋转角度              |
@@ -469,12 +489,11 @@ enum PlayState { idle, loading, playing, paused, stopped, completed, error }
 
 ### `CorePlayer` — 纯画面
 
-只渲染原生画面与加载 / 缓冲 / 错误态，适合完全自定义控件层。
+只渲染原生画面与加载 / 缓冲 / 错误态，适合完全自定义控件层。组件会**铺满父布局**；`aspectRatio` 不是布局约束（为 null 时会在尺寸/旋转变化时重建）。请自行用 `AspectRatio` / `Expanded` 等包一层。
 
 ```dart
 CorePlayer(
   controller: controller,
-  aspectRatio: 16 / 9,          // 可选；默认取视频上报比例，否则 16:9
   backgroundColor: Colors.black,
   loadingBuilder: (context) => const CircularProgressIndicator(),
   errorBuilder: (context, message) => Text(message ?? 'Error'),
@@ -499,6 +518,7 @@ VideoPlayer(
   leading: null,                                 // 默认关闭按钮
   title: const Text('标题'),
   actions: const [],                             // 顶部右侧操作
+  topBarActions: const [],                       // 紧接 actions 之后合并（遗留参数）
   showAspectRatioMenu: true,
   enableFullscreen: true,
   skipSecondType: SkipSecondType.second10,
@@ -522,13 +542,26 @@ class VideoPlayerSlotContext {
 }
 ```
 
-示例：替换底部进度条区域：
+示例：替换底部进度条区域（`PlayerScrubberSlider` **没有** `controller` 参数，需要传入 0.0–1.0 的 `value`，在 `onChangeEnd` 里 `seek`）：
 
 ```dart
 VideoPlayer(
   controller: controller,
   bottomScrubberBuilder: (context, slot) {
-    return PlayerScrubberSlider(controller: slot.controller);
+    return SignalBuilder(
+      builder: (context) {
+        final d = slot.controller.duration.value.inMilliseconds;
+        final p = slot.controller.position.value.inMilliseconds;
+        final v = d == 0 ? 0.0 : p / d;
+        return PlayerScrubberSlider(
+          value: v.clamp(0.0, 1.0),
+          onChangeEnd: (value) {
+            slot.controller.seek(Duration(milliseconds: (d * value).round()));
+            slot.showControls();
+          },
+        );
+      },
+    );
   },
 );
 ```
@@ -602,17 +635,19 @@ await controller.exitFullscreen();
 - **桌面** — 操作系统窗口全屏（Windows 无边框、macOS 原生全屏、Linux `gtk_window_fullscreen`）
 - **Web** — 对 Flutter 文档根使用浏览器 Fullscreen API（不是 `<video>` 元素）
 
-手势（移动端）仅在 **全屏且 `VideoPlayer` 已挂载** 时生效。快捷键（桌面 / Web）在全屏或非全屏下均可使用，需 **`VideoPlayer` 已挂载且获得焦点**（点击播放器区域即可）。`Esc` 退出全屏。
+手势在 **非 Web、全屏且 `VideoPlayer` 已挂载** 时生效。快捷键（桌面 / Web）在全屏或非全屏下均可使用，需 **`VideoPlayer` 已挂载且获得焦点**（点击播放器区域即可）。`Esc` 退出全屏。
 
 ---
 
 ## 手势与快捷键
 
-### 移动端（全屏）
+### 全屏手势（Web 除外）
+
+在全屏且已挂载 `VideoPlayer` 时生效（Web 只有点击显隐控件，没有滑动 HUD）。
 
 | 手势     | 区域             | 作用                                        |
 |----------|------------------|---------------------------------------------|
-| 水平滑动 | 任意（超过阈值） | 快进 / 快退（幅度受 `skipSecondType` 影响） |
+| 水平滑动 | 任意（超过 48px） | 快进 / 快退（幅度受 `skipSecondType` 影响） |
 | 垂直滑动 | 左侧约 40%       | 调节屏幕亮度                                |
 | 垂直滑动 | 右侧约 40%       | 调节音量                                    |
 | 单击     | —                | 显隐控件                                    |
@@ -705,10 +740,26 @@ class MyPlayer extends StatelessWidget {
 }
 ```
 
-进度条也可直接使用导出的 `PlayerScrubberSlider`：
+进度条也可直接使用导出的 `PlayerScrubberSlider`（`required value`，**没有** `controller` 参数）。按下不拖动不会 seek，在 `onChangeEnd` 里提交：
 
 ```dart
-PlayerScrubberSlider(controller: controller);
+SignalBuilder(
+  builder: (context) {
+    final duration = controller.duration.value;
+    final position = controller.position.value;
+    final progress = duration.inMilliseconds == 0
+        ? 0.0
+        : (position.inMilliseconds / duration.inMilliseconds).clamp(0.0, 1.0);
+    return PlayerScrubberSlider(
+      value: progress,
+      onChangeEnd: (v) {
+        controller.seek(
+          Duration(milliseconds: (duration.inMilliseconds * v).round()),
+        );
+      },
+    );
+  },
+);
 ```
 
 ---
@@ -750,7 +801,7 @@ flutter run
 
 ### Asset 播放失败？
 
-检查 `pubspec.yaml` 是否声明了对应 asset，且 `playAsset` / `VideoSource.asset` 的路径与声明一致。首次播放会抽取到临时目录，需有写入权限。
+检查 `pubspec.yaml` 是否声明了对应 asset，且 `playAsset` / `VideoSource.asset` 的路径与声明一致。原生平台首次播放会抽取到临时目录（需写入权限）；Web 使用托管的 `assets/` URL。
 
 ### Linux 编译报找不到 mpv？
 
@@ -762,7 +813,7 @@ flutter run
 
 ### `initialize()` 要调几次？
 
-- `XueHuaNaviteVideoPlayer.instance.initialize()`：可选、幂等，通常在 `main` 调一次
+- `XueHuaNaviteVideoPlayer.instance.initialize()`：可选、幂等，通常在 `main` 调一次。**不会**创建原生播放器。插件 `dispose()` 只清除 `isInitialized`
 - `VideoPlayerController.initialize()`：每个控制器生命周期调一次；`dispose()` 后不可再使用同一实例
 
 ---
