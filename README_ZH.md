@@ -137,7 +137,7 @@ XueHuaNaviteVideoPlayer.instance
 
 ```yaml
 dependencies:
-  xue_hua_navite_video_player: ^2.0.2
+  xue_hua_navite_video_player: ^2.0.3
 ```
 
 然后执行：

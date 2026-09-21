@@ -127,7 +127,7 @@ See [CONTEXT.md](CONTEXT.md) for domain notes.
 
 ```yaml
 dependencies:
-  xue_hua_navite_video_player: ^2.0.2
+  xue_hua_navite_video_player: ^2.0.3
 ```
 
 ```bash

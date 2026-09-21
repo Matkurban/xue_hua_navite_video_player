@@ -20,7 +20,7 @@ Widgets and theme: [xue-hua-navite-video-player-ui](../xue-hua-navite-video-play
 
 ## Guidelines
 
-- Add `xue_hua_navite_video_player: ^2.0.2` and run `flutter pub get`.
+- Add `xue_hua_navite_video_player: ^2.0.3` and run `flutter pub get`.
 - Call `WidgetsFlutterBinding.ensureInitialized()` before any plugin work.
 - `XueHuaNaviteVideoPlayer.instance.initialize()` is optional, idempotent, and does **not** create the native player. It only ensures the binding and sets `isInitialized`.
 - `VideoPlayerController.initialize()` creates the native session and subscribes to events. Call it once per controller lifetime, before `open*` / `play*`.

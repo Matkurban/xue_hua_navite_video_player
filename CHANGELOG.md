@@ -1,3 +1,7 @@
+## 2.0.3
+
+* Bump `chat_context_menu` to `^4.0.3`.
+
 ## 2.0.2
 
 * Ship Dart package skills (`skills/`) so AI coding agents can install official usage guidance with `dart run skills@ get`.
