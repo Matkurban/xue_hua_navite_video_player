@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:signals_flutter/signals_flutter.dart';
 import 'package:xue_hua_navite_video_player/xue_hua_navite_video_player.dart';
+import 'package:xue_hua_navite_video_player_example/app_theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -23,7 +24,7 @@ class _ExampleAppState extends State<ExampleApp> {
       title: 'Video Player',
       debugShowCheckedModeBanner: false,
       themeMode: ThemeMode.system,
-      theme: ThemeData.light(useMaterial3: true).copyWith(
+      theme: AppTheme.light.copyWith(
         extensions: const <ThemeExtension<dynamic>>[
           VideoPlayerTheme(
             foregroundColor: Colors.white,
@@ -31,7 +32,7 @@ class _ExampleAppState extends State<ExampleApp> {
           ),
         ],
       ),
-      darkTheme: ThemeData.dark(useMaterial3: true).copyWith(
+      darkTheme: AppTheme.dark.copyWith(
         extensions: const <ThemeExtension<dynamic>>[
           VideoPlayerTheme(
             foregroundColor: Colors.white,

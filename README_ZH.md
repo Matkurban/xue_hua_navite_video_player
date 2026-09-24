@@ -4,17 +4,18 @@
 
 跨平台 Flutter 音视频播放插件。Dart 侧提供统一的控制器与可选 UI；各端由原生引擎负责解码与渲染（ExoPlayer / AVPlayer / libmpv / HTML5）。
 
-| 项     | 说明                                                                     |
-|--------|--------------------------------------------------------------------------|
-| 仓库   | [GitHub](https://github.com/Matkurban/xue_hua_navite_video_player) |
-| 主页   | [jsontodart.cn](https://jsontodart.cn)                                   |
-| 许可证 | Apache 2.0                                                               |
+| 项       | 说明                                                                                                        |
+| -------- | ----------------------------------------------------------------------------------------------------------- |
+| 仓库     | [GitHub](https://github.com/Matkurban/xue_hua_navite_video_player)                                          |
+| 主页     | [jsontodart.cn](https://jsontodart.cn)                                                                      |
+| 在线演示 | [matkurban.github.io/xue_hua_navite_video_player](https://matkurban.github.io/xue_hua_navite_video_player/) |
+| 许可证   | Apache 2.0                                                                                                  |
 
 ---
 
 ## 目录
 
-- [xue\_hua\_navite\_video\_player](#xue_hua_navite_video_player)
+- [xue_hua_navite_video_player](#xue_hua_navite_video_player)
   - [目录](#目录)
   - [功能一览](#功能一览)
   - [平台引擎与渲染方式](#平台引擎与渲染方式)
@@ -84,7 +85,7 @@
 ## 平台引擎与渲染方式
 
 | 平台    | 原生引擎           | 画面承载                                    |
-|---------|--------------------|---------------------------------------------|
+| ------- | ------------------ | ------------------------------------------- |
 | Android | ExoPlayer (Media3) | `AndroidView` PlatformView（`TextureView`） |
 | iOS     | AVPlayer           | `UiKitView` PlatformView                    |
 | macOS   | AVPlayer           | `AppKitView` PlatformView                   |
@@ -118,14 +119,14 @@ XueHuaNaviteVideoPlayer.instance
   └── MediaProbe（时长探测 / 封面抽取，不占用播放会话）
 ```
 
-| 概念 | 含义 |
-|------|------|
-| **VideoSource** | 密封来源模型（network / file / asset），解析为原生可消费 URL |
-| **PlayState** | 高层播放状态，由 `PlaybackSession` 维护 |
-| **PlayerBackend** | 会话传输接口：create / open / play / pause / seek / volume / speed / snapshot 等 |
-| **PlaybackSession** | 管理 open → ready → playing / paused / stopped / completed / error |
-| **VideoPlayerController** | 面向应用与 UI 的稳定公开 API |
-| **MediaProbe** | 不创建播放会话的探测能力（时长、封面） |
+| 概念                      | 含义                                                                             |
+| ------------------------- | -------------------------------------------------------------------------------- |
+| **VideoSource**           | 密封来源模型（network / file / asset），解析为原生可消费 URL                     |
+| **PlayState**             | 高层播放状态，由 `PlaybackSession` 维护                                          |
+| **PlayerBackend**         | 会话传输接口：create / open / play / pause / seek / volume / speed / snapshot 等 |
+| **PlaybackSession**       | 管理 open → ready → playing / paused / stopped / completed / error               |
+| **VideoPlayerController** | 面向应用与 UI 的稳定公开 API                                                     |
+| **MediaProbe**            | 不创建播放会话的探测能力（时长、封面）                                           |
 
 更细的领域说明见仓库内 [CONTEXT.md](CONTEXT.md)。
 
@@ -137,7 +138,7 @@ XueHuaNaviteVideoPlayer.instance
 
 ```yaml
 dependencies:
-  xue_hua_navite_video_player: ^2.0.3
+  xue_hua_navite_video_player: ^2.1.0
 ```
 
 然后执行：
@@ -316,10 +317,10 @@ class _MyAppState extends State<MyApp> {
 
 `VideoSource` 是密封类型，三种实现：
 
-| 类型                 | 工厂                       | 说明                                    |
-|----------------------|----------------------------|-----------------------------------------|
-| `NetworkVideoSource` | `VideoSource.network(url)` | HTTP(S) URL，原生直连                   |
-| `FileVideoSource`    | `VideoSource.file(path)`   | 绝对路径或 `file://` URI                |
+| 类型                 | 工厂                       | 说明                                                      |
+| -------------------- | -------------------------- | --------------------------------------------------------- |
+| `NetworkVideoSource` | `VideoSource.network(url)` | HTTP(S) URL，原生直连                                     |
+| `FileVideoSource`    | `VideoSource.file(path)`   | 绝对路径或 `file://` URI                                  |
 | `AssetVideoSource`   | `VideoSource.asset(path)`  | Flutter asset；原生抽取到临时文件，Web 使用 `assets/` URL |
 
 ```dart
@@ -367,17 +368,17 @@ VideoPlayerController({
 
 ### 打开与播放
 
-| API                                            | 行为                     |
-|------------------------------------------------|--------------------------|
-| `playNetwork(url)`                             | 打开网络源并开始播放     |
-| `openNetwork(url)`                             | 仅打开，不自动开播       |
-| `playFile(path)` / `openFile(path)`            | 本地文件                 |
-| `playAsset(path, {bundle})` / `openAsset(...)` | Flutter asset            |
-| `playSource(source)` / `openSource(source)`    | 通用入口                 |
-| `play()` / `pause()` / `playOrPause()`         | 播放控制                 |
-| `stop()`                                       | 主动停止（区别于播完）   |
-| `seek(position)`                               | 跳转到指定位置           |
-| `seekForward()` / `seekBackward()`             | 按 `skipSecondType` 步进 |
+| API                                            | 行为                                                                                   |
+| ---------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `playNetwork(url)`                             | 打开网络源并开始播放                                                                   |
+| `openNetwork(url)`                             | 仅打开，不自动开播                                                                     |
+| `playFile(path)` / `openFile(path)`            | 本地文件                                                                               |
+| `playAsset(path, {bundle})` / `openAsset(...)` | Flutter asset                                                                          |
+| `playSource(source)` / `openSource(source)`    | 通用入口                                                                               |
+| `play()` / `pause()` / `playOrPause()`         | 播放控制                                                                               |
+| `stop()`                                       | 主动停止（区别于播完）                                                                 |
+| `seek(position)`                               | 跳转到指定位置                                                                         |
+| `seekForward()` / `seekBackward()`             | 按 `skipSecondType` 步进                                                               |
 | `setVideoViewSize`                             | 向 libmpv 上报 Flutter 视图尺寸（Linux / Windows）。`CorePlayer` 的 Texture 已自动调用 |
 
 ```dart
@@ -431,27 +432,27 @@ final XFile saved = await controller.takeSnapshot(savePath: '/tmp/frame.png');
 
 控制器通过 Signals 暴露状态，可用 `SignalBuilder` / `effect` / `watch` 等订阅：
 
-| Signal / Computed       | 类型              | 含义                  |
-|-------------------------|-------------------|-----------------------|
-| `playState`             | `PlayState`       | 播放状态              |
-| `position` / `duration` | `Duration`        | 进度与总时长          |
-| `volume` / `speed`      | `double`          | 音量与倍速            |
-| `isBuffering`           | `bool`            | 是否缓冲中            |
-| `errorMessage`          | `String?`         | 错误信息              |
+| Signal / Computed       | 类型              | 含义                                              |
+| ----------------------- | ----------------- | ------------------------------------------------- |
+| `playState`             | `PlayState`       | 播放状态                                          |
+| `position` / `duration` | `Duration`        | 进度与总时长                                      |
+| `volume` / `speed`      | `double`          | 音量与倍速                                        |
+| `isBuffering`           | `bool`            | 是否缓冲中                                        |
+| `errorMessage`          | `String?`         | 错误信息                                          |
 | `currentUrl`            | `String?`         | 来源 identity（`url` / `file://…` / `asset://…`） |
-| `mimeType`              | `String?`         | MIME 类型             |
-| `videoSize`             | `Size`            | 视频尺寸              |
-| `rotationDegrees`       | `int`             | 旋转角度              |
-| `videoAspectRatio`      | `double`          | 考虑旋转后的宽高比    |
-| `isVideo` / `isAudio`   | `bool`            | 根据 mime 推断        |
-| `isPlaying`             | `bool`            | 是否正在播放          |
-| `progressPercent`       | `double`          | 0.0 – 1.0             |
-| `muted`                 | `bool`            | 是否静音              |
-| `skipSecondType`        | `SkipSecondType`  | 跳过步进              |
-| `aspectRatioMode`       | `AspectRatioMode` | 画面模式              |
-| `isFullscreen`          | `bool`            | 是否全屏              |
-| `brightness`            | `double`          | 屏幕亮度              |
-| `textureId`             | `int?`            | Texture 平台的纹理 ID |
+| `mimeType`              | `String?`         | MIME 类型                                         |
+| `videoSize`             | `Size`            | 视频尺寸                                          |
+| `rotationDegrees`       | `int`             | 旋转角度                                          |
+| `videoAspectRatio`      | `double`          | 考虑旋转后的宽高比                                |
+| `isVideo` / `isAudio`   | `bool`            | 根据 mime 推断                                    |
+| `isPlaying`             | `bool`            | 是否正在播放                                      |
+| `progressPercent`       | `double`          | 0.0 – 1.0                                         |
+| `muted`                 | `bool`            | 是否静音                                          |
+| `skipSecondType`        | `SkipSecondType`  | 跳过步进                                          |
+| `aspectRatioMode`       | `AspectRatioMode` | 画面模式                                          |
+| `isFullscreen`          | `bool`            | 是否全屏                                          |
+| `brightness`            | `double`          | 屏幕亮度                                          |
+| `textureId`             | `int?`            | Texture 平台的纹理 ID                             |
 
 ```dart
 SignalBuilder(
@@ -472,7 +473,7 @@ enum PlayState { idle, loading, playing, paused, stopped, completed, error }
 ```
 
 | 状态        | 含义                            |
-|-------------|---------------------------------|
+| ----------- | ------------------------------- |
 | `idle`      | 初始 / 重置后                   |
 | `loading`   | 打开媒体、准备中                |
 | `playing`   | 正在播放                        |
@@ -601,7 +602,7 @@ MaterialApp(
 常用字段分组：
 
 | 分组        | 字段示例                                                                                                       |
-|-------------|----------------------------------------------------------------------------------------------------------------|
+| ----------- | -------------------------------------------------------------------------------------------------------------- |
 | 基础色      | `foregroundColor`、`backgroundColor`                                                                           |
 | 中央控件    | `centerControlsSpacing`、`centerPlayButtonIconSize`、`centerSkipButtonIconSize`、`centerButtonBackgroundColor` |
 | 顶栏 / 底栏 | `chromeIconSize`、`topBarPadding`、`bottomBarPadding`、`timeTextStyle`                                         |
@@ -625,7 +626,7 @@ await controller.exitFullscreen();
 ```
 
 | 调用场景                                    | 效果                                      |
-|---------------------------------------------|-------------------------------------------|
+| ------------------------------------------- | ----------------------------------------- |
 | 已挂载 `VideoPlayer`，且存在 `Overlay` 祖先 | 平台全屏 **以及** 铺满的视觉 Overlay 控件 |
 | 仅控制器，或只有 `CorePlayer`               | 仅平台全屏，**无**视觉全屏宿主            |
 
@@ -645,19 +646,19 @@ await controller.exitFullscreen();
 
 在全屏且已挂载 `VideoPlayer` 时生效（Web 只有点击显隐控件，没有滑动 HUD）。
 
-| 手势     | 区域             | 作用                                        |
-|----------|------------------|---------------------------------------------|
+| 手势     | 区域              | 作用                                        |
+| -------- | ----------------- | ------------------------------------------- |
 | 水平滑动 | 任意（超过 48px） | 快进 / 快退（幅度受 `skipSecondType` 影响） |
-| 垂直滑动 | 左侧约 40%       | 调节屏幕亮度                                |
-| 垂直滑动 | 右侧约 40%       | 调节音量                                    |
-| 单击     | —                | 显隐控件                                    |
+| 垂直滑动 | 左侧约 40%        | 调节屏幕亮度                                |
+| 垂直滑动 | 右侧约 40%        | 调节音量                                    |
+| 单击     | —                 | 显隐控件                                    |
 
 手势过程中会显示 HUD（亮度 / 音量 / 跳转秒数）。
 
 ### 桌面 / Web（已聚焦 — 全屏或非全屏）
 
 | 按键      | 作用              |
-|-----------|-------------------|
+| --------- | ----------------- |
 | `Space`   | 播放 / 暂停       |
 | `←` / `→` | 按步进后退 / 前进 |
 | `↑` / `↓` | 音量 ±0.05        |
@@ -765,6 +766,8 @@ SignalBuilder(
 ---
 
 ## 示例应用
+
+在线演示：<https://matkurban.github.io/xue_hua_navite_video_player/>
 
 仓库 [`example/`](example/) 提供完整演示，包括：
 

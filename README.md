@@ -4,17 +4,18 @@
 
 A cross-platform Flutter audio/video player plugin. Dart exposes a unified controller and optional UI; each platform decodes and renders with a native engine (ExoPlayer / AVPlayer / libmpv / HTML5).
 
-|            |                                                                          |
-|------------|--------------------------------------------------------------------------|
-| Repository | [GitHub](https://github.com/Matkurban/xue_hua_navite_video_player) |
-| Homepage   | [jsontodart.cn](https://jsontodart.cn)                                   |
-| License    | Apache 2.0                                                               |
+|            |                                                                                                             |
+| ---------- | ----------------------------------------------------------------------------------------------------------- |
+| Repository | [GitHub](https://github.com/Matkurban/xue_hua_navite_video_player)                                          |
+| Homepage   | [jsontodart.cn](https://jsontodart.cn)                                                                      |
+| Web demo   | [matkurban.github.io/xue_hua_navite_video_player](https://matkurban.github.io/xue_hua_navite_video_player/) |
+| License    | Apache 2.0                                                                                                  |
 
 ---
 
 ## Table of contents
 
-- [xue\_hua\_navite\_video\_player](#xue_hua_navite_video_player)
+- [xue_hua_navite_video_player](#xue_hua_navite_video_player)
   - [Table of contents](#table-of-contents)
   - [Features](#features)
   - [Platform engines \& rendering](#platform-engines--rendering)
@@ -76,7 +77,7 @@ A cross-platform Flutter audio/video player plugin. Dart exposes a unified contr
 ## Platform engines & rendering
 
 | Platform | Native engine      | Surface                                    |
-|----------|--------------------|--------------------------------------------|
+| -------- | ------------------ | ------------------------------------------ |
 | Android  | ExoPlayer (Media3) | `AndroidView` PlatformView (`TextureView`) |
 | iOS      | AVPlayer           | `UiKitView` PlatformView                   |
 | macOS    | AVPlayer           | `AppKitView` PlatformView                  |
@@ -111,7 +112,7 @@ XueHuaNaviteVideoPlayer.instance
 ```
 
 | Term                      | Meaning                                                                            |
-|---------------------------|------------------------------------------------------------------------------------|
+| ------------------------- | ---------------------------------------------------------------------------------- |
 | **VideoSource**           | Sealed source model (network / file / asset) resolved to a native URL              |
 | **PlayState**             | High-level playback state owned by `PlaybackSession`                               |
 | **PlayerBackend**         | Session transport: create / open / play / pause / seek / volume / speed / snapshot |
@@ -127,7 +128,7 @@ See [CONTEXT.md](CONTEXT.md) for domain notes.
 
 ```yaml
 dependencies:
-  xue_hua_navite_video_player: ^2.0.3
+  xue_hua_navite_video_player: ^2.1.0
 ```
 
 ```bash
@@ -298,10 +299,10 @@ Multi-instance concurrent players (e.g. PiP + list preview) are **not** supporte
 
 Sealed source types:
 
-| Type                 | Factory                    | Notes                                         |
-|----------------------|----------------------------|-----------------------------------------------|
-| `NetworkVideoSource` | `VideoSource.network(url)` | HTTP(S); opened directly by the native player |
-| `FileVideoSource`    | `VideoSource.file(path)`   | Absolute path or `file://` URI                |
+| Type                 | Factory                    | Notes                                                          |
+| -------------------- | -------------------------- | -------------------------------------------------------------- |
+| `NetworkVideoSource` | `VideoSource.network(url)` | HTTP(S); opened directly by the native player                  |
+| `FileVideoSource`    | `VideoSource.file(path)`   | Absolute path or `file://` URI                                 |
 | `AssetVideoSource`   | `VideoSource.asset(path)`  | Flutter asset; native extracts to temp; Web uses `assets/` URL |
 
 ```dart
@@ -348,17 +349,17 @@ VideoPlayerController({
 
 ### Open & play
 
-| API                              | Behavior                              |
-|----------------------------------|---------------------------------------|
-| `playNetwork(url)`               | Open network source and start         |
-| `openNetwork(url)`               | Open only; call `play()` later        |
-| `playFile` / `openFile`          | Local file                            |
-| `playAsset` / `openAsset`        | Flutter asset                         |
-| `playSource` / `openSource`      | Generic entry                         |
-| `play` / `pause` / `playOrPause` | Transport                             |
-| `stop`                           | Explicit stop (vs natural completion) |
-| `seek`                           | Absolute seek                         |
-| `seekForward` / `seekBackward`   | Step by `skipSecondType`              |
+| API                              | Behavior                                                                                       |
+| -------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `playNetwork(url)`               | Open network source and start                                                                  |
+| `openNetwork(url)`               | Open only; call `play()` later                                                                 |
+| `playFile` / `openFile`          | Local file                                                                                     |
+| `playAsset` / `openAsset`        | Flutter asset                                                                                  |
+| `playSource` / `openSource`      | Generic entry                                                                                  |
+| `play` / `pause` / `playOrPause` | Transport                                                                                      |
+| `stop`                           | Explicit stop (vs natural completion)                                                          |
+| `seek`                           | Absolute seek                                                                                  |
+| `seekForward` / `seekBackward`   | Step by `skipSecondType`                                                                       |
 | `setVideoViewSize`               | Report Flutter view size to libmpv (Linux / Windows). `CorePlayer` Texture already calls this. |
 
 ```dart
@@ -407,27 +408,27 @@ final XFile saved = await controller.takeSnapshot(savePath: '/tmp/frame.png');
 
 ### Reactive signals
 
-| Signal / computed       | Type              | Meaning              |
-|-------------------------|-------------------|----------------------|
-| `playState`             | `PlayState`       | Playback state       |
-| `position` / `duration` | `Duration`        | Progress / total     |
-| `volume` / `speed`      | `double`          | Volume / rate        |
-| `isBuffering`           | `bool`            | Buffering            |
-| `errorMessage`          | `String?`         | Error text           |
+| Signal / computed       | Type              | Meaning                                            |
+| ----------------------- | ----------------- | -------------------------------------------------- |
+| `playState`             | `PlayState`       | Playback state                                     |
+| `position` / `duration` | `Duration`        | Progress / total                                   |
+| `volume` / `speed`      | `double`          | Volume / rate                                      |
+| `isBuffering`           | `bool`            | Buffering                                          |
+| `errorMessage`          | `String?`         | Error text                                         |
 | `currentUrl`            | `String?`         | Source identity (`url` / `file://…` / `asset://…`) |
-| `mimeType`              | `String?`         | MIME type            |
-| `videoSize`             | `Size`            | Video size           |
-| `rotationDegrees`       | `int`             | Rotation             |
-| `videoAspectRatio`      | `double`          | Ratio after rotation |
-| `isVideo` / `isAudio`   | `bool`            | From mime            |
-| `isPlaying`             | `bool`            | Playing              |
-| `progressPercent`       | `double`          | 0.0 – 1.0            |
-| `muted`                 | `bool`            | Muted                |
-| `skipSecondType`        | `SkipSecondType`  | Skip step            |
-| `aspectRatioMode`       | `AspectRatioMode` | Fit mode             |
-| `isFullscreen`          | `bool`            | Fullscreen           |
-| `brightness`            | `double`          | Screen brightness    |
-| `textureId`             | `int?`            | Texture id (desktop) |
+| `mimeType`              | `String?`         | MIME type                                          |
+| `videoSize`             | `Size`            | Video size                                         |
+| `rotationDegrees`       | `int`             | Rotation                                           |
+| `videoAspectRatio`      | `double`          | Ratio after rotation                               |
+| `isVideo` / `isAudio`   | `bool`            | From mime                                          |
+| `isPlaying`             | `bool`            | Playing                                            |
+| `progressPercent`       | `double`          | 0.0 – 1.0                                          |
+| `muted`                 | `bool`            | Muted                                              |
+| `skipSecondType`        | `SkipSecondType`  | Skip step                                          |
+| `aspectRatioMode`       | `AspectRatioMode` | Fit mode                                           |
+| `isFullscreen`          | `bool`            | Fullscreen                                         |
+| `brightness`            | `double`          | Screen brightness                                  |
+| `textureId`             | `int?`            | Texture id (desktop)                               |
 
 ```dart
 SignalBuilder(
@@ -448,7 +449,7 @@ enum PlayState { idle, loading, playing, paused, stopped, completed, error }
 ```
 
 | State       | Meaning                                    |
-|-------------|--------------------------------------------|
+| ----------- | ------------------------------------------ |
 | `idle`      | Initial / after reset                      |
 | `loading`   | Opening / preparing                        |
 | `playing`   | Playing                                    |
@@ -540,7 +541,7 @@ MaterialApp(
 ```
 
 | Group       | Examples                                                                        |
-|-------------|---------------------------------------------------------------------------------|
+| ----------- | ------------------------------------------------------------------------------- |
 | Base        | `foregroundColor`, `backgroundColor`                                            |
 | Center      | `centerControlsSpacing`, `centerPlayButtonIconSize`, `centerSkipButtonIconSize` |
 | Bars        | `chromeIconSize`, `topBarPadding`, `bottomBarPadding`, `timeTextStyle`          |
@@ -562,7 +563,7 @@ await controller.exitFullscreen();
 ```
 
 | Call site                                | Effect                                                  |
-|------------------------------------------|---------------------------------------------------------|
+| ---------------------------------------- | ------------------------------------------------------- |
 | Mounted `VideoPlayer` under an `Overlay` | Platform fullscreen **and** edge-to-edge Overlay chrome |
 | Controller / `CorePlayer` only           | Platform fullscreen only — no visual Overlay host       |
 
@@ -582,17 +583,17 @@ Gestures are active on non-Web platforms while fullscreen **and** a `VideoPlayer
 
 Active while fullscreen **and** a `VideoPlayer` is mounted (`kIsWeb` uses tap-only, no pan HUD).
 
-| Gesture         | Zone                      | Action                            |
-|-----------------|---------------------------|-----------------------------------|
-| Horizontal drag | Anywhere (past 48px)      | Seek (scaled by `skipSecondType`) |
-| Vertical drag   | Left ~40%                 | Brightness                        |
-| Vertical drag   | Right ~40%                | Volume                            |
-| Tap             | —                         | Toggle chrome                     |
+| Gesture         | Zone                 | Action                            |
+| --------------- | -------------------- | --------------------------------- |
+| Horizontal drag | Anywhere (past 48px) | Seek (scaled by `skipSecondType`) |
+| Vertical drag   | Left ~40%            | Brightness                        |
+| Vertical drag   | Right ~40%           | Volume                            |
+| Tap             | —                    | Toggle chrome                     |
 
 ### Desktop / Web (focused — fullscreen or inline)
 
 | Key       | Action                  |
-|-----------|-------------------------|
+| --------- | ----------------------- |
 | `Space`   | Play / pause            |
 | `←` / `→` | Seek backward / forward |
 | `↑` / `↓` | Volume ±0.05            |
@@ -696,6 +697,8 @@ SignalBuilder(
 
 See [`example/`](example/) for a full demo: playlist, themed `VideoPlayer`, fullscreen, snapshots, cover extraction, and state chips.
 
+Online demo: <https://matkurban.github.io/xue_hua_navite_video_player/>
+
 ```bash
 cd example
 flutter run
@@ -720,8 +723,9 @@ Install `libmpv-dev` (or distro equivalent).
 **Web snapshot / black frame?**  
 Check CORS and whether the browser allows reading cross-origin media pixels.
 
-**How many `initialize()` calls?**  
-- Plugin `initialize()`: optional, idempotent, once in `main`. Does not create the native player. `dispose()` on the plugin only clears `isInitialized`.  
+**How many `initialize()` calls?**
+
+- Plugin `initialize()`: optional, idempotent, once in `main`. Does not create the native player. `dispose()` on the plugin only clears `isInitialized`.
 - Controller `initialize()`: once per controller lifetime; do not reuse after `dispose()`
 
 ---

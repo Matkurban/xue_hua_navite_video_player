@@ -1,30 +1,35 @@
+## 2.1.0
+
+- update `material_ui` version to ^1.4.0
+- update `cupertino_ui` version to ^1.1.1
+- **SDK Constraints**: Bumped minimum Flutter SDK requirement to `>=3.47.0` and Bumped minimum Dart SDK requirement to `>=3.13.0`
+
 ## 2.0.3
 
-* Bump `chat_context_menu` to `^4.0.3`.
+- Bump `chat_context_menu` to `^4.0.3`.
 
 ## 2.0.2
 
-* Ship Dart package skills (`skills/`) so AI coding agents can install official usage guidance with `dart run skills@ get`.
-* Document every barrel-exported type and method in skill `references/` (signatures, defaults, errors, and platform behavior).
-* Fix README / README_ZH mismatches with the public API: install constraint `^2.0.2`, `PlayerScrubberSlider` constructor (`value` not `controller`), Web asset URLs vs native temp extract, `setVideoViewSize`, plugin `isInitialized` / `dispose()`, `VideoPlayer.topBarActions`, `currentUrl` identity, and non-Web fullscreen gestures.
+- Ship Dart package skills (`skills/`) so AI coding agents can install official usage guidance with `dart run skills@ get`.
+- Document every barrel-exported type and method in skill `references/` (signatures, defaults, errors, and platform behavior).
+- Fix README / README_ZH mismatches with the public API: install constraint `^2.0.2`, `PlayerScrubberSlider` constructor (`value` not `controller`), Web asset URLs vs native temp extract, `setVideoViewSize`, plugin `isInitialized` / `dispose()`, `VideoPlayer.topBarActions`, `currentUrl` identity, and non-Web fullscreen gestures.
 
 ## 2.0.1
 
-* update package version
-* fix android player buffering bugs
+- update package version
+- fix android player buffering bugs
 
 ## 2.0.0
 
 ### Breaking Changes ⚠️
 
-* **Dependency Migration**: Replaced legacy Flutter package imports with `material_ui` and `cupertino_ui` following the Flutter 3.47 package decoupling.
-* **SDK Constraints**: Bumped minimum Flutter SDK requirement to `>=3.44.0`.
+- **Dependency Migration**: Replaced legacy Flutter package imports with `material_ui` and `cupertino_ui` following the Flutter 3.47 package decoupling.
+- **SDK Constraints**: Bumped minimum Flutter SDK requirement to `>=3.44.0`.
 
 ### Features & Improvements
 
-* **Example App**: Updated the example application code and import paths to align with the new dependencies.
-* **Linter & Analysis**: Added build directory exclusions (`build/**`) in `analysis_options.yaml` to optimize static analysis performance.
-
+- **Example App**: Updated the example application code and import paths to align with the new dependencies.
+- **Linter & Analysis**: Added build directory exclusions (`build/**`) in `analysis_options.yaml` to optimize static analysis performance.
 
 ## 1.3.0
 
