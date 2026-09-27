@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:signals_flutter/signals_flutter.dart';
 
 import '../data/enums/aspect_ratio_mode.dart';
+import '../utils/png_xfile.dart';
 import '../utils/temp_paths.dart';
 import 'player_backend.dart';
 import 'player_event.dart';
@@ -191,15 +192,14 @@ class ChannelPlayerBackend implements PlayerBackend {
     }
     if (kIsWeb) {
       if (raw is String) {
-        return XFile(raw, mimeType: 'image/png');
+        return pngXFileFromLocation(raw);
       }
-      final bytes = _asUint8List(raw);
-      return XFile.fromData(bytes, mimeType: 'image/png', name: _defaultSnapshotName());
+      return pngXFileFromBytes(_asUint8List(raw));
     }
     final bytes = _asUint8List(raw);
     final outPath = savePath ?? await pluginSnapshotPath(_defaultSnapshotName());
     await writeFileBytes(outPath, bytes);
-    return XFile(outPath, mimeType: 'image/png');
+    return pngXFileFromLocation(outPath);
   }
 
   static Uint8List _asUint8List(dynamic raw) {

@@ -128,7 +128,7 @@ See [CONTEXT.md](CONTEXT.md) for domain notes.
 
 ```yaml
 dependencies:
-  xue_hua_navite_video_player: ^2.1.0
+  xue_hua_navite_video_player: ^2.2.0
 ```
 
 ```bash
@@ -139,7 +139,7 @@ flutter pub get
 import 'package:xue_hua_navite_video_player/xue_hua_navite_video_player.dart';
 ```
 
-Public exports include: `VideoSource`, `VideoPlayerController`, `VideoPlayer`, `CorePlayer`, `VideoPlayerTheme`, `PlayState`, `AspectRatioMode`, `SkipSecondType`, `VideoCoverFrame`, `XueHuaNaviteVideoPlayer`, `PlayerScrubberSlider`, `VideoPlayerSlotContext`, and `XFile` (re-exported from `cross_file`).
+Public exports include: `VideoSource`, `VideoPlayerController`, `VideoPlayer`, `CorePlayer`, `VideoPlayerTheme`, `PlayState`, `AspectRatioMode`, `SkipSecondType`, `VideoCoverFrame`, `XueHuaNaviteVideoPlayer`, `PlayerScrubberSlider`, `VideoPlayerSlotContext`, `XFile`, and `FileSystemXFile` (re-exported from `cross_file`).
 
 ---
 
@@ -162,6 +162,8 @@ Skills:
 ---
 
 ## Platform setup
+
+Minimum OS versions: Android API 24, iOS 13, macOS 10.15, Windows 10. Linux and Web have no extra OS floor.
 
 ### Android
 
@@ -611,7 +613,8 @@ final XFile png = await controller.takeSnapshot();
 
 - **iOS / macOS:** `AVAssetImageGenerator` at the current time (PlatformView display; no Texture frame buffer required)
 - **Other platforms:** native snapshot paths
-- Returns a PNG `XFile` (re-exported; no need to depend on `cross_file` yourself)
+- Returns a PNG `XFile` (`XFile` and `FileSystemXFile` are re-exported; no need to depend on `cross_file` yourself)
+- Cross-platform id is `uri` (`file://` on native, a `data:` or `blob:` URL on web). The raw native path is `FileSystemXFile.path`. `mimeType` and `saveTo` are gone; `name()` is asynchronous and may be null.
 
 ### Cover candidates (no playback session)
 
@@ -627,7 +630,7 @@ for (final frame in frames) {
 }
 ```
 
-On native platforms `XFile.path` is a real file path; on web it may be a blob / data URL.
+`uri` is the cross-platform id (`file://` on native, a `data:` or `blob:` URL on web). The raw native path is `FileSystemXFile.path`.
 
 ### Duration probe (no playback session)
 

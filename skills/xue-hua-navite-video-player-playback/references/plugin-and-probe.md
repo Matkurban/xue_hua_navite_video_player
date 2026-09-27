@@ -45,12 +45,12 @@ Future<List<VideoCoverFrame>> extractCoverCandidates(
 
 Extract non-black cover candidates without starting playback.
 
-| Parameter | Default | Rules |
-|-----------|---------|--------|
-| `source` | required | Resolved with `resolveToNativeUrl()`. |
-| `count` | `5` | Must be `> 0` (`assert`). Native is asked for `count` frames from `(count * 3).clamp(count, 30)` candidates. |
-| `minBrightness` | `0.08` | Filter threshold sent to native. |
-| `outputDir` | `null` | **Web:** ignored (empty string). **Native:** `outputDir ??` plugin cover cache dir. |
+| Parameter       | Default  | Rules                                                                                                        |
+| --------------- | -------- | ------------------------------------------------------------------------------------------------------------ |
+| `source`        | required | Resolved with `resolveToNativeUrl()`.                                                                        |
+| `count`         | `5`      | Must be `> 0` (`assert`). Native is asked for `count` frames from `(count * 3).clamp(count, 30)` candidates. |
+| `minBrightness` | `0.08`   | Filter threshold sent to native.                                                                             |
+| `outputDir`     | `null`   | **Web:** ignored (empty string). **Native:** `outputDir ??` plugin cover cache dir.                          |
 
 Behavior:
 
@@ -59,7 +59,7 @@ Behavior:
 - Null channel result → empty list.
 - Frames with missing/empty `path` are dropped.
 - Remaining frames sorted by `brightness` **descending**.
-- Each frame image is PNG `XFile`. Native `XFile.path` is a real file; web may be a blob URL.
+- Each frame image is PNG `XFile`. `uri` is the cross-platform id (`file://` on native, a data or blob URL on web). The raw native path is `FileSystemXFile.path`.
 
 ### `Future<Duration?> getDuration`
 
@@ -94,17 +94,21 @@ class VideoCoverFrame {
 }
 ```
 
-| Field | Type | Meaning |
-|-------|------|---------|
-| `image` | `XFile` | Cover PNG. Native: real path. Web: blob URL. |
-| `position` | `Duration` | Timestamp in the video. |
-| `brightness` | `double` | Average brightness 0.0–1.0 (clamped when parsed from native). |
+| Field        | Type       | Meaning                                                                                                         |
+| ------------ | ---------- | --------------------------------------------------------------------------------------------------------------- |
+| `image`      | `XFile`    | Cover PNG. `uri` is `file://` on native and a data or blob URL on web. Raw native path: `FileSystemXFile.path`. |
+| `position`   | `Duration` | Timestamp in the video.                                                                                         |
+| `brightness` | `double`   | Average brightness 0.0–1.0 (clamped when parsed from native).                                                   |
 
-`toString()` includes position, brightness (3 decimals), and `image.path`. No `copyWith` / `==` override.
+`toString()` includes position, brightness (3 decimals), and `image.uri`. No `copyWith` / `==` override.
 
 ## `XFile`
 
-Re-exported from `package:cross_file/cross_file.dart` (`show XFile`). Dependents do not need a direct `cross_file` dependency for snapshot/cover return types.
+Re-exported from `package:cross_file/cross_file.dart` (`show XFile, FileSystemXFile`). Dependents do not need a direct `cross_file` dependency for snapshot/cover return types.
+
+- `uri` is the cross-platform identifier.
+- Native filesystem paths: cast to `FileSystemXFile` and read `path`.
+- `name()` returns `Future<String?>`. `mimeType` and `saveTo` are not part of `cross_file` 0.4.
 
 ## Example
 

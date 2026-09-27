@@ -6,9 +6,10 @@ import 'package:flutter/foundation.dart';
 /// Represents one candidate cover frame extracted from a video.
 @immutable
 class VideoCoverFrame {
-  /// 封面图片（PNG）。Native 平台上 [XFile.path] 指向真实文件；Web 上为 blob URL。
-  /// Cover PNG image. On native platforms [XFile.path] is a real file path;
-  /// on the web it is a blob URL.
+  /// 封面图片（PNG）。跨平台标识是 [XFile.uri]：原生为 `file://` URI，Web 为 data / blob URL。
+  /// 原生裸路径见 [FileSystemXFile.path]。
+  /// Cover PNG. [XFile.uri] is the cross-platform id (`file://` on native, a
+  /// data or blob URL on the web). The raw native path is [FileSystemXFile.path].
   final XFile image;
 
   /// 帧在视频中的时间戳。
@@ -25,5 +26,5 @@ class VideoCoverFrame {
   @override
   String toString() =>
       'VideoCoverFrame(position: $position, brightness: ${brightness.toStringAsFixed(3)}, '
-      'path: ${image.path})';
+      'uri: ${image.uri})';
 }

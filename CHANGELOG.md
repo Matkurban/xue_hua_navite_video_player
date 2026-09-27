@@ -1,3 +1,10 @@
+## 2.2.0
+
+- Adapt snapshots and cover frames to `cross_file` 0.4.0.
+- **Breaking**: re-exported `XFile` no longer exposes `path`, `mimeType`, or `saveTo`. Use `uri` as the cross-platform identifier. Native filesystem paths are `FileSystemXFile.path` (now re-exported). `name()` is asynchronous and may be null.
+- Raise the macOS deployment target from 10.11 to 10.15 so it matches `cross_file`.
+- Document platform minimums: Android API 24, iOS 13, macOS 10.15, Windows 10. Linux and Web have no extra OS floor.
+
 ## 2.1.0
 
 - update `material_ui` version to ^1.4.0

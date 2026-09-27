@@ -46,7 +46,7 @@ Do not import `PlaybackSession`, `PlayerBackend`, `MediaProbe`, or `MimeDetector
 - `setSkipSecondType` is synchronous Dart state. `setAspectRatioMode` updates the signal and the native fit property.
 - `setVideoViewSize` is a no-op when width or height `<= 0`. `CorePlayer` already reports size on Linux/Windows Texture. Custom Texture surfaces must call it for mpv panscan.
 - `enterFullscreen` sets `isFullscreen` first, then the platform host. Visual Overlay chrome requires a mounted `VideoPlayer` under an `Overlay`. `CorePlayer` alone still changes window / browser / orientation.
-- `takeSnapshot` throws `StateError` if disposed or if `currentUrl` is null. Returns a PNG `XFile`. Optional `savePath` writes to that path.
+- `takeSnapshot` throws `StateError` if disposed or if `currentUrl` is null. Returns a PNG `XFile`. Optional `savePath` writes that native filesystem path, then wraps it as `FileSystemXFile`. On web, `savePath` is ignored. Read `uri` (`file://` on native, `data:` or `blob:` on web). The raw native path is `FileSystemXFile.path`. `name()` is asynchronous and may be null. There is no `mimeType` or `saveTo`.
 - `reset()` clears play/position/duration/buffering/error/url/mime/size/rotation. It does **not** reset volume, speed, muted, skip, aspect, fullscreen, or brightness, and does not dispose the native session.
 - Watch signals with `SignalBuilder` / `effect` from `signals_flutter`. Read `.value` inside the builder.
 - `isBuffering` can overlap other states (for example playing + buffering).

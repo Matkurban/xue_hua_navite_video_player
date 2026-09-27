@@ -381,11 +381,14 @@ class _SnapshotDialog extends StatelessWidget {
             const SizedBox(height: 8),
             ConstrainedBox(
               constraints: const BoxConstraints(maxHeight: 360),
-              child: _imageFor(file),
+              child: _XFileImage(file: file),
             ),
             const SizedBox(height: 8),
             SelectableText(
-              file.path,
+              switch (file) {
+                FileSystemXFile(:final path) => path,
+                _ => file.uri,
+              },
               style: Theme.of(context).textTheme.bodySmall,
               maxLines: 2,
             ),
@@ -436,7 +439,7 @@ class _CoversDialog extends StatelessWidget {
                       SizedBox(
                         width: 100,
                         height: 56,
-                        child: _imageFor(f.image, fit: BoxFit.cover),
+                        child: _XFileImage(file: f.image, fit: BoxFit.cover),
                       ),
                       const SizedBox(width: 10),
                       Expanded(
@@ -474,17 +477,25 @@ class _CoversDialog extends StatelessWidget {
   }
 }
 
-Widget _imageFor(XFile file, {BoxFit fit = BoxFit.contain}) {
-  if (kIsWeb) {
-    // On web, path is a data: or blob: URL.
-    return Image.network(file.path, fit: fit);
+class _XFileImage extends StatelessWidget {
+  final XFile file;
+  final BoxFit fit;
+
+  const _XFileImage({required this.file, this.fit = BoxFit.contain});
+
+  @override
+  Widget build(BuildContext context) {
+    if (kIsWeb) {
+      // On web, uri is a data: or blob: URL.
+      return Image.network(file.uri, fit: fit);
+    }
+    return FutureBuilder<Uint8List>(
+      future: file.readAsBytes(),
+      builder: (context, snap) {
+        final bytes = snap.data;
+        if (bytes == null) return const SizedBox.shrink();
+        return Image.memory(bytes, fit: fit);
+      },
+    );
   }
-  return FutureBuilder<Uint8List>(
-    future: file.readAsBytes(),
-    builder: (context, snap) {
-      final bytes = snap.data;
-      if (bytes == null) return const SizedBox.shrink();
-      return Image.memory(bytes, fit: fit);
-    },
-  );
 }

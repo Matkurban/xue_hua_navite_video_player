@@ -138,7 +138,7 @@ XueHuaNaviteVideoPlayer.instance
 
 ```yaml
 dependencies:
-  xue_hua_navite_video_player: ^2.1.0
+  xue_hua_navite_video_player: ^2.2.0
 ```
 
 然后执行：
@@ -153,7 +153,7 @@ flutter pub get
 import 'package:xue_hua_navite_video_player/xue_hua_navite_video_player.dart';
 ```
 
-公开导出主要包括：`VideoSource`、`VideoPlayerController`、`VideoPlayer`、`CorePlayer`、`VideoPlayerTheme`、`PlayState`、`AspectRatioMode`、`SkipSecondType`、`VideoCoverFrame`、`XueHuaNaviteVideoPlayer`、`PlayerScrubberSlider`、`VideoPlayerSlotContext`，以及 `XFile`（来自 `cross_file`）。
+公开导出主要包括：`VideoSource`、`VideoPlayerController`、`VideoPlayer`、`CorePlayer`、`VideoPlayerTheme`、`PlayState`、`AspectRatioMode`、`SkipSecondType`、`VideoCoverFrame`、`XueHuaNaviteVideoPlayer`、`PlayerScrubberSlider`、`VideoPlayerSlotContext`，以及 `XFile`、`FileSystemXFile`（来自 `cross_file`）。
 
 ---
 
@@ -176,6 +176,8 @@ Skills：
 ---
 
 ## 平台配置
+
+最低系统版本：Android API 24、iOS 13、macOS 10.15、Windows 10。Linux 与 Web 不设额外的系统版本下限。
 
 ### Android
 
@@ -676,7 +678,8 @@ final XFile png = await controller.takeSnapshot();
 
 - **iOS / macOS**：在当前播放时间点用 `AVAssetImageGenerator` 取帧（画面由 `AVPlayerLayer` PlatformView 显示，不依赖 Texture 推帧）
 - **其他平台**：走各自原生截图路径
-- 返回 PNG 格式的 `XFile`（已由 barrel 文件 re-export，无需单独依赖 `cross_file`）
+- 返回 PNG 格式的 `XFile`（barrel 已 re-export `XFile` 与 `FileSystemXFile`，无需单独依赖 `cross_file`）
+- 跨平台标识是 `uri`（原生为 `file://`，Web 为 `data:` 或 `blob:` URL）。原生裸路径是 `FileSystemXFile.path`。不再提供 `mimeType` 与 `saveTo`；`name()` 为异步且可能为 null。
 
 ### 封面候选帧（无需起播）
 
@@ -695,7 +698,7 @@ for (final frame in frames) {
 }
 ```
 
-原生平台上 `XFile.path` 为真实文件路径；Web 上可能是 blob / data URL。
+跨平台标识是 `uri`（原生为 `file://`，Web 为 `data:` 或 `blob:` URL）。原生裸路径是 `FileSystemXFile.path`。
 
 ### 探测时长（无需起播）
 

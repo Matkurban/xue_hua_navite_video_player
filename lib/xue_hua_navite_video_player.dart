@@ -20,4 +20,5 @@ export 'src/ui/widgets/player_scrubber_slider.dart';
 export 'src/xue_hua_navite_video_player.dart';
 
 // Re-export XFile so consumers can use it without adding cross_file explicitly.
-export 'package:cross_file/cross_file.dart' show XFile;
+// FileSystemXFile exposes the raw native path; XFile.uri is the cross-platform id.
+export 'package:cross_file/cross_file.dart' show FileSystemXFile, XFile;
