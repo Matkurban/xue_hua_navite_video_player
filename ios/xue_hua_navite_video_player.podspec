@@ -4,14 +4,14 @@
 #
 Pod::Spec.new do |s|
   s.name             = 'xue_hua_navite_video_player'
-  s.version          = '1.0.1'
-  s.summary          = 'A new Flutter project.'
+  s.version          = '1.0.0'
+  s.summary          = 'A cross-platform Flutter audio/video player plugin powered by native players (ExoPlayer, AVPlayer, mpv)'
   s.description      = <<-DESC
-A new Flutter project.
+A cross-platform Flutter audio/video player plugin powered by native players (ExoPlayer, AVPlayer, mpv).
                        DESC
-  s.homepage         = 'http://example.com'
+  s.homepage         = 'https://github.com/Matkurban'
   s.license          = { :file => '../LICENSE' }
-  s.author           = { 'Your Company' => 'email@example.com' }
+  s.author           = { 'Matkurban' => '3496354336@qq.com' }
   s.source           = { :path => '.' }
   s.source_files = 'xue_hua_navite_video_player/Sources/xue_hua_navite_video_player/**/*'
   s.dependency 'Flutter'

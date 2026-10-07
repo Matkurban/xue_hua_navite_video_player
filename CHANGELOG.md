@@ -1,3 +1,9 @@
+## 2.3.0
+
+- update `com.android.tools.build:gradle` to `9.1.0` version
+- this version build need `compileSdk` = `37`
+- update example android project version
+
 ## 2.2.0
 
 - Adapt snapshots and cover frames to `cross_file` 0.4.0.

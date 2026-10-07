@@ -6,7 +6,7 @@ plugins {
 
 android {
     namespace = "com.example.xue_hua_navite_video_player_example"
-    compileSdk = flutter.compileSdkVersion
+    compileSdk = 37
     ndkVersion = flutter.ndkVersion
 
     compileOptions {

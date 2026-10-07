@@ -4,12 +4,12 @@
 #
 Pod::Spec.new do |s|
   s.name             = 'xue_hua_navite_video_player'
-  s.version          = '1.0.1'
+  s.version          = '1.0.0'
   s.summary          = 'xue_hua_navite_video_player'
   s.description      = <<-DESC
 A six-terminal universal audio and video player that caches while watching, supports multi-threaded download, breakpoint resumption, and LRU cache elimination.
                        DESC
-  s.homepage         = 'https://jsontodart.cn'
+  s.homepage         = 'https://github.com/Matkurban'
   s.license          = { :file => '../LICENSE' }
   s.author           = { 'Matkurban' => '3496354336@qq.com' }
 
