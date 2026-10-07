@@ -1,3 +1,9 @@
+## 2.3.1
+
+- Pin the Android toolchain to AGP `9.1.0`, Gradle `9.3.1`, and Kotlin `2.4.0` in both the plugin and the example app.
+- AGP `9.1.1` is outside the Kotlin `2.4.0` support range (AGP `8.5.2`–`9.1.0`).
+- Raise the plugin Gradle wrapper from `8.14.5` to `9.3.1`, and refresh the example app wrapper to the same Gradle `9.3.1`. AGP `9.1` requires Gradle `9.3.1`.
+
 ## 2.3.0
 
 - update `com.android.tools.build:gradle` to `9.1.0` version
