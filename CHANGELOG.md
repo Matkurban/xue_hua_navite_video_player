@@ -1,8 +1,9 @@
-## Unreleased
+## 2.3.2
 
 - Fix: a freshly initialized `VideoPlayerController` now stays `PlayState.idle` until a source is opened; native events before the first open are ignored (all platforms).
 - Fix (Linux): natural end of stream now emits `completed` (mpv `eof-reached` with `keep-open=yes`), enabling replay UI. Fires once per EOS; re-armed on open/seek.
 - Fix (Windows): same mpv `eof-reached` completion fix as Linux (Windows mpv backend also used `keep-open=yes` and never emitted `completed`).
+- Fix (iOS/macOS): observe `AVPlayerItemFailedToPlayToEndTime` and report mid-stream playback failures through the `error` event.
 - Example: correct demo playlist titles; add a real integration test (init, playback, pause/resume, seek, local file, completion, network).
 
 ## 2.3.1

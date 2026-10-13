@@ -443,6 +443,7 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler {
     private var keepUpObservation: NSKeyValueObservation?
     private var bufferEmptyObservation: NSKeyValueObservation?
     private var didPlayToEndObserver: NSObjectProtocol?
+    private var failedToPlayToEndObserver: NSObjectProtocol?
     private var currentUrl: String?
     private var snapshotGeneration = 0
     private var wantsToPlay = false
@@ -601,6 +602,19 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler {
             self?.sendEvent(event: "completed", value: nil)
         }
 
+        failedToPlayToEndObserver = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemFailedToPlayToEndTime,
+            object: playerItem,
+            queue: .main
+        ) { [weak self] notification in
+            let error = notification.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error
+            self?.wantsToPlay = false
+            self?.sendEvent(
+                event: "error",
+                value: error?.localizedDescription ?? "Unknown error"
+            )
+        }
+
         sendEvent(event: "playing", value: false)
         sendEvent(event: "buffering", value: true)
     }
@@ -694,6 +708,10 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler {
         if let observer = didPlayToEndObserver {
             NotificationCenter.default.removeObserver(observer)
             didPlayToEndObserver = nil
+        }
+        if let observer = failedToPlayToEndObserver {
+            NotificationCenter.default.removeObserver(observer)
+            failedToPlayToEndObserver = nil
         }
         statusObservation?.invalidate()
         statusObservation = nil
