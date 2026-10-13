@@ -153,6 +153,9 @@ class PlaybackSession {
 
   void _onPlayerEvent(PlayerEvent event) {
     if (_disposed) return;
+    // Ignore native events before the first open (e.g. mpv's initial
+    // `pause=no` property notification) so a fresh session stays idle.
+    if (_openEpoch == 0) return;
     if (_activeEventEpoch != _openEpoch) return;
     switch (event) {
       case PlayerPlayingEvent(:final playing):

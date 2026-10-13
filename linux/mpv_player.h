@@ -145,6 +145,9 @@ class MpvPlayer {
   // Combined into on_buffering_: seeking || paused-for-cache.
   std::atomic<bool> seeking_{false};
   std::atomic<bool> cache_paused_{false};
+  // Set once completion has been emitted for the current file; cleared on
+  // open / seek so keep-open EOF fires exactly once per end-of-stream.
+  std::atomic<bool> eof_emitted_{false};
 
   void EmitBuffering();
 

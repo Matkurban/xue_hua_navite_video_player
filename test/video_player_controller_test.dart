@@ -304,14 +304,17 @@ void main() {
       await controller.dispose();
     });
 
-    test('events emitted during create() are not dropped', () async {
+    test('events emitted during create() before any open leave the session idle', () async {
+      // Native players (e.g. mpv's initial `pause=no` notification) may emit
+      // state during create(); with no source opened yet the session must
+      // stay idle instead of reporting playing.
       final backend = _EmitOnCreateBackend();
       final controller = VideoPlayerController(backend: backend);
 
       await controller.initialize();
       await Future<void>.delayed(Duration.zero);
 
-      expect(controller.playState.value, PlayState.playing);
+      expect(controller.playState.value, PlayState.idle);
 
       await controller.dispose();
     });

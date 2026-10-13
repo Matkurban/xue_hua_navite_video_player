@@ -85,16 +85,13 @@ void main() {
     expect(c.currentUrl.value, isNull);
   });
 
-  // KNOWN BUG (Linux): mpv's initial `pause=no` property event passes the
-  // epoch gate in PlaybackSession._onPlayerEvent (_activeEventEpoch ==
-  // _openEpoch == 0 before any open), so a fresh controller reports `playing`.
   testWidgets('fresh controller stays idle before any source is opened', (
     WidgetTester tester,
   ) async {
     final VideoPlayerController c = await _mount(tester);
     await _sleep(tester, const Duration(milliseconds: 500));
     expect(c.playState.value, PlayState.idle);
-  }, skip: true);
+  });
 
   testWidgets('local file: plays, pauses, resumes, seeks', (
     WidgetTester tester,
@@ -166,9 +163,6 @@ void main() {
     );
   });
 
-  // KNOWN BUG (Linux): mpv runs with keep-open=yes so END_FILE/EOF never fires,
-  // and the `eof-reached` observer (linux/mpv_player.cc kPropEof case) is a
-  // no-op. Natural end of stream surfaces as `paused`, never `completed`.
   testWidgets('local file reaches completed at end of stream', (
     WidgetTester tester,
   ) async {
@@ -191,7 +185,7 @@ void main() {
       isTrue,
       reason: 'state=${c.playState.value}',
     );
-  }, skip: true);
+  });
 
   testWidgets('network source starts and advances', (
     WidgetTester tester,

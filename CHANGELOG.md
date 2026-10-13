@@ -1,3 +1,9 @@
+## Unreleased
+
+- Fix: a freshly initialized `VideoPlayerController` now stays `PlayState.idle` until a source is opened; native events before the first open are ignored (all platforms).
+- Fix (Linux): natural end of stream now emits `completed` (mpv `eof-reached` with `keep-open=yes`), enabling replay UI. Fires once per EOS; re-armed on open/seek.
+- Example: correct demo playlist titles; add a real integration test (init, playback, pause/resume, seek, local file, completion, network).
+
 ## 2.3.1
 
 - Pin the Android toolchain to AGP `9.1.0`, Gradle `9.3.1`, and Kotlin `2.4.0` in both the plugin and the example app.
