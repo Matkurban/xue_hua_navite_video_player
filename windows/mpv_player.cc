@@ -243,6 +243,7 @@ namespace xue_hua_navite_video_player {
 
 	void MpvPlayer::Open(const std::string& url) {
 		if (!mpv_) return;
+		eof_emitted_.store(false, std::memory_order_relaxed);
 		const char* cmd[] = { "loadfile", url.c_str(), "replace", nullptr };
 		mpv_command_async(mpv_, 0, cmd);
 	}
@@ -262,6 +263,7 @@ namespace xue_hua_navite_video_player {
 	void MpvPlayer::Seek(int64_t ms) {
 		if (!mpv_) return;
 		char buf[64];
+		eof_emitted_.store(false, std::memory_order_relaxed);
 		std::snprintf(buf, sizeof(buf), "%.3f", ms / 1000.0);
 		const char* cmd[] = { "seek", buf, "absolute+exact", nullptr };
 		mpv_command_async(mpv_, 0, cmd);
@@ -338,7 +340,9 @@ namespace xue_hua_navite_video_player {
 		case MPV_EVENT_END_FILE: {
 			auto* info = static_cast<mpv_event_end_file*>(ev->data);
 			if (info && info->reason == MPV_END_FILE_REASON_EOF) {
-				if (on_completed_) on_completed_();
+				if (!eof_emitted_.exchange(true, std::memory_order_relaxed) && on_completed_) {
+					on_completed_();
+				}
 			}
 			else if (info && info->reason == MPV_END_FILE_REASON_ERROR) {
 				if (on_error_) on_error_(mpv_error_string(info->error));
@@ -501,6 +505,18 @@ namespace xue_hua_navite_video_player {
 				}
 				break;
 			case kPropEof:
+				// keep-open=yes suppresses END_FILE(EOF); eof-reached is the only
+				// natural end-of-stream signal.
+				if (prop->format == MPV_FORMAT_FLAG && prop->data) {
+					int v = *static_cast<int*>(prop->data);
+					if (v == 0) {
+						eof_emitted_.store(false, std::memory_order_relaxed);
+					}
+					else if (!eof_emitted_.exchange(true, std::memory_order_relaxed) &&
+						on_completed_) {
+						on_completed_();
+					}
+				}
 				break;
 			}
 			break;
