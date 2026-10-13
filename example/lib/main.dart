@@ -68,19 +68,16 @@ const List<_DemoItem> _demoPlaylist = <_DemoItem>[
     'https://flutter.github.io/assets-for-api-docs/assets/videos/butterfly.mp4',
   ),
   _DemoItem(
-    'Flutter · Butterfly',
+    'W3C · Big Buck Bunny',
     'https://media.w3.org/2010/05/bunny/trailer.mp4',
   ),
+  _DemoItem('W3C · Sintel', 'https://media.w3.org/2010/05/sintel/trailer.mp4'),
   _DemoItem(
-    'Flutter · Butterfly',
-    'https://media.w3.org/2010/05/sintel/trailer.mp4',
-  ),
-  _DemoItem(
-    'Flutter · Butterfly',
+    'W3C · Movie 300',
     'https://media.w3.org/2010/05/video/movie_300.mp4',
   ),
   _DemoItem(
-    'Flutter · Butterfly',
+    'W3Schools · Big Buck Bunny',
     'https://www.w3schools.com/html/mov_bbb.mp4',
   ),
 ];
