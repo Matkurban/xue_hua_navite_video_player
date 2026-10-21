@@ -61,7 +61,7 @@ public class XueHuaNaviteVideoPlayerPlugin: NSObject, FlutterPlugin {
 
     private func configureAudioSession() {
         let session = AVAudioSession.sharedInstance()
-        try? session.setCategory(.playback, mode: .moviePlayback, options: [.allowAirPlay])
+        try? session.setCategory(.playback, mode: .moviePlayback, options: [])
         try? session.setActive(true)
     }
 
@@ -535,6 +535,7 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler {
     }
 
     func play() {
+        guard playerItem?.status != .failed else { return }
         wantsToPlay = true
         if let item = playerItem {
             let current = CMTimeGetSeconds(player?.currentTime() ?? .zero)
@@ -582,6 +583,7 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler {
     func showCastPicker() {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
+            self.ensureRouteChangeObserver()
             let picker = self.ensureRoutePickerView()
             if let button = Self.findButton(in: picker) {
                 button.sendActions(for: .touchUpInside)
@@ -680,8 +682,7 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler {
     }
 
     private func emitCastState() {
-        let isCasting = (player?.isExternalPlaybackActive == true) ||
-            AVAudioSession.sharedInstance().currentRoute.outputs.contains(where: { $0.portType == .airPlay })
+        let isCasting = (player?.isExternalPlaybackActive == true)
         if isCasting {
             sendEvent(
                 event: "castState",

@@ -190,6 +190,7 @@ class PlaybackSession {
     if (_activeEventEpoch != _openEpoch) return;
     switch (event) {
       case PlayerPlayingEvent(:final playing):
+        if (playState.value == PlayState.error) return;
         _backendPlaying = playing;
         if (playing) {
           final wasFirstPlay = !_hasPlayedSinceOpen;
@@ -222,9 +223,10 @@ class PlaybackSession {
         }
         playState.value = PlayState.paused;
       case PlayerPositionEvent(:final position):
-        if (!_hasReadySinceOpen) return;
+        if (!_hasReadySinceOpen || playState.value == PlayState.error) return;
         this.position.value = position;
       case PlayerDurationEvent(:final duration):
+        if (playState.value == PlayState.error) return;
         _hasReceivedMetadata = true;
         _backendDuration = duration;
         if (!_hasReadySinceOpen) {
@@ -233,18 +235,21 @@ class PlaybackSession {
         if (!_hasReadySinceOpen) return;
         this.duration.value = duration;
       case PlayerBufferingEvent(:final buffering):
+        if (playState.value == PlayState.error) return;
         _backendBuffering = buffering;
         if (!_hasReadySinceOpen) return;
         isBuffering.value = buffering;
       case PlayerErrorEvent(:final message):
+        isBuffering.value = false;
         errorMessage.value = message;
         playState.value = PlayState.error;
       case PlayerCompletedEvent():
-        if (!_hasPlayedSinceOpen) {
+        if (!_hasPlayedSinceOpen || playState.value == PlayState.error) {
           return;
         }
         playState.value = PlayState.completed;
       case PlayerVideoSizeEvent(:final size, :final rotationDegrees):
+        if (playState.value == PlayState.error) return;
         videoSize.value = size;
         this.rotationDegrees.value = rotationDegrees;
         if (size.width > 0 && size.height > 0) {
@@ -316,13 +321,18 @@ class PlaybackSession {
       if (_disposed || epoch != _openEpoch) return;
 
       String? castUrl;
-      if (!source.isNetwork) {
-        castUrl = await _localCastServer.serveLocalFileUrl(
-          mediaUrl,
-          mimeType: mimeType.value,
-        );
-      } else {
-        await _localCastServer.stop();
+      try {
+        if (!source.isNetwork) {
+          castUrl = await _localCastServer.serveLocalFileUrl(
+            mediaUrl,
+            mimeType: mimeType.value,
+          );
+        } else {
+          await _localCastServer.stop();
+        }
+      } catch (_) {
+        // Never allow local cast HTTP server setup to block normal video playback.
+        castUrl = null;
       }
       if (_disposed || epoch != _openEpoch) return;
 

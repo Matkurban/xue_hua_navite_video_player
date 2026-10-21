@@ -668,6 +668,7 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler {
     }
 
     func play() {
+        guard playerItem?.status != .failed else { return }
         wantsToPlay = true
         if let item = playerItem {
             let current = CMTimeGetSeconds(player?.currentTime() ?? .zero)
