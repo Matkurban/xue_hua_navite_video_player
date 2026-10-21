@@ -101,6 +101,12 @@ class _FakePlayerBackend implements PlayerBackend {
   }) async {}
 
   @override
+  Future<void> showCastPicker() async {}
+
+  @override
+  Future<void> stopCasting() async {}
+
+  @override
   Future<void> dispose() async {}
 
   @override

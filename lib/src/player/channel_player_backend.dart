@@ -144,7 +144,7 @@ class ChannelPlayerBackend implements PlayerBackend {
   Future<void> open(String url, {String? castUrl}) async {
     await _methodChannel.invokeMethod('open', {
       'url': url,
-      if (castUrl != null) 'castUrl': castUrl,
+      'castUrl': ?castUrl,
     });
   }
 

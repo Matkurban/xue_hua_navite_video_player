@@ -7,9 +7,8 @@ import 'package:flutter_web_plugins/flutter_web_plugins.dart';
 import 'package:web/web.dart' as html;
 
 extension _HTMLVideoRemotePlaybackExt on html.HTMLVideoElement {
-  external _JSRemotePlayback? get remote;
-  external set disableRemotePlayback(bool value);
-  external bool get disableRemotePlayback;
+  @JS('remote')
+  external _JSRemotePlayback? get remotePlayback;
 
   @JS('webkitShowPlaybackTargetPicker')
   external JSFunction? get webkitShowPlaybackTargetPicker;
@@ -64,7 +63,7 @@ class XueHuaNaviteVideoPlayerWeb {
     _castDeviceName = deviceName;
     _sendEvent('castState', <String, dynamic>{
       'state': state,
-      if (deviceName != null) 'deviceName': deviceName,
+      'deviceName': ?deviceName,
     });
   }
 
@@ -276,7 +275,7 @@ class XueHuaNaviteVideoPlayerWeb {
 
   void _setupRemotePlayback(html.HTMLVideoElement video) {
     try {
-      final remote = video.remote;
+      final remote = video.remotePlayback;
       if (remote != null) {
         _sendCastState('notConnected');
 
@@ -351,7 +350,7 @@ class XueHuaNaviteVideoPlayerWeb {
     final video = _videoElement;
     if (video == null) return;
     try {
-      final remote = video.remote;
+      final remote = video.remotePlayback;
       if (remote != null) {
         await remote.prompt().toDart;
         return;

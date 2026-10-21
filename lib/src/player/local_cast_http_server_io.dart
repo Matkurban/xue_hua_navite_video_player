@@ -44,7 +44,7 @@ class LocalCastHttpServer {
     if (server == null) return null;
 
     _activeFile = file;
-    _activeMimeType = mimeType ?? MimeDetector.detect(filePath) ?? 'video/mp4';
+    _activeMimeType = mimeType ?? MimeDetector.detect(filePath);
     final ext = _extensionOf(filePath);
     _activeToken = '${_randomHex(16)}$ext';
     _servingUrl = 'http://$hostIp:${server.port}/cast/$_activeToken';
