@@ -3,9 +3,10 @@ name: xue-hua-navite-video-player-ui
 description: >-
   Build player UI with xue_hua_navite_video_player. Use when creating
   VideoPlayer, CorePlayer, VideoPlayerTheme, PlayerScrubberSlider,
-  VideoPlayerSlotContext, fullscreen Overlay chrome, gestures, or keyboard
-  shortcuts. Read references/ for exact widget fields — PlayerScrubberSlider
-  has no controller parameter.
+  VideoPlayerSlotContext, fullscreen Overlay chrome, gestures, keyboard
+  shortcuts, showCastButton, or castingOverlayBuilder. Cast session behavior
+  is xue-hua-navite-video-player-cast. Read references/ for exact widget
+  fields — PlayerScrubberSlider has no controller parameter.
 ---
 
 # UI — xue_hua_navite_video_player
@@ -15,6 +16,8 @@ Import the barrel only. `PlayerGestureLayer`, `PlayerMenuButton`, and `handlePla
 ```dart
 import 'package:xue_hua_navite_video_player/xue_hua_navite_video_player.dart';
 ```
+
+Cast button and overlay behavior: [xue-hua-navite-video-player-cast](../xue-hua-navite-video-player-cast/SKILL.md).
 
 References:
 
@@ -31,9 +34,10 @@ References:
 - Visual fullscreen (edge-to-edge Overlay) requires a mounted `VideoPlayer` under an `Overlay` (`MaterialApp` provides one). Call `controller.toggleFullscreen()` / `enterFullscreen()` while that widget is mounted.
 - `CorePlayer` alone still applies platform fullscreen (orientation / window / browser) but has no Overlay chrome.
 - `PlayerScrubberSlider` takes `required double value` (0.0–1.0). There is **no** `controller` argument. Commit seek in `onChangeEnd`. A press without drag does not seek.
+- `VideoPlayer.showCastButton` defaults to `true`. The icon is still omitted when `isCastSupported` is false. `castingOverlayBuilder` replaces the default casting overlay. `CorePlayer` has neither.
 - `VideoPlayer.topBarActions` is merged after `actions` (legacy extra actions). Prefer `actions`.
 - `skipSecondType` on `VideoPlayer` is copied to the controller in `initState` and when the widget updates.
-- Default chrome auto-hides after `autoHideDelay` (3s) only while playing and not buffering. `Duration.zero` disables auto-hide. Buffering and `completed` keep chrome visible.
+- Default chrome auto-hides after `autoHideDelay` (3s) only while playing, not buffering, and not casting. `Duration.zero` disables auto-hide. Buffering, `completed`, and `isCasting` keep chrome visible.
 - Close control: if fullscreen, `exitFullscreen()`; else `onClose` or `Navigator.maybePop()`.
 - Gestures run when fullscreen and **not Web** (Android / iOS / macOS / Windows / Linux). Horizontal drag (past 48px) seeks; left 40% vertical = brightness; right 40% vertical = volume; tap toggles chrome.
 - Keyboard runs when `VideoPlayer` is focused on Web or desktop (macOS / Windows / Linux), fullscreen or inline: Space play/pause, arrows seek / volume ±0.05, Escape exits fullscreen only if already fullscreen.

@@ -1,6 +1,6 @@
-# PlayState, SkipSecondType, AspectRatioMode
+# PlayState, SkipSecondType, AspectRatioMode, CastState
 
-Barrel-exported enums.
+Barrel-exported enums. `CastState` values and per-platform mapping: [cast reference](../../xue-hua-navite-video-player-cast/references/cast.md).
 
 ## `PlayState`
 

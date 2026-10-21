@@ -1,8 +1,9 @@
 # `xue_hua_navite_video_player` 全端无线投屏（Casting）架构与详细设计文档
 
-> **文档状态**：已实现  
-> **适用版本**：`xue_hua_navite_video_player` `0.0.1+`  
-> **覆盖平台**：iOS、macOS、Android、Web、Windows、Linux（全 6 端）
+> **文档状态**：设计稿。公开行为以 `README.md` / `README_ZH.md` 和 `skills/xue-hua-navite-video-player-cast` 为准。  
+> **适用版本**：`2.4.0`  
+> **覆盖平台**：iOS、macOS、Android、Web、Windows、Linux（全 6 端）  
+> Linux 当前不会把正在播放的片源推到 DLNA 接收端。已安装 `gnome-network-displays` 时启动该程序，否则只弹出说明对话框。
 
 ---
 

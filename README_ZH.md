@@ -40,6 +40,7 @@
     - [全屏](#全屏)
     - [截图](#截图)
     - [响应式 Signals](#响应式-signals)
+  - [投屏](#投屏)
   - [播放状态 PlayState](#播放状态-playstate)
   - [UI 组件](#ui-组件)
     - [`CorePlayer` — 纯画面](#coreplayer--纯画面)
@@ -74,6 +75,7 @@
 - **原生渲染**：Android / iOS / macOS 使用 PlatformView；Linux / Windows 使用 Texture（libmpv）；Web 使用 HTML5 `<video>`
 - **多来源播放**：网络 URL、本地文件、Flutter asset（原生平台抽取到临时文件；Web / WASM 使用 Flutter 托管的 `assets/` URL）
 - **完整控制**：播放 / 暂停 / 跳转 / 音量 / 静音 / 倍速 / 亮度 / 画面适应模式 / 截图
+- **无线投屏**：`VideoPlayer` 或 `showCastPicker()` / `stopCasting()` 调起系统选择器。Android 为 Google Cast；iOS、macOS 与 Safari 为 AirPlay
 - **内置 UI**：开箱即用的 `VideoPlayer`（带控件层）与纯画面 `CorePlayer`
 - **主题扩展**：通过 `ThemeData.extensions` 注册 `VideoPlayerTheme`
 - **全屏**：移动端方向 / 沉浸式 UI、桌面窗口全屏、以及浏览器 Fullscreen API；视觉 Overlay 控件需挂载 `VideoPlayer`
@@ -138,7 +140,7 @@ XueHuaNaviteVideoPlayer.instance
 
 ```yaml
 dependencies:
-  xue_hua_navite_video_player: ^2.2.0
+  xue_hua_navite_video_player: ^2.4.0
 ```
 
 然后执行：
@@ -153,7 +155,7 @@ flutter pub get
 import 'package:xue_hua_navite_video_player/xue_hua_navite_video_player.dart';
 ```
 
-公开导出主要包括：`VideoSource`、`VideoPlayerController`、`VideoPlayer`、`CorePlayer`、`VideoPlayerTheme`、`PlayState`、`AspectRatioMode`、`SkipSecondType`、`VideoCoverFrame`、`XueHuaNaviteVideoPlayer`、`PlayerScrubberSlider`、`VideoPlayerSlotContext`，以及 `XFile`、`FileSystemXFile`（来自 `cross_file`）。
+公开导出主要包括：`VideoSource`、`VideoPlayerController`、`VideoPlayer`、`CorePlayer`、`VideoPlayerTheme`、`PlayState`、`CastState`、`AspectRatioMode`、`SkipSecondType`、`VideoCoverFrame`、`XueHuaNaviteVideoPlayer`、`PlayerScrubberSlider`、`VideoPlayerSlotContext`，以及 `XFile`、`FileSystemXFile`（来自 `cross_file`）。
 
 ---
 
@@ -172,6 +174,7 @@ Skills：
 - `xue-hua-navite-video-player-setup` — 安装、平台配置、initialize、单会话
 - `xue-hua-navite-video-player-playback` — `VideoSource`、`VideoPlayerController`、探测 API
 - `xue-hua-navite-video-player-ui` — `VideoPlayer`、`CorePlayer`、主题、进度条
+- `xue-hua-navite-video-player-cast` — `showCastPicker`、`stopCasting`、`CastState`、投屏按钮与遮罩
 
 ---
 
@@ -186,6 +189,8 @@ Skills：
 ```xml
 <uses-permission android:name="android.permission.INTERNET"/>
 ```
+
+Google Cast 需要设备上的 Play 服务。`MainActivity` 保持 `FlutterActivity` 即可。插件清单已合并 Cast options provider 与 `MediaTransferReceiver`。详见 [投屏](#投屏)。
 
 ### iOS
 
@@ -455,6 +460,10 @@ final XFile saved = await controller.takeSnapshot(savePath: '/tmp/frame.png');
 | `isFullscreen`          | `bool`            | 是否全屏                                          |
 | `brightness`            | `double`          | 屏幕亮度                                          |
 | `textureId`             | `int?`            | Texture 平台的纹理 ID                             |
+| `castState`             | `CastState`       | 投屏状态，初始为 `unavailable`                    |
+| `castDeviceName`        | `String?`         | 连接中或已连接时的远端设备名                      |
+| `isCastSupported`       | `bool`            | `castState != unavailable`                        |
+| `isCasting`             | `bool`            | `connecting` 或 `connected`                       |
 
 ```dart
 SignalBuilder(
@@ -465,6 +474,36 @@ SignalBuilder(
   },
 );
 ```
+
+---
+
+## 投屏
+
+`isCastSupported` 为 true 时，`VideoPlayer` 的默认顶栏显示投屏按钮。`showCastButton` 默认 true。自定义 `topBarBuilder` 会换掉这块顶栏，需要自己调用 `showCastPicker()`。默认按钮的点击调用 `showCastPicker()`。`isCasting` 为 true 时控件不再自动隐藏，画面被盖住，默认遮罩提供 **切换设备** 和 **退出投屏**。用 `castingOverlayBuilder` 替换这块遮罩。`CorePlayer` 没有投屏按钮和遮罩。
+
+```dart
+await controller.showCastPicker();
+await controller.stopCasting();
+
+VideoPlayer(
+  controller: controller,
+  showCastButton: true,
+);
+```
+
+投屏过程中 `play` / `pause` / `seek` / `setVolume` / `setSpeed` 仍是原来的方法。`reset()` 保留 `castState`，因此换片时可以留在同一接收端。`dispose()` 把状态设为 `unavailable` 并关掉本地 HTTP 服务。选择器无法弹出时，`showCastPicker()` 正常返回，不向应用抛异常。
+
+| 平台 | 弹出的界面 | 能接到的设备 |
+| ---- | ---------- | ------------ |
+| Android | Google Cast 对话框。需要 Play 服务。宿主保持 `FlutterActivity`。 | 同一局域网中的 Chromecast 及其他 Cast 设备。只支持 AirPlay 的电视不会出现。 |
+| iOS、macOS | 系统 AirPlay 选择器 | AirPlay。播放的是 `AVPlayer` 当前条目。 |
+| Windows | 系统 Casting 设备选择器 | 支持视频投射的设备。 |
+| Linux | 已安装 `gnome-network-displays` 时启动它，否则弹出说明对话框 | 不会把当前片源推到 DLNA 接收端。 |
+| Web | Remote Playback 的 `prompt()`，或 Safari 的 AirPlay 选择器 | 由浏览器决定。Web 没有本地 HTTP 投屏服务。 |
+
+打开文件或 asset 时会在进程内起一个支持 Range 的 HTTP 服务。Android 与 Windows 把这个局域网地址交给接收端。网络地址按原 URL 投屏，并关掉该服务。服务起不来时，本地播放仍然继续。iOS 与 macOS 的 AirPlay 不会改播这个 HTTP 地址。
+
+没有 Play 服务的 Android 设备，以及既没有 Remote Playback 也没有 WebKit 选择器的浏览器，会停在 `CastState.unavailable`，按钮不显示（`isCastSupported` 为 false）。
 
 ---
 
@@ -522,12 +561,13 @@ VideoPlayer(
   title: const Text('标题'),
   actions: const [],                             // 顶部右侧操作
   topBarActions: const [],                       // 紧接 actions 之后合并（遗留参数）
+  showCastButton: true,
   showAspectRatioMenu: true,
   enableFullscreen: true,
   skipSecondType: SkipSecondType.second10,
   // 自定义槽位：
   // topBarBuilder / centerControlsBuilder /
-  // bottomScrubberBuilder / extraOverlayBuilder
+  // bottomScrubberBuilder / castingOverlayBuilder / extraOverlayBuilder
   // errorBuilder / loadingBuilder
 );
 ```
@@ -791,6 +831,14 @@ flutter run
 ---
 
 ## 常见问题
+
+### 投屏按钮不出现
+
+`castState` 为 `unavailable`：Android 没有 Play 服务，或浏览器既没有 Remote Playback 也没有 Safari AirPlay。此时 `isCastSupported` 为 false。
+
+### Android 和 iOS 搜到的电视不一样
+
+Android 打开的是 Google Cast 对话框（同一局域网，且有 Play 服务）。只支持 AirPlay 的接收端出现在 iOS、macOS 和 Safari 上。Android 宿主保持 `FlutterActivity`。
 
 ### 为什么同时创建两个控制器，第二个会打断第一个？
 

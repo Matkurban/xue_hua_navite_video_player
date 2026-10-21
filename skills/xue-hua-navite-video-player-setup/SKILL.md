@@ -17,10 +17,11 @@ import 'package:xue_hua_navite_video_player/xue_hua_navite_video_player.dart';
 
 Playback APIs: [xue-hua-navite-video-player-playback](../xue-hua-navite-video-player-playback/SKILL.md).
 Widgets and theme: [xue-hua-navite-video-player-ui](../xue-hua-navite-video-player-ui/SKILL.md).
+Cast: [xue-hua-navite-video-player-cast](../xue-hua-navite-video-player-cast/SKILL.md).
 
 ## Guidelines
 
-- Add `xue_hua_navite_video_player: ^2.0.3` and run `flutter pub get`.
+- Add `xue_hua_navite_video_player: ^2.4.0` and run `flutter pub get`.
 - Call `WidgetsFlutterBinding.ensureInitialized()` before any plugin work.
 - `XueHuaNaviteVideoPlayer.instance.initialize()` is optional, idempotent, and does **not** create the native player. It only ensures the binding and sets `isInitialized`.
 - `VideoPlayerController.initialize()` creates the native session and subscribes to events. Call it once per controller lifetime, before `open*` / `play*`.
@@ -41,6 +42,8 @@ Ensure `INTERNET` in `android/app/src/main/AndroidManifest.xml` for network medi
 ```xml
 <uses-permission android:name="android.permission.INTERNET"/>
 ```
+
+Google Cast needs Play services on the device. Leave `MainActivity` as `FlutterActivity`. The plugin manifest already merges `DefaultCastOptionsProvider` and `MediaTransferReceiver`. Picker and receiver rules: the cast skill.
 
 ### iOS
 

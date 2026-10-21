@@ -4,8 +4,9 @@ description: >-
   Play, seek, and control media with xue_hua_navite_video_player. Use when
   calling VideoPlayerController, VideoSource, PlayState, SkipSecondType,
   AspectRatioMode, XueHuaNaviteVideoPlayer probe APIs, takeSnapshot,
-  extractCoverCandidates, or getDuration. Read references/ before inventing
-  signatures.
+  extractCoverCandidates, or getDuration. For showCastPicker, stopCasting, or
+  CastState, use xue-hua-navite-video-player-cast. Read references/ before
+  inventing signatures.
 ---
 
 # Playback — xue_hua_navite_video_player
@@ -18,6 +19,7 @@ import 'package:xue_hua_navite_video_player/xue_hua_navite_video_player.dart';
 
 Setup and single-session rules: [xue-hua-navite-video-player-setup](../xue-hua-navite-video-player-setup/SKILL.md).
 Widgets: [xue-hua-navite-video-player-ui](../xue-hua-navite-video-player-ui/SKILL.md).
+Cast: [xue-hua-navite-video-player-cast](../xue-hua-navite-video-player-cast/SKILL.md).
 
 Before calling an API, read the matching reference:
 
@@ -47,7 +49,7 @@ Do not import `PlaybackSession`, `PlayerBackend`, `MediaProbe`, or `MimeDetector
 - `setVideoViewSize` is a no-op when width or height `<= 0`. `CorePlayer` already reports size on Linux/Windows Texture. Custom Texture surfaces must call it for mpv panscan.
 - `enterFullscreen` sets `isFullscreen` first, then the platform host. Visual Overlay chrome requires a mounted `VideoPlayer` under an `Overlay`. `CorePlayer` alone still changes window / browser / orientation.
 - `takeSnapshot` throws `StateError` if disposed or if `currentUrl` is null. Returns a PNG `XFile`. Optional `savePath` writes that native filesystem path, then wraps it as `FileSystemXFile`. On web, `savePath` is ignored. Read `uri` (`file://` on native, `data:` or `blob:` on web). The raw native path is `FileSystemXFile.path`. `name()` is asynchronous and may be null. There is no `mimeType` or `saveTo`.
-- `reset()` clears play/position/duration/buffering/error/url/mime/size/rotation. It does **not** reset volume, speed, muted, skip, aspect, fullscreen, or brightness, and does not dispose the native session.
+- `reset()` clears play/position/duration/buffering/error/url/mime/size/rotation. It does **not** reset volume, speed, muted, skip, aspect, fullscreen, brightness, `castState`, or `castDeviceName`, and does not dispose the native session.
 - Watch signals with `SignalBuilder` / `effect` from `signals_flutter`. Read `.value` inside the builder.
 - `isBuffering` can overlap other states (for example playing + buffering).
 - Probe with `XueHuaNaviteVideoPlayer.instance`, not a new player. `extractCoverCandidates` requires `count > 0` (assert), times out at 60s (empty list), sorts by brightness descending. `getDuration` defaults to 15s and returns `null` on failure, timeout, or non-positive duration.

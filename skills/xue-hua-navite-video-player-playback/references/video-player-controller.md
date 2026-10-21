@@ -9,6 +9,7 @@ VideoPlayerController({
   PlayerBackend? backend,           // not exported — tests only
   FullscreenCoordinator? fullscreen, // not exported — tests only
   BrightnessController? brightness,  // not exported — tests only
+  LocalCastHttpServer? localCastServer, // not exported — tests only
 });
 ```
 
@@ -76,7 +77,7 @@ Cancels the ready-fallback timer. Clears open-epoch bookkeeping used for readine
 - `videoSize = Size.zero`
 - `rotationDegrees = 0`
 
-Does **not** change volume, speed, muted, skipSecondType, aspectRatioMode, isFullscreen, brightness. Does **not** dispose the native session. `openSource` calls `reset()` at the start of each open.
+Does **not** change volume, speed, muted, skipSecondType, aspectRatioMode, isFullscreen, brightness, `castState`, or `castDeviceName`. Does **not** dispose the native session. `openSource` calls `reset()` at the start of each open, so a cast session survives a source change. Cast method details: [cast reference](../../xue-hua-navite-video-player-cast/references/cast.md).
 
 ## Open and play
 
@@ -98,11 +99,12 @@ Internal open sequence (`openSource`):
 1. Increment open epoch; `reset()`.
 2. `currentUrl = source.identity`; `mimeType` from identity extension; `playState = loading`.
 3. `mediaUrl = await source.resolveToNativeUrl()`.
-4. `_backend.open(mediaUrl)`.
-5. Re-apply `setVolume(muted ? 0 : volume)`, `setSpeed(speed)`, `setAspectRatioMode`.
-6. If `autoPlay`, `_backend.play()`.
-7. On throw: `errorMessage = e.toString()`, `playState = error`.
-8. Stale epochs (superseded open) are ignored.
+4. File or asset: try the internal LAN HTTP server and pass `castUrl`. Failure sets `castUrl` to null and does not fail the open. Network: stop that server. Platform use of `castUrl` is in the [cast reference](../../xue-hua-navite-video-player-cast/references/cast.md).
+5. `_backend.open(mediaUrl, castUrl: castUrl)`.
+6. Re-apply `setVolume(muted ? 0 : volume)`, `setSpeed(speed)`, `setAspectRatioMode`.
+7. If `autoPlay`, `_backend.play()`.
+8. On throw: `errorMessage = e.toString()`, `playState = error`.
+9. Stale epochs (superseded open) are ignored.
 
 A 3-second ready fallback leaves `loading` if native never reports duration/metadata (live / audio-only).
 

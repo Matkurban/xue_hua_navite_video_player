@@ -40,6 +40,7 @@ A cross-platform Flutter audio/video player plugin. Dart exposes a unified contr
     - [Fullscreen](#fullscreen)
     - [Snapshot](#snapshot)
     - [Reactive signals](#reactive-signals)
+  - [Casting](#casting)
   - [PlayState](#playstate)
   - [Widgets](#widgets)
     - [`CorePlayer` — surface only](#coreplayer--surface-only)
@@ -66,6 +67,7 @@ A cross-platform Flutter audio/video player plugin. Dart exposes a unified contr
 - **Native rendering** — PlatformView on Android / iOS / macOS; Texture (libmpv) on Linux / Windows; HTML5 `<video>` on Web
 - **Sources** — network URL, local file, Flutter asset (native platforms extract assets to a temp file; Web / WASM uses the Flutter-hosted `assets/` URL)
 - **Controls** — play / pause / seek / volume / mute / speed / brightness / aspect mode / snapshot
+- **Casting** — platform route picker from `VideoPlayer` or `showCastPicker()` / `stopCasting()`. Android is Google Cast; iOS, macOS, and Safari are AirPlay
 - **Built-in UI** — drop-in `VideoPlayer` and bare `CorePlayer`
 - **Theming** — `VideoPlayerTheme` via `ThemeData.extensions`
 - **Fullscreen** — mobile orientation / immersive UI, desktop window fullscreen, and the browser Fullscreen API; visual Overlay chrome requires a mounted `VideoPlayer`
@@ -128,7 +130,7 @@ See [CONTEXT.md](CONTEXT.md) for domain notes.
 
 ```yaml
 dependencies:
-  xue_hua_navite_video_player: ^2.3.2
+  xue_hua_navite_video_player: ^2.4.0
 ```
 
 ```bash
@@ -139,7 +141,7 @@ flutter pub get
 import 'package:xue_hua_navite_video_player/xue_hua_navite_video_player.dart';
 ```
 
-Public exports include: `VideoSource`, `VideoPlayerController`, `VideoPlayer`, `CorePlayer`, `VideoPlayerTheme`, `PlayState`, `AspectRatioMode`, `SkipSecondType`, `VideoCoverFrame`, `XueHuaNaviteVideoPlayer`, `PlayerScrubberSlider`, `VideoPlayerSlotContext`, `XFile`, and `FileSystemXFile` (re-exported from `cross_file`).
+Public exports include: `VideoSource`, `VideoPlayerController`, `VideoPlayer`, `CorePlayer`, `VideoPlayerTheme`, `PlayState`, `CastState`, `AspectRatioMode`, `SkipSecondType`, `VideoCoverFrame`, `XueHuaNaviteVideoPlayer`, `PlayerScrubberSlider`, `VideoPlayerSlotContext`, `XFile`, and `FileSystemXFile` (re-exported from `cross_file`).
 
 ---
 
@@ -158,6 +160,7 @@ Skills:
 - `xue-hua-navite-video-player-setup` — install, platforms, initialize, single session
 - `xue-hua-navite-video-player-playback` — `VideoSource`, `VideoPlayerController`, probe APIs
 - `xue-hua-navite-video-player-ui` — `VideoPlayer`, `CorePlayer`, theme, scrubber
+- `xue-hua-navite-video-player-cast` — `showCastPicker`, `stopCasting`, `CastState`, cast button and overlay
 
 ---
 
@@ -172,6 +175,8 @@ Ensure network permission for remote media:
 ```xml
 <uses-permission android:name="android.permission.INTERNET"/>
 ```
+
+Google Cast needs Play services. Keep `MainActivity` as `FlutterActivity`. The plugin manifest already merges the Cast options provider and `MediaTransferReceiver`. See [Casting](#casting).
 
 ### iOS
 
@@ -431,6 +436,10 @@ final XFile saved = await controller.takeSnapshot(savePath: '/tmp/frame.png');
 | `isFullscreen`          | `bool`            | Fullscreen                                         |
 | `brightness`            | `double`          | Screen brightness                                  |
 | `textureId`             | `int?`            | Texture id (desktop)                               |
+| `castState`             | `CastState`       | Cast session. Starts at `unavailable`              |
+| `castDeviceName`        | `String?`         | Remote device name while connecting or connected   |
+| `isCastSupported`       | `bool`            | `castState != unavailable`                         |
+| `isCasting`             | `bool`            | `connecting` or `connected`                        |
 
 ```dart
 SignalBuilder(
@@ -441,6 +450,36 @@ SignalBuilder(
   },
 );
 ```
+
+---
+
+## Casting
+
+`VideoPlayer` shows a cast button on the default top bar when `isCastSupported` is true. `showCastButton` defaults to true. A custom `topBarBuilder` replaces that bar and must call `showCastPicker()` itself. A tap on the default button calls `showCastPicker()`. While `isCasting` is true, chrome stays up, the picture is covered, and the default overlay offers **切换设备** and **退出投屏**. Replace that overlay with `castingOverlayBuilder`. `CorePlayer` has no cast chrome.
+
+```dart
+await controller.showCastPicker();
+await controller.stopCasting();
+
+VideoPlayer(
+  controller: controller,
+  showCastButton: true,
+);
+```
+
+`play` / `pause` / `seek` / `setVolume` / `setSpeed` keep the same API while a session is up. `reset()` keeps `castState` so the next open can stay on the same receiver. `dispose()` sets `unavailable` and stops the local HTTP server. `showCastPicker()` completes without throwing when a picker cannot be shown.
+
+| Platform | What opens | What can receive |
+| -------- | ---------- | ---------------- |
+| Android | Google Cast dialog. Play services required. Host stays `FlutterActivity`. | Chromecast and other Cast devices on the same LAN. AirPlay-only TVs are not listed. |
+| iOS, macOS | System AirPlay picker | AirPlay. Playback is the `AVPlayer` item. |
+| Windows | Windows Casting device picker | Video-capable casting devices. |
+| Linux | `gnome-network-displays` when that program is installed; otherwise a notice dialog | Does not send the open item to a DLNA renderer. |
+| Web | Remote Playback `prompt()`, or Safari's AirPlay picker | Whatever that browser can discover. No local HTTP cast server. |
+
+A file or asset open starts an in-process HTTP range server. Android and Windows give that LAN URL to the receiver. Network URLs are cast as-is and the server is stopped. If the server cannot start, local playback still continues. iOS and macOS do not switch AirPlay over to that URL.
+
+Devices without Play services, and browsers with neither Remote Playback nor the WebKit picker, stay on `CastState.unavailable`. The button stays hidden (`isCastSupported` is false).
 
 ---
 
@@ -498,11 +537,12 @@ VideoPlayer(
   title: const Text('Title'),
   actions: const [],
   topBarActions: const [], // merged after actions (legacy)
+  showCastButton: true,
   showAspectRatioMenu: true,
   enableFullscreen: true,
   skipSecondType: SkipSecondType.second10,
   // topBarBuilder / centerControlsBuilder /
-  // bottomScrubberBuilder / extraOverlayBuilder
+  // bottomScrubberBuilder / castingOverlayBuilder / extraOverlayBuilder
   // errorBuilder / loadingBuilder
 );
 ```
@@ -725,6 +765,12 @@ Install `libmpv-dev` (or distro equivalent).
 
 **Web snapshot / black frame?**  
 Check CORS and whether the browser allows reading cross-origin media pixels.
+
+**The cast button never appears.**  
+`castState` is `unavailable`: Android without Play services, or a browser with neither Remote Playback nor Safari AirPlay. `isCastSupported` is then false.
+
+**Android cast and iOS AirPlay do not list the same TVs.**  
+Android opens a Google Cast dialog (same LAN, Play services). AirPlay-only receivers show up on iOS, macOS, and Safari. The Android host activity stays `FlutterActivity`.
 
 **How many `initialize()` calls?**
 

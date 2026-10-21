@@ -1,3 +1,12 @@
+## 2.4.0
+
+- Add wireless casting: `showCastPicker()`, `stopCasting()`, `CastState`, and a `VideoPlayer` cast button plus status overlay (`showCastButton`, `castingOverlayBuilder`).
+- Android uses Google Cast. The device dialog is shown from a normal `FlutterActivity` (AppCompat theme wrapper). Devices without Play services stay `CastState.unavailable` and the button stays hidden. Cast receivers are Chromecast and other Cast devices on the same LAN, not AirPlay.
+- iOS and macOS present the system AirPlay picker and play the `AVPlayer` item. Web uses the Remote Playback API, or Safari's AirPlay picker when that is what the browser exposes.
+- Windows uses the system Casting device picker. Linux launches GNOME Network Displays when that program is installed; otherwise it shows a native notice. Linux does not stream the current item to a DLNA renderer.
+- File and asset sources start an in-process LAN HTTP range server. Android and Windows hand that URL to the receiver. Network URLs are cast directly. A server failure does not fail local playback.
+- `reset()` keeps the cast session so a new source can load while still connected. `dispose()` sets `unavailable` and stops the local server.
+
 ## 2.3.2
 
 - Fix: a freshly initialized `VideoPlayerController` now stays `PlayState.idle` until a source is opened; native events before the first open are ignored (all platforms).
