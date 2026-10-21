@@ -211,7 +211,7 @@ target_include_directories(${PLUGIN_NAME} PRIVATE
   "${CMAKE_CURRENT_SOURCE_DIR}"
   "${MPV_DIR}/include")
 target_link_libraries(${PLUGIN_NAME} PRIVATE flutter flutter_wrapper_plugin
-  "${MPV_LIBRARY}" dxva2)
+  "${MPV_LIBRARY}" dxva2 windowsapp)
 
 # List of absolute paths to libraries that should be bundled with the plugin.
 # This list could contain prebuilt libraries, or libraries created by an
@@ -269,7 +269,7 @@ target_include_directories(${TEST_RUNNER} PRIVATE
   "${CMAKE_CURRENT_SOURCE_DIR}"
   "${MPV_DIR}/include")
 target_link_libraries(${TEST_RUNNER} PRIVATE flutter_wrapper_plugin
-  "${MPV_LIBRARY}" dxva2)
+  "${MPV_LIBRARY}" dxva2 windowsapp)
 target_link_libraries(${TEST_RUNNER} PRIVATE gtest_main gmock)
 # flutter_wrapper_plugin has link dependencies on the Flutter DLL.
 add_custom_command(TARGET ${TEST_RUNNER} POST_BUILD

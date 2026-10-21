@@ -12,14 +12,22 @@
 #include <highlevelmonitorconfigurationapi.h>
 #include <physicalmonitorenumerationapi.h>
 #include <shlobj.h>
+#include <shobjidl.h>
 #include <windows.h>
 
+#include <winrt/Windows.Foundation.h>
+#include <winrt/Windows.Media.Casting.h>
+#include <winrt/Windows.Media.Core.h>
+#include <winrt/Windows.Media.Playback.h>
+#include <winrt/Windows.UI.Popups.h>
+
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstring>
-#include <optional>
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -66,6 +74,17 @@ namespace xue_hua_navite_video_player {
 
 	}  // namespace
 
+	struct WinRtCastContext {
+		winrt::Windows::Media::Casting::CastingDevicePicker picker{ nullptr };
+		winrt::Windows::Media::Casting::CastingConnection connection{ nullptr };
+		winrt::Windows::Media::Playback::MediaPlayer media_player{ nullptr };
+		winrt::event_token selected_token{};
+		winrt::event_token state_changed_token{};
+		winrt::event_token error_token{};
+		bool is_casting = false;
+		std::string device_name;
+	};
+
 	void XueHuaNaviteVideoPlayerPlugin::RegisterWithRegistrar(flutter::PluginRegistrarWindows* registrar) {
 		auto plugin = std::make_unique<XueHuaNaviteVideoPlayerPlugin>(registrar);
 
@@ -86,6 +105,11 @@ namespace xue_hua_navite_video_player {
 					std::unique_ptr<flutter::EventSink<flutter::EncodableValue>>&& events)
 				-> std::unique_ptr<flutter::StreamHandlerError<flutter::EncodableValue>> {
 					raw->event_sink_ = std::move(events);
+					if (raw->cast_ctx_ && raw->cast_ctx_->is_casting) {
+						raw->SendCastState("connected", raw->cast_ctx_->device_name);
+					} else {
+						raw->SendCastState("notConnected");
+					}
 					return nullptr;
 				},
 				[raw](const flutter::EncodableValue*)
@@ -99,7 +123,8 @@ namespace xue_hua_navite_video_player {
 	}
 
 	XueHuaNaviteVideoPlayerPlugin::XueHuaNaviteVideoPlayerPlugin(flutter::PluginRegistrarWindows* registrar)
-		: registrar_(registrar), texture_registrar_(registrar->texture_registrar()) {
+		: registrar_(registrar), texture_registrar_(registrar->texture_registrar()),
+		  cast_ctx_(std::make_unique<WinRtCastContext>()) {
 		platform_thread_id_ = GetCurrentThreadId();
 		WNDCLASSEXW wc = {};
 		wc.cbSize = sizeof(wc);
@@ -111,10 +136,6 @@ namespace xue_hua_navite_video_player {
 			HWND_MESSAGE, nullptr, wc.hInstance, this);
 		if (message_window_) {
 			SetWindowLongPtrW(message_window_, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
-			// Safety-net poll: fires WM_TIMER at 100 Hz (every 10 ms is overkill — we
-			// use 100 ms which is invisible for UI state but still catches any lost
-			// cross-thread wakeup). Rendering is still driven by mpv's render-update
-			// callback, so this does not burn CPU on video decode.
 			SetTimer(message_window_, /*id=*/1, /*ms=*/100, nullptr);
 		}
 		if (registrar_) {
@@ -145,9 +166,23 @@ namespace xue_hua_navite_video_player {
 		auto* self = reinterpret_cast<XueHuaNaviteVideoPlayerPlugin*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
 		if (!self) return DefWindowProcW(hwnd, msg, w, l);
 		if (msg == kMsgDrain || msg == WM_TIMER) {
-			// Cheap: just property-change notifications dispatching into event sink.
 			self->drain_posted_.store(false);
-			if (self->player_) self->player_->DrainEvents();
+			if (self->player_ && !(self->cast_ctx_ && self->cast_ctx_->is_casting)) {
+				self->player_->DrainEvents();
+			} else if (self->cast_ctx_ && self->cast_ctx_->is_casting && self->cast_ctx_->media_player) {
+				try {
+					auto session = self->cast_ctx_->media_player.PlaybackSession();
+					auto pos_ms = std::chrono::duration_cast<std::chrono::milliseconds>(session.Position()).count();
+					if (pos_ms >= 0) {
+						self->last_local_position_ms_ = pos_ms;
+						self->SendEvent("position", flutter::EncodableValue(static_cast<int64_t>(pos_ms)));
+					}
+					auto dur_ms = std::chrono::duration_cast<std::chrono::milliseconds>(session.NaturalDuration()).count();
+					if (dur_ms > 0) {
+						self->SendEvent("duration", flutter::EncodableValue(static_cast<int64_t>(dur_ms)));
+					}
+				} catch (...) {}
+			}
 			return 0;
 		}
 		if (msg == kMsgSendEvent) {
@@ -184,8 +219,6 @@ namespace xue_hua_navite_video_player {
 				if (render_thread_stop_.load(std::memory_order_acquire)) return;
 				render_request_.store(false, std::memory_order_release);
 			}
-			// mpv SW render runs on this dedicated worker; MarkTextureFrameAvailable
-			// is documented as thread-safe so it's fine to call from here.
 			if (player_ && player_->Render()) {
 				if (texture_id_ >= 0)
 					texture_registrar_->MarkTextureFrameAvailable(texture_id_);
@@ -208,18 +241,35 @@ namespace xue_hua_navite_video_player {
 				PostMessageW(hwnd, kMsgDrain, 0, 0);
 			});
 		p->SetUpdateHandler([this]() {
-			// Signal the dedicated render worker — do NOT render on the platform
-			// thread. mpv's SW render is heavy enough that running it on the
-			// platform thread starves the Flutter UI.
 			render_request_.store(true, std::memory_order_release);
 			render_cv_.notify_one();
 			});
-		p->SetOnPosition([this](int64_t ms) { SendEvent("position", flutter::EncodableValue(ms)); });
-		p->SetOnDuration([this](int64_t ms) { SendEvent("duration", flutter::EncodableValue(ms)); });
-		p->SetOnPlaying([this](bool pl) { SendEvent("playing", flutter::EncodableValue(pl)); });
-		p->SetOnBuffering([this](bool b) { SendEvent("buffering", flutter::EncodableValue(b)); });
-		p->SetOnCompleted([this]() { SendEvent("completed", flutter::EncodableValue()); });
-		p->SetOnError([this](const std::string& m) { SendEvent("error", flutter::EncodableValue(m)); });
+		p->SetOnPosition([this](int64_t ms) {
+			if (cast_ctx_ && cast_ctx_->is_casting) return;
+			last_local_position_ms_ = ms;
+			SendEvent("position", flutter::EncodableValue(ms));
+			});
+		p->SetOnDuration([this](int64_t ms) {
+			if (cast_ctx_ && cast_ctx_->is_casting) return;
+			SendEvent("duration", flutter::EncodableValue(ms));
+			});
+		p->SetOnPlaying([this](bool pl) {
+			if (cast_ctx_ && cast_ctx_->is_casting) return;
+			local_playing_ = pl;
+			SendEvent("playing", flutter::EncodableValue(pl));
+			});
+		p->SetOnBuffering([this](bool b) {
+			if (cast_ctx_ && cast_ctx_->is_casting) return;
+			SendEvent("buffering", flutter::EncodableValue(b));
+			});
+		p->SetOnCompleted([this]() {
+			if (cast_ctx_ && cast_ctx_->is_casting) return;
+			SendEvent("completed", flutter::EncodableValue());
+			});
+		p->SetOnError([this](const std::string& m) {
+			if (cast_ctx_ && cast_ctx_->is_casting) return;
+			SendEvent("error", flutter::EncodableValue(m));
+			});
 		p->SetOnFrame([this](const uint8_t* rgba, uint32_t w, uint32_t h) {
 			std::lock_guard<std::mutex> lk(pixel_mutex_);
 			size_t need = static_cast<size_t>(w) * h * 4;
@@ -237,7 +287,6 @@ namespace xue_hua_navite_video_player {
 			SendEvent("videoSize", flutter::EncodableValue(std::move(size)));
 			});
 		player_ = std::move(p);
-		// Spin up the dedicated render worker once the player exists.
 		if (!render_thread_.joinable()) {
 			render_thread_stop_.store(false, std::memory_order_release);
 			render_thread_ = std::thread([this]() { RenderLoop(); });
@@ -247,6 +296,7 @@ namespace xue_hua_navite_video_player {
 	int64_t XueHuaNaviteVideoPlayerPlugin::CreateTextureIfNeeded() {
 		EnsurePlayer();
 		if (!player_) return -1;
+		SendCastState("notConnected");
 		if (texture_id_ >= 0) return texture_id_;
 		{
 			std::lock_guard<std::mutex> lk(pixel_mutex_);
@@ -273,7 +323,7 @@ namespace xue_hua_navite_video_player {
 	}
 
 	void XueHuaNaviteVideoPlayerPlugin::DisposePlayer() {
-		// Stop the render worker first so it doesn't touch a half-destroyed player.
+		StopCasting();
 		if (render_thread_.joinable()) {
 			render_thread_stop_.store(true, std::memory_order_release);
 			render_cv_.notify_all();
@@ -287,6 +337,161 @@ namespace xue_hua_navite_video_player {
 		pixel_buffer_.width = 0;
 		pixel_buffer_.height = 0;
 		pixel_buffer_data_.clear();
+	}
+
+	void XueHuaNaviteVideoPlayerPlugin::SendCastState(
+		const std::string& state, const std::string& device_name) {
+		flutter::EncodableMap payload;
+		payload[flutter::EncodableValue("state")] = flutter::EncodableValue(state);
+		if (!device_name.empty()) {
+			payload[flutter::EncodableValue("deviceName")] = flutter::EncodableValue(device_name);
+		}
+		SendEvent("castState", flutter::EncodableValue(std::move(payload)));
+	}
+
+	void XueHuaNaviteVideoPlayerPlugin::OpenCastMediaIfActive(const std::string& url) {
+		if (!cast_ctx_ || !cast_ctx_->is_casting || !cast_ctx_->media_player || url.empty()) {
+			return;
+		}
+		try {
+			winrt::Windows::Foundation::Uri uri(Utf8ToWide(url));
+			auto source = winrt::Windows::Media::Core::MediaSource::CreateFromUri(uri);
+			cast_ctx_->media_player.Source(source);
+		} catch (...) {}
+	}
+
+	void XueHuaNaviteVideoPlayerPlugin::ShowCastPicker() {
+		HWND hwnd = RootWindow();
+		if (!hwnd || !cast_ctx_) return;
+		try {
+			using namespace winrt::Windows::Media::Casting;
+			using namespace winrt::Windows::Media::Playback;
+			using namespace winrt::Windows::Media::Core;
+			using namespace winrt::Windows::Foundation;
+
+			if (!cast_ctx_->picker) {
+				CastingDevicePicker picker;
+				picker.Filter().SupportsVideo(true);
+				cast_ctx_->selected_token = picker.CastingDeviceSelected(
+					[this](const CastingDevicePicker& /*sender*/, const CastingDeviceSelectedEventArgs& args) {
+						try {
+							auto device = args.SelectedCastingDevice();
+							std::string dev_name = WideToUtf8(std::wstring(device.FriendlyName().c_str()));
+							if (dev_name.empty()) dev_name = "Windows Cast";
+							cast_ctx_->device_name = dev_name;
+							SendCastState("connecting", dev_name);
+
+							const bool was_playing = local_playing_;
+							const int64_t resume_ms = last_local_position_ms_;
+							if (player_) player_->Pause();
+
+							if (!cast_ctx_->media_player) {
+								cast_ctx_->media_player = MediaPlayer();
+								cast_ctx_->media_player.MediaEnded([this](const MediaPlayer&, const IInspectable&) {
+									SendEvent("playing", flutter::EncodableValue(false));
+									SendEvent("completed", flutter::EncodableValue());
+								});
+								cast_ctx_->media_player.CurrentStateChanged([this](const MediaPlayer& mp, const IInspectable&) {
+									try {
+										auto state = mp.PlaybackSession().PlaybackState();
+										SendEvent("buffering", flutter::EncodableValue(
+											state == MediaPlaybackState::Buffering || state == MediaPlaybackState::Opening));
+										SendEvent("playing", flutter::EncodableValue(
+											state == MediaPlaybackState::Playing));
+									} catch (...) {}
+								});
+							}
+
+							const std::string target_url = !current_cast_url_.empty() ? current_cast_url_ : current_url_;
+							if (!target_url.empty()) {
+								Uri uri(Utf8ToWide(target_url));
+								cast_ctx_->media_player.Source(MediaSource::CreateFromUri(uri));
+								cast_ctx_->media_player.Volume(current_volume_);
+								cast_ctx_->media_player.PlaybackSession().PlaybackRate(current_speed_);
+								cast_ctx_->media_player.PlaybackSession().Position(std::chrono::milliseconds(resume_ms));
+								if (was_playing) {
+									cast_ctx_->media_player.Play();
+								}
+							}
+
+							auto conn = device.CreateCastingConnection();
+							cast_ctx_->connection = conn;
+							conn.StateChanged([this](const CastingConnection& c, const IInspectable&) {
+								try {
+									switch (c.State()) {
+									case CastingConnectionState::Connected:
+									case CastingConnectionState::Rendering:
+										cast_ctx_->is_casting = true;
+										SendCastState("connected", cast_ctx_->device_name);
+										break;
+									case CastingConnectionState::Reconnecting:
+										SendCastState("connecting", cast_ctx_->device_name);
+										break;
+									case CastingConnectionState::Disconnecting:
+										SendCastState("disconnecting", cast_ctx_->device_name);
+										break;
+									case CastingConnectionState::Disconnected:
+										if (cast_ctx_->is_casting) {
+											cast_ctx_->is_casting = false;
+											if (player_) {
+												player_->Pause();
+												player_->Seek(last_local_position_ms_);
+											}
+											SendEvent("playing", flutter::EncodableValue(false));
+										}
+										SendCastState("notConnected");
+										break;
+									}
+								} catch (...) {}
+							});
+							conn.RequestStartCastingAsync(cast_ctx_->media_player.GetAsCastingSource());
+						} catch (...) {
+							SendCastState("notConnected");
+						}
+					});
+				cast_ctx_->picker = picker;
+			}
+
+			auto init_window = cast_ctx_->picker.as<IInitializeWithWindow>();
+			if (init_window) {
+				init_window->Initialize(hwnd);
+			}
+			RECT rc{};
+			GetClientRect(hwnd, &rc);
+			const float x = static_cast<float>((std::max)(0L, rc.right - rc.left - 60));
+			cast_ctx_->picker.Show(
+				winrt::Windows::Foundation::Rect{ x, 48.0f, 1.0f, 1.0f },
+				winrt::Windows::UI::Popups::Placement::Below);
+		} catch (...) {
+			// Safe no-op if Windows Casting API is unavailable on current SKU.
+		}
+	}
+
+	void XueHuaNaviteVideoPlayerPlugin::StopCasting() {
+		if (!cast_ctx_ || !cast_ctx_->is_casting) return;
+		cast_ctx_->is_casting = false;
+		try {
+			if (cast_ctx_->media_player) {
+				auto pos_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+					cast_ctx_->media_player.PlaybackSession().Position()).count();
+				if (pos_ms >= 0) {
+					last_local_position_ms_ = pos_ms;
+				}
+				cast_ctx_->media_player.Pause();
+			}
+			if (cast_ctx_->connection) {
+				cast_ctx_->connection.DisconnectAsync();
+				cast_ctx_->connection = nullptr;
+			}
+		} catch (...) {}
+		if (player_) {
+			player_->Pause();
+			if (last_local_position_ms_ > 0) {
+				player_->Seek(last_local_position_ms_);
+			}
+		}
+		SendEvent("playing", flutter::EncodableValue(false));
+		SendCastState("notConnected");
 	}
 
 	void XueHuaNaviteVideoPlayerPlugin::SendEvent(const std::string& name, flutter::EncodableValue value) {
@@ -541,25 +746,77 @@ namespace xue_hua_navite_video_player {
 			EnsurePlayer();
 			if (args) {
 				const auto* url = GetArg<std::string>(args, "url");
-				if (url && player_) { player_->Open(*url); SendEvent("buffering", flutter::EncodableValue(true)); }
+				const auto* cast_url = GetArg<std::string>(args, "castUrl");
+				current_cast_url_ = cast_url ? *cast_url : "";
+				if (url) {
+					current_url_ = *url;
+					last_local_position_ms_ = 0;
+					if (player_) {
+						player_->Open(*url);
+						SendEvent("buffering", flutter::EncodableValue(true));
+					}
+					OpenCastMediaIfActive(!current_cast_url_.empty() ? current_cast_url_ : current_url_);
+				}
 			}
 			result->Success(); return;
 		}
-		if (name == "play") { if (player_) player_->Play();  result->Success(); return; }
-		if (name == "pause") { if (player_) player_->Pause(); result->Success(); return; }
+		if (name == "play") {
+			if (cast_ctx_ && cast_ctx_->is_casting && cast_ctx_->media_player) {
+				try { cast_ctx_->media_player.Play(); } catch (...) {}
+			} else if (player_) {
+				player_->Play();
+			}
+			result->Success(); return;
+		}
+		if (name == "pause") {
+			if (cast_ctx_ && cast_ctx_->is_casting && cast_ctx_->media_player) {
+				try { cast_ctx_->media_player.Pause(); } catch (...) {}
+			} else if (player_) {
+				player_->Pause();
+			}
+			result->Success(); return;
+		}
 		if (name == "seek") {
-			if (args && player_) {
-				if (const auto* pos = GetArg<int64_t>(args, "position")) player_->Seek(*pos);
-				else if (const auto* p32 = GetArg<int32_t>(args, "position")) player_->Seek(static_cast<int64_t>(*p32));
+			int64_t seek_ms = 0;
+			bool has_seek = false;
+			if (args) {
+				if (const auto* pos = GetArg<int64_t>(args, "position")) { seek_ms = *pos; has_seek = true; }
+				else if (const auto* p32 = GetArg<int32_t>(args, "position")) { seek_ms = static_cast<int64_t>(*p32); has_seek = true; }
+			}
+			if (has_seek) {
+				last_local_position_ms_ = seek_ms;
+				if (cast_ctx_ && cast_ctx_->is_casting && cast_ctx_->media_player) {
+					try {
+						cast_ctx_->media_player.PlaybackSession().Position(std::chrono::milliseconds(seek_ms));
+					} catch (...) {}
+				} else if (player_) {
+					player_->Seek(seek_ms);
+				}
 			}
 			result->Success(); return;
 		}
 		if (name == "setVolume") {
-			if (args && player_) { if (const auto* v = GetArg<double>(args, "volume")) player_->SetVolume(*v); }
+			if (args) {
+				if (const auto* v = GetArg<double>(args, "volume")) {
+					current_volume_ = std::clamp(*v, 0.0, 1.0);
+					if (player_) player_->SetVolume(current_volume_);
+					if (cast_ctx_ && cast_ctx_->media_player) {
+						try { cast_ctx_->media_player.Volume(current_volume_); } catch (...) {}
+					}
+				}
+			}
 			result->Success(); return;
 		}
 		if (name == "setSpeed") {
-			if (args && player_) { if (const auto* s = GetArg<double>(args, "speed")) player_->SetSpeed(*s); }
+			if (args) {
+				if (const auto* s = GetArg<double>(args, "speed")) {
+					current_speed_ = *s;
+					if (player_) player_->SetSpeed(current_speed_);
+					if (cast_ctx_ && cast_ctx_->media_player) {
+						try { cast_ctx_->media_player.PlaybackSession().PlaybackRate(current_speed_); } catch (...) {}
+					}
+				}
+			}
 			result->Success(); return;
 		}
 		if (name == "setAspectRatioMode") {
@@ -586,6 +843,16 @@ namespace xue_hua_navite_video_player {
 					static_cast<uint32_t>(height * dpr + 0.5));
 			}
 			result->Success(); return;
+		}
+		if (name == "showCastPicker") {
+			ShowCastPicker();
+			result->Success();
+			return;
+		}
+		if (name == "stopCasting") {
+			StopCasting();
+			result->Success();
+			return;
 		}
 		if (name == "dispose") {
 			RestoreBrightness();
@@ -679,8 +946,6 @@ namespace xue_hua_navite_video_player {
 			return;
 		}
 		if (name == "getPlatformVersion") {
-			// Use RtlGetVersion (ntdll) to get the real OS build; GetVersion /
-			// GetVersionEx are deprecated and lie on Windows 8.1+ without a manifest.
 			std::ostringstream os;
 			os << "Windows";
 			using RtlGetVersionFn = LONG(WINAPI*)(PRTL_OSVERSIONINFOW);
@@ -691,7 +956,7 @@ namespace xue_hua_navite_video_player {
 				if (fn != nullptr) {
 					RTL_OSVERSIONINFOW info{};
 					info.dwOSVersionInfoSize = sizeof(info);
-					if (fn(&info) == 0 /* STATUS_SUCCESS */) {
+					if (fn(&info) == 0) {
 						os << " " << info.dwMajorVersion << "." << info.dwMinorVersion
 							<< "." << info.dwBuildNumber;
 					}

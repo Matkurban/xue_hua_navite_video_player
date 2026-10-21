@@ -1,20 +1,24 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:cross_file/cross_file.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:signals_flutter/signals_flutter.dart';
 import 'package:xue_hua_navite_video_player/src/data/enums/aspect_ratio_mode.dart';
+import 'package:xue_hua_navite_video_player/src/data/enums/cast_state.dart';
 import 'package:xue_hua_navite_video_player/src/data/enums/play_state.dart';
 import 'package:xue_hua_navite_video_player/src/data/enums/skip_second_type.dart';
 import 'package:xue_hua_navite_video_player/src/player/brightness_controller.dart';
 import 'package:xue_hua_navite_video_player/src/player/channel_player_backend.dart';
 import 'package:xue_hua_navite_video_player/src/player/fullscreen_coordinator.dart';
+import 'package:xue_hua_navite_video_player/src/player/local_cast_http_server.dart';
 import 'package:xue_hua_navite_video_player/src/player/playback_session.dart';
 import 'package:xue_hua_navite_video_player/src/player/player_backend.dart';
 import 'package:xue_hua_navite_video_player/src/player/player_event.dart';
 import 'package:xue_hua_navite_video_player/src/player/video_player_controller.dart';
-
-import 'dart:async';
-import 'dart:io';
+import 'package:xue_hua_navite_video_player/src/ui/video_player.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -383,6 +387,104 @@ void main() {
       expect(brightness.value, 0.35);
       await controller.dispose();
     });
+
+    test('castState transitions and preserves cast session across openSource', () async {
+      final backend = _FakePlayerBackend();
+      final controller = VideoPlayerController(backend: backend);
+      await controller.initialize();
+
+      expect(controller.castState.value, CastState.unavailable);
+      expect(controller.isCastSupported.value, isFalse);
+      expect(controller.isCasting.value, isFalse);
+
+      // Cast capability reported before any openSource call.
+      backend.emit(const PlayerEvent.castState(CastState.notConnected));
+      await Future<void>.delayed(Duration.zero);
+      expect(controller.castState.value, CastState.notConnected);
+      expect(controller.isCastSupported.value, isTrue);
+      expect(controller.isCasting.value, isFalse);
+
+      await controller.showCastPicker();
+      expect(backend.showCastPickerCount, 1);
+
+      backend.emit(
+        const PlayerEvent.castState(CastState.connecting, deviceName: '客厅 Apple TV'),
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(controller.castState.value, CastState.connecting);
+      expect(controller.isCasting.value, isTrue);
+      expect(controller.castDeviceName.value, '客厅 Apple TV');
+
+      backend.emit(
+        const PlayerEvent.castState(CastState.connected, deviceName: '客厅 Apple TV'),
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(controller.castState.value, CastState.connected);
+      expect(controller.isCasting.value, isTrue);
+      expect(controller.castDeviceName.value, '客厅 Apple TV');
+
+      // Switching episodes while casting must preserve castState & castDeviceName.
+      await controller.playNetwork('https://example.com/episode-2.mp4');
+      expect(controller.castState.value, CastState.connected);
+      expect(controller.castDeviceName.value, '客厅 Apple TV');
+
+      await controller.stopCasting();
+      expect(backend.stopCastingCount, 1);
+
+      backend.emit(const PlayerEvent.castState(CastState.notConnected));
+      await Future<void>.delayed(Duration.zero);
+      expect(controller.castState.value, CastState.notConnected);
+      expect(controller.isCasting.value, isFalse);
+      expect(controller.castDeviceName.value, isNull);
+
+      await controller.dispose();
+    });
+
+    test('LocalCastHttpServer serves full and byte-range requests for local files', () async {
+      final bytes = List<int>.generate(64, (i) => i);
+      await mediaFile.writeAsBytes(bytes, flush: true);
+
+      final castServer = LocalCastHttpServer(
+        bindAddress: InternetAddress.loopbackIPv4,
+        overrideHostIp: '127.0.0.1',
+      );
+      final backend = _FakePlayerBackend();
+      final controller = VideoPlayerController(
+        backend: backend,
+        localCastServer: castServer,
+      );
+
+      await controller.initialize();
+      await controller.openFile(mediaFile.path);
+
+      final castUrl = backend.lastCastUrl;
+      expect(castUrl, isNotNull);
+      expect(castUrl, startsWith('http://127.0.0.1:'));
+
+      final client = HttpClient();
+      try {
+        // 1. Full GET request
+        final fullReq = await client.getUrl(Uri.parse(castUrl!));
+        final fullRes = await fullReq.close();
+        expect(fullRes.statusCode, HttpStatus.ok);
+        expect(fullRes.headers.value(HttpHeaders.acceptRangesHeader), 'bytes');
+        final fullBody = await fullRes.expand((chunk) => chunk).toList();
+        expect(fullBody, bytes);
+
+        // 2. Partial Range GET request (bytes=10-25)
+        final rangeReq = await client.getUrl(Uri.parse(castUrl));
+        rangeReq.headers.set(HttpHeaders.rangeHeader, 'bytes=10-25');
+        final rangeRes = await rangeReq.close();
+        expect(rangeRes.statusCode, HttpStatus.partialContent);
+        expect(rangeRes.headers.value(HttpHeaders.contentRangeHeader), 'bytes 10-25/64');
+        final rangeBody = await rangeRes.expand((chunk) => chunk).toList();
+        expect(rangeBody, bytes.sublist(10, 26));
+      } finally {
+        client.close(force: true);
+      }
+
+      await controller.dispose();
+    });
   });
 
   group('ChannelBrightnessController', () {
@@ -443,12 +545,95 @@ void main() {
       expect(duration, isA<PlayerDurationEvent>());
     });
 
+    test('decodes castState map and string payloads', () {
+      final connected = ChannelPlayerBackend.decodeEventForTest({
+        'event': 'castState',
+        'value': {'state': 'connected', 'deviceName': 'Living Room TV'},
+      });
+      expect(connected, isA<PlayerCastStateEvent>());
+      final castEvent = connected as PlayerCastStateEvent;
+      expect(castEvent.state, CastState.connected);
+      expect(castEvent.deviceName, 'Living Room TV');
+
+      final notConnected = ChannelPlayerBackend.decodeEventForTest({
+        'event': 'castState',
+        'value': 'notConnected',
+      });
+      expect(notConnected, isA<PlayerCastStateEvent>());
+      expect((notConnected as PlayerCastStateEvent).state, CastState.notConnected);
+    });
+
     test('skips malformed payloads instead of throwing', () {
       expect(ChannelPlayerBackend.decodeEventForTest({'event': 'playing', 'value': 'yes'}), isNull);
       expect(
         ChannelPlayerBackend.decodeEventForTest({'event': 'position', 'value': 'bad'}),
         isNull,
       );
+    });
+  });
+
+  group('VideoPlayer casting UI', () {
+    testWidgets('shows cast button when supported and casting overlay when connected', (
+      WidgetTester tester,
+    ) async {
+      final backend = _FakePlayerBackend();
+      final controller = VideoPlayerController(
+        backend: backend,
+        fullscreen: _FakeFullscreen(),
+        brightness: _FakeBrightness(),
+      );
+      await controller.initialize();
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              width: 640,
+              height: 360,
+              child: VideoPlayer(
+                controller: controller,
+                autoHideDelay: Duration.zero,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      // Initially unavailable -> cast button is hidden.
+      expect(find.byKey(const ValueKey<String>('video_player_cast_button')), findsNothing);
+
+      // Platform reports cast available (notConnected) -> cast button appears.
+      backend.emit(const PlayerEvent.castState(CastState.notConnected));
+      await tester.pump();
+      final castBtn = find.byKey(const ValueKey<String>('video_player_cast_button'));
+      expect(castBtn, findsOneWidget);
+
+      await tester.tap(castBtn);
+      await tester.pump();
+      expect(backend.showCastPickerCount, 1);
+
+      // Platform transitions to connected -> casting overlay & quick actions appear.
+      backend.emit(
+        const PlayerEvent.castState(CastState.connected, deviceName: '客厅电视'),
+      );
+      await tester.pump();
+
+      expect(find.text('正在投屏至「客厅电视」'), findsOneWidget);
+      final switchBtn = find.byKey(const ValueKey<String>('video_player_cast_switch_button'));
+      final stopBtn = find.byKey(const ValueKey<String>('video_player_cast_stop_button'));
+      expect(switchBtn, findsOneWidget);
+      expect(stopBtn, findsOneWidget);
+
+      await tester.tap(switchBtn);
+      await tester.pump();
+      expect(backend.showCastPickerCount, 2);
+
+      await tester.tap(stopBtn);
+      await tester.pump();
+      expect(backend.stopCastingCount, 1);
+
+      await controller.dispose();
     });
   });
 }
@@ -470,6 +655,7 @@ class _FakePlayerBackend implements PlayerBackend {
   final FlutterSignal<int?> _textureId = signal<int?>(null);
 
   String? lastOpenedUrl;
+  String? lastCastUrl;
   double? lastVolume;
   double? lastSpeed;
   int? lastSeekMs;
@@ -477,6 +663,8 @@ class _FakePlayerBackend implements PlayerBackend {
   double? lastViewWidth;
   double? lastViewHeight;
   double? lastViewDpr;
+  int showCastPickerCount = 0;
+  int stopCastingCount = 0;
 
   @override
   FlutterSignal<int?> get textureId => _textureId;
@@ -491,11 +679,12 @@ class _FakePlayerBackend implements PlayerBackend {
   }
 
   @override
-  Future<void> open(String url) async {
+  Future<void> open(String url, {String? castUrl}) async {
     if (openDelay != null) {
       await Future<void>.delayed(openDelay!);
     }
     lastOpenedUrl = url;
+    lastCastUrl = castUrl;
   }
 
   @override
@@ -538,6 +727,16 @@ class _FakePlayerBackend implements PlayerBackend {
     lastViewWidth = width;
     lastViewHeight = height;
     lastViewDpr = devicePixelRatio;
+  }
+
+  @override
+  Future<void> showCastPicker() async {
+    showCastPickerCount++;
+  }
+
+  @override
+  Future<void> stopCasting() async {
+    stopCastingCount++;
   }
 
   @override

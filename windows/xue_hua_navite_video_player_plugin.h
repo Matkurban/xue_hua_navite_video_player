@@ -1,7 +1,7 @@
 #ifndef FLUTTER_PLUGIN_XUE_HUA_NAVITE_VIDEO_PLAYER_PLUGIN_H_
 #define FLUTTER_PLUGIN_XUE_HUA_NAVITE_VIDEO_PLAYER_PLUGIN_H_
 
-// Windows video player plugin — libmpv backend (software rendering).
+// Windows video player plugin — libmpv backend (software rendering) + WinRT Casting.
 
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -34,6 +34,8 @@
 
 namespace xue_hua_navite_video_player {
 
+	struct WinRtCastContext;
+
 	class XueHuaNaviteVideoPlayerPlugin : public flutter::Plugin {
 	public:
 		static void RegisterWithRegistrar(flutter::PluginRegistrarWindows* registrar);
@@ -55,9 +57,14 @@ namespace xue_hua_navite_video_player {
 		void DisposePlayer();
 		void SendEvent(const std::string& name, flutter::EncodableValue value);
 		void SendEventOnPlatformThread(const std::string& name, flutter::EncodableValue value);
+		void SendCastState(const std::string& state, const std::string& device_name = "");
 		void ReplyOnPlatformThread(
 			std::shared_ptr<flutter::MethodResult<flutter::EncodableValue>> result,
 			flutter::EncodableValue value);
+
+		void ShowCastPicker();
+		void StopCasting();
+		void OpenCastMediaIfActive(const std::string& url);
 
 		double GetBrightness();
 		void SetBrightness(double value);
@@ -78,6 +85,14 @@ namespace xue_hua_navite_video_player {
 		std::unique_ptr<flutter::EventChannel<flutter::EncodableValue>> event_channel_;
 
 		std::unique_ptr<MpvPlayer> player_;
+		std::unique_ptr<WinRtCastContext> cast_ctx_;
+		std::string current_url_;
+		std::string current_cast_url_;
+		int64_t last_local_position_ms_ = 0;
+		bool local_playing_ = false;
+		double current_volume_ = 1.0;
+		double current_speed_ = 1.0;
+
 		std::unique_ptr<flutter::TextureVariant> texture_variant_;
 		int64_t texture_id_ = -1;
 		FlutterDesktopPixelBuffer pixel_buffer_{};

@@ -33,4 +33,17 @@ internal class XueHuaNaviteVideoPlayerPluginTest {
         plugin.onMethodCall(call, mockResult)
         Mockito.verify(mockResult).error("NO_PLAYER", "Player not initialized", null)
     }
+
+    @Test
+    fun showCastPickerAndStopCastingWithoutActivity_succeedGracefully() {
+        val plugin = XueHuaNaviteVideoPlayerPlugin()
+
+        val showResult: MethodChannel.Result = Mockito.mock(MethodChannel.Result::class.java)
+        plugin.onMethodCall(MethodCall("showCastPicker", null), showResult)
+        Mockito.verify(showResult).success(null)
+
+        val stopResult: MethodChannel.Result = Mockito.mock(MethodChannel.Result::class.java)
+        plugin.onMethodCall(MethodCall("stopCasting", null), stopResult)
+        Mockito.verify(stopResult).success(null)
+    }
 }

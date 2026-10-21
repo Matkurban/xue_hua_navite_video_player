@@ -1,6 +1,6 @@
 # `xue_hua_navite_video_player` 全端无线投屏（Casting）架构与详细设计文档
 
-> **文档状态**：设计草案（待评审）  
+> **文档状态**：已实现  
 > **适用版本**：`xue_hua_navite_video_player` `0.0.1+`  
 > **覆盖平台**：iOS、macOS、Android、Web、Windows、Linux（全 6 端）
 

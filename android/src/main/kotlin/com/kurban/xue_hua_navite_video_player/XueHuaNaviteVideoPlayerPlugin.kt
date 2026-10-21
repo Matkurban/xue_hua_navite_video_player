@@ -2,6 +2,7 @@ package com.kurban.xue_hua_navite_video_player
 
 import android.app.Activity
 import android.graphics.Bitmap
+import android.media.MediaFormat
 import android.media.MediaMetadataRetriever
 import android.os.Handler
 import android.os.Looper
@@ -9,18 +10,36 @@ import android.provider.Settings
 import android.view.PixelCopy
 import android.view.SurfaceView
 import android.view.TextureView
+import androidx.core.graphics.createBitmap
+import androidx.core.graphics.scale
+import androidx.core.net.toUri
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
+import androidx.media3.cast.CastPlayer
+import androidx.media3.cast.SessionAvailabilityListener
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.VideoSize
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.mediacodec.DefaultMediaCodecAdapterFactory
+import androidx.media3.exoplayer.mediacodec.MediaCodecAdapter
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
+import androidx.mediarouter.app.MediaRouteChooserDialog
+import androidx.mediarouter.app.MediaRouteControllerDialog
+import com.google.android.gms.cast.framework.CastContext
+import com.google.android.gms.cast.framework.CastSession
+import com.google.android.gms.cast.framework.SessionManagerListener
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.embedding.engine.plugins.activity.ActivityAware
 import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
@@ -37,18 +56,8 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.abs
-import androidx.core.graphics.createBitmap
-import androidx.core.net.toUri
-import androidx.core.graphics.scale
-import android.media.MediaFormat
-import androidx.media3.exoplayer.DefaultRenderersFactory
-import androidx.media3.exoplayer.mediacodec.DefaultMediaCodecAdapterFactory
-import androidx.media3.exoplayer.mediacodec.MediaCodecAdapter
-import androidx.media3.datasource.DefaultDataSource
-import androidx.media3.datasource.DefaultHttpDataSource
-import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 
-/// 插件主类：ExoPlayer + PlatformView（PlayerView.resizeMode）。
+/// 插件主类：ExoPlayer + CastPlayer（Google Cast）+ PlatformView（PlayerView.resizeMode）。
 @UnstableApi
 class XueHuaNaviteVideoPlayerPlugin :
     FlutterPlugin,
@@ -60,11 +69,17 @@ class XueHuaNaviteVideoPlayerPlugin :
     private lateinit var methodChannel: MethodChannel
     private lateinit var eventChannel: EventChannel
     private var exoPlayer: ExoPlayer? = null
+    private var castPlayer: CastPlayer? = null
+    private var castContext: CastContext? = null
+    private var activePlayer: Player? = null
     private var eventSink: EventChannel.EventSink? = null
     private val mainHandler = Handler(Looper.getMainLooper())
     private var workerExecutor = Executors.newCachedThreadPool()
     private val engineGeneration = AtomicInteger(0)
     private var currentUrl: String? = null
+    private var currentCastUrl: String? = null
+    private var lastCastState: String = "unavailable"
+    private var lastCastDeviceName: String? = null
     private var flutterPluginBinding: FlutterPlugin.FlutterPluginBinding? = null
     private var playerView: PlayerView? = null
     private var resizeMode: Int = AspectRatioFrameLayout.RESIZE_MODE_FIT
@@ -136,6 +151,11 @@ class XueHuaNaviteVideoPlayerPlugin :
     }
 
     override fun onStop(owner: LifecycleOwner) {
+        // When actively casting to a remote receiver, keep remote playback running
+        // even if the phone screen turns off or the app enters the background.
+        if (activePlayer === castPlayer && castPlayer != null) {
+            return
+        }
         stopPositionPolling()
         val player = exoPlayer ?: return
         if (player.isPlaying) {
@@ -161,7 +181,8 @@ class XueHuaNaviteVideoPlayerPlugin :
 
     override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
         eventSink = events
-        exoPlayer?.let { player ->
+        sendCastState(lastCastState, lastCastDeviceName)
+        activePlayer?.let { player ->
             val dur = player.duration
             if (dur != C.TIME_UNSET && dur > 0L) {
                 lastReportedDuration = dur
@@ -189,6 +210,8 @@ class XueHuaNaviteVideoPlayerPlugin :
             "setSpeed" -> handleSetSpeed(call, result)
             "setAspectRatioMode" -> handleSetAspectRatioMode(call, result)
             "setVideoViewSize" -> result.success(null)
+            "showCastPicker" -> handleShowCastPicker(result)
+            "stopCasting" -> handleStopCasting(result)
             "dispose" -> handleDispose(result)
             "takeSnapshot" -> handleTakeSnapshot(result)
             "extractCovers" -> handleExtractCovers(call, result)
@@ -200,8 +223,8 @@ class XueHuaNaviteVideoPlayerPlugin :
         }
     }
 
-    private fun requirePlayer(result: Result): ExoPlayer? {
-        val player = exoPlayer
+    private fun requirePlayer(result: Result): Player? {
+        val player = activePlayer ?: exoPlayer
         if (player == null) {
             result.error("NO_PLAYER", "Player not initialized", null)
             return null
@@ -270,12 +293,164 @@ class XueHuaNaviteVideoPlayerPlugin :
                 .build(),
             /* handleAudioFocus= */ true,
         )
-        player.addListener(playerListener)
+        player.addListener(exoPlayerListener)
         exoPlayer = player
+        activePlayer = player
         playerView?.player = player
         playerView?.resizeMode = resizeMode
 
+        // 4. 初始化 Google Cast (Media3 CastPlayer)，无 GMS 环境安全降级
+        initCastSupport(context)
+
         result.success(0)
+    }
+
+    private fun initCastSupport(context: android.content.Context) {
+        val generation = engineGeneration.get()
+        try {
+            val task = CastContext.getSharedInstance(context, workerExecutor)
+            task.addOnSuccessListener { ctx ->
+                mainHandler.post {
+                    if (generation != engineGeneration.get() || exoPlayer == null) return@post
+                    try {
+                        castContext = ctx
+                        ctx.sessionManager.addSessionManagerListener(
+                            castSessionManagerListener,
+                            CastSession::class.java,
+                        )
+                        val cp = CastPlayer(ctx)
+                        cp.addListener(castPlayerListener)
+                        cp.setSessionAvailabilityListener(castSessionAvailabilityListener)
+                        castPlayer = cp
+                        if (cp.isCastSessionAvailable) {
+                            activePlayer = cp
+                            sendCastState("connected", currentCastDeviceName())
+                        } else {
+                            sendCastState("notConnected", null)
+                        }
+                    } catch (_: Throwable) {
+                        sendCastState("unavailable", null)
+                    }
+                }
+            }.addOnFailureListener {
+                mainHandler.post {
+                    if (generation != engineGeneration.get()) return@post
+                    sendCastState("unavailable", null)
+                }
+            }
+        } catch (_: Throwable) {
+            sendCastState("unavailable", null)
+        }
+    }
+
+    private fun currentCastDeviceName(): String? {
+        return try {
+            castContext?.sessionManager?.currentCastSession?.castDevice?.friendlyName
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    private val castSessionManagerListener = object : SessionManagerListener<CastSession> {
+        override fun onSessionStarting(session: CastSession) {
+            sendCastState("connecting", session.castDevice?.friendlyName)
+        }
+
+        override fun onSessionStarted(session: CastSession, sessionId: String) {
+            sendCastState("connected", session.castDevice?.friendlyName)
+        }
+
+        override fun onSessionStartFailed(session: CastSession, error: Int) {
+            sendCastState("notConnected", null)
+        }
+
+        override fun onSessionEnding(session: CastSession) {
+            sendCastState("disconnecting", session.castDevice?.friendlyName)
+        }
+
+        override fun onSessionEnded(session: CastSession, error: Int) {
+            sendCastState("notConnected", null)
+        }
+
+        override fun onSessionResuming(session: CastSession, sessionId: String) {
+            sendCastState("connecting", session.castDevice?.friendlyName)
+        }
+
+        override fun onSessionResumed(session: CastSession, wasSuspended: Boolean) {
+            sendCastState("connected", session.castDevice?.friendlyName)
+        }
+
+        override fun onSessionResumeFailed(session: CastSession, error: Int) {
+            sendCastState("notConnected", null)
+        }
+
+        override fun onSessionSuspended(session: CastSession, reason: Int) {}
+    }
+
+    private val castSessionAvailabilityListener = object : SessionAvailabilityListener {
+        override fun onCastSessionAvailable() {
+            val local = exoPlayer
+            val remote = castPlayer ?: return
+            val pos = (local?.currentPosition ?: 0L).coerceAtLeast(0L)
+            val wasPlaying = local?.isPlaying == true
+            val currentVolume = local?.volume ?: 1f
+
+            local?.pause()
+            activePlayer = remote
+            sendCastState("connected", currentCastDeviceName() ?: "Cast Device")
+
+            val targetUrl = currentCastUrl ?: currentUrl
+            if (!targetUrl.isNullOrEmpty()) {
+                val mediaItem = buildCastMediaItem(targetUrl)
+                remote.setMediaItem(mediaItem, pos)
+                remote.volume = currentVolume
+                remote.playWhenReady = wasPlaying
+                remote.prepare()
+            }
+        }
+
+        override fun onCastSessionUnavailable() {
+            val local = exoPlayer
+            val remote = castPlayer
+            val pos = (remote?.currentPosition ?: 0L).coerceAtLeast(0L)
+
+            stopPositionPolling()
+            activePlayer = local
+            local?.let { player ->
+                player.playWhenReady = false
+                player.pause()
+                if (pos > 0L) {
+                    player.seekTo(pos)
+                }
+            }
+            sendCastState("notConnected", null)
+            sendEvent("playing", false)
+            if (pos > 0L) {
+                sendEvent("position", pos)
+            }
+        }
+    }
+
+    private fun buildCastMediaItem(url: String): MediaItem {
+        val lower = url.lowercase()
+        val mimeType = when {
+            lower.contains(".m3u8") -> MimeTypes.APPLICATION_M3U8
+            lower.contains(".mpd") -> MimeTypes.APPLICATION_MPD
+            lower.contains(".webm") -> MimeTypes.VIDEO_WEBM
+            lower.contains(".mkv") -> MimeTypes.VIDEO_MATROSKA
+            lower.contains(".mp3") -> MimeTypes.AUDIO_MPEG
+            lower.contains(".aac") || lower.contains(".m4a") -> MimeTypes.AUDIO_AAC
+            else -> MimeTypes.VIDEO_MP4
+        }
+        return MediaItem.Builder()
+            .setUri(url)
+            .setMimeType(mimeType)
+            .setMediaMetadata(
+                MediaMetadata.Builder()
+                    .setMediaType(MediaMetadata.MEDIA_TYPE_MOVIE)
+                    .build()
+            )
+            .build()
     }
 
 
@@ -285,13 +460,29 @@ class XueHuaNaviteVideoPlayerPlugin :
             result.error("INVALID_ARG", "url is required", null)
             return
         }
-        val player = requirePlayer(result) ?: return
+        val local = exoPlayer ?: run {
+            result.error("NO_PLAYER", "Player not initialized", null)
+            return
+        }
         lastReportedDuration = -1L
         currentUrl = url
+        currentCastUrl = call.argument<String>("castUrl")
+
         val mediaItem = MediaItem.fromUri(url)
-        player.setMediaItem(mediaItem)
-        player.playWhenReady = false
-        player.prepare()
+        local.setMediaItem(mediaItem)
+        local.playWhenReady = false
+        local.prepare()
+
+        // If currently casting, also load the new source onto the remote CastPlayer
+        // without dropping the active Cast session.
+        val remote = castPlayer
+        if (activePlayer === remote && remote != null) {
+            val targetUrl = currentCastUrl ?: url
+            remote.setMediaItem(buildCastMediaItem(targetUrl))
+            remote.playWhenReady = false
+            remote.prepare()
+        }
+
         result.success(null)
     }
 
@@ -320,14 +511,23 @@ class XueHuaNaviteVideoPlayerPlugin :
     private fun handleSetVolume(call: MethodCall, result: Result) {
         val player = requirePlayer(result) ?: return
         val volume = call.argument<Double>("volume") ?: 1.0
-        player.volume = volume.toFloat().coerceIn(0f, 1f)
+        val clamped = volume.toFloat().coerceIn(0f, 1f)
+        exoPlayer?.volume = clamped
+        try {
+            player.volume = clamped
+        } catch (_: Throwable) {
+        }
         result.success(null)
     }
 
     private fun handleSetSpeed(call: MethodCall, result: Result) {
         val player = requirePlayer(result) ?: return
-        val speed = call.argument<Double>("speed") ?: 1.0
-        player.setPlaybackSpeed(speed.toFloat())
+        val speed = (call.argument<Double>("speed") ?: 1.0).toFloat()
+        exoPlayer?.setPlaybackSpeed(speed)
+        try {
+            player.setPlaybackSpeed(speed)
+        } catch (_: Throwable) {
+        }
         result.success(null)
     }
 
@@ -339,6 +539,52 @@ class XueHuaNaviteVideoPlayerPlugin :
             else -> AspectRatioFrameLayout.RESIZE_MODE_FIT
         }
         playerView?.resizeMode = resizeMode
+        result.success(null)
+    }
+
+    private fun handleShowCastPicker(result: Result) {
+        val act = activity
+        val ctx = castContext
+        if (act == null || ctx == null) {
+            result.success(null)
+            return
+        }
+        val selector = try {
+            ctx.mergedSelector
+        } catch (_: Throwable) {
+            null
+        }
+        if (selector == null) {
+            result.success(null)
+            return
+        }
+        act.runOnUiThread {
+            try {
+                if (castPlayer?.isCastSessionAvailable == true) {
+                    MediaRouteControllerDialog(act).show()
+                } else {
+                    MediaRouteChooserDialog(act).apply {
+                        routeSelector = selector
+                    }.show()
+                }
+            } catch (_: Throwable) {
+            }
+        }
+        result.success(null)
+    }
+
+    private fun handleStopCasting(result: Result) {
+        val ctx = castContext
+        if (ctx == null) {
+            result.success(null)
+            return
+        }
+        mainHandler.post {
+            try {
+                ctx.sessionManager.endCurrentSession(true)
+            } catch (_: Throwable) {
+            }
+        }
         result.success(null)
     }
 
@@ -411,10 +657,38 @@ class XueHuaNaviteVideoPlayerPlugin :
         lastReportedDuration = -1L
         stopPositionPolling()
         playerView?.player = null
-        exoPlayer?.removeListener(playerListener)
+        try {
+            castContext?.sessionManager?.removeSessionManagerListener(
+                castSessionManagerListener,
+                CastSession::class.java,
+            )
+        } catch (_: Throwable) {
+        }
+        castPlayer?.setSessionAvailabilityListener(null)
+        castPlayer?.removeListener(castPlayerListener)
+        try {
+            castPlayer?.release()
+        } catch (_: Throwable) {
+        }
+        castPlayer = null
+        castContext = null
+        exoPlayer?.removeListener(exoPlayerListener)
         exoPlayer?.release()
         exoPlayer = null
+        activePlayer = null
         currentUrl = null
+        currentCastUrl = null
+    }
+
+    private fun sendCastState(state: String, deviceName: String?) {
+        lastCastState = state
+        lastCastDeviceName = deviceName
+        val payload = HashMap<String, Any?>()
+        payload["state"] = state
+        if (!deviceName.isNullOrBlank()) {
+            payload["deviceName"] = deviceName
+        }
+        sendEvent("castState", payload)
     }
 
     private fun sendEvent(event: String, value: Any?) {
@@ -434,8 +708,9 @@ class XueHuaNaviteVideoPlayerPlugin :
         }
     }
 
-    private fun checkAndSendDuration() {
-        val player = exoPlayer ?: return
+    private fun checkAndSendDuration(sourcePlayer: Player?) {
+        val player = sourcePlayer ?: activePlayer ?: return
+        if (player !== activePlayer) return
         val dur = player.duration
         if (dur != C.TIME_UNSET && dur > 0L && dur != lastReportedDuration) {
             lastReportedDuration = dur
@@ -443,92 +718,109 @@ class XueHuaNaviteVideoPlayerPlugin :
         }
     }
 
-    private val playerListener = object : Player.Listener {
-        // 监听播放/暂停状态
-        override fun onIsPlayingChanged(isPlaying: Boolean) {
-            sendEvent("playing", isPlaying)
-            if (isPlaying) {
-                // 开始播放：立即发一次当前位置，并启动轮询
-                exoPlayer?.let { sendEvent("position", it.currentPosition) }
-                startPositionPolling()
-            } else {
-                // 暂停：立即发一次停止时刻的位置，并停止轮询
-                exoPlayer?.let { sendEvent("position", it.currentPosition) }
-                stopPositionPolling()
+    private fun createPlayerListener(playerProvider: () -> Player?): Player.Listener {
+        return object : Player.Listener {
+            private fun isCurrentActive(): Boolean {
+                val p = playerProvider()
+                return p != null && p === activePlayer
             }
-        }
 
-        override fun onPlaybackStateChanged(playbackState: Int) {
-            when (playbackState) {
-                Player.STATE_BUFFERING -> {
-                    sendEvent("buffering", true)
-                    stopPositionPolling() // 卡顿缓冲时暂停进度刷新
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                if (!isCurrentActive()) return
+                val player = playerProvider() ?: return
+                sendEvent("playing", isPlaying)
+                if (isPlaying) {
+                    sendEvent("position", player.currentPosition)
+                    startPositionPolling()
+                } else {
+                    sendEvent("position", player.currentPosition)
+                    stopPositionPolling()
                 }
+            }
 
-                Player.STATE_READY -> {
-                    sendEvent("buffering", false)
-                    checkAndSendDuration() // 由事件驱动获取时长
-                    if (exoPlayer?.isPlaying == true) {
-                        startPositionPolling()
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                if (!isCurrentActive()) return
+                val player = playerProvider() ?: return
+                when (playbackState) {
+                    Player.STATE_BUFFERING -> {
+                        sendEvent("buffering", true)
+                        stopPositionPolling()
+                    }
+
+                    Player.STATE_READY -> {
+                        sendEvent("buffering", false)
+                        checkAndSendDuration(player)
+                        if (player.isPlaying) {
+                            startPositionPolling()
+                        }
+                    }
+
+                    Player.STATE_ENDED -> {
+                        stopPositionPolling()
+                        sendEvent("buffering", false)
+                        player.duration.takeIf { it > 0 }?.let { sendEvent("position", it) }
+                        sendEvent("completed", null)
+                    }
+
+                    Player.STATE_IDLE -> {
+                        stopPositionPolling()
+                        sendEvent("buffering", false)
                     }
                 }
+            }
 
-                Player.STATE_ENDED -> {
-                    stopPositionPolling()
-                    sendEvent("buffering", false)
-                    // 播放结束时，直接发送总时长作为最终位置
-                    exoPlayer?.duration?.takeIf { it > 0 }?.let { sendEvent("position", it) }
-                    sendEvent("completed", null)
-                }
+            override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
+                if (!isCurrentActive()) return
+                checkAndSendDuration(playerProvider())
+            }
 
-                Player.STATE_IDLE -> {
-                    stopPositionPolling()
-                    sendEvent("buffering", false)
-                }
+            override fun onPositionDiscontinuity(
+                oldPosition: Player.PositionInfo,
+                newPosition: Player.PositionInfo,
+                reason: Int
+            ) {
+                if (!isCurrentActive()) return
+                sendEvent("position", newPosition.positionMs)
+            }
+
+            override fun onPlayerError(error: PlaybackException) {
+                if (!isCurrentActive()) return
+                stopPositionPolling()
+                sendEvent("buffering", false)
+                sendEvent("error", error.message ?: "Unknown playback error")
+            }
+
+            override fun onVideoSizeChanged(videoSize: VideoSize) {
+                if (!isCurrentActive()) return
+                val rawW = videoSize.width
+                val rawH = videoSize.height
+                if (rawW <= 0 || rawH <= 0) return
+                val par =
+                    if (videoSize.pixelWidthHeightRatio > 0f) videoSize.pixelWidthHeightRatio else 1f
+                val displayW = (rawW * par).toInt().coerceAtLeast(1)
+
+                val size = HashMap<String, Any>()
+                size["width"] = displayW
+                size["height"] = rawH
+                size["rotationDegrees"] = exoPlayer?.videoFormat?.rotationDegrees ?: 0
+                sendEvent("videoSize", size)
             }
         }
-
-        // 媒体源解析就绪时立即获取总时长（完全自触发）
-        override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
-            checkAndSendDuration()
-        }
-
-        // 拖动进度条（Seek）触发的不连续点，主动回传
-        override fun onPositionDiscontinuity(
-            oldPosition: Player.PositionInfo,
-            newPosition: Player.PositionInfo,
-            reason: Int
-        ) {
-            sendEvent("position", newPosition.positionMs)
-        }
-
-        override fun onPlayerError(error: PlaybackException) {
-            stopPositionPolling()
-            sendEvent("buffering", false)
-            sendEvent("error", error.message ?: "Unknown playback error")
-        }
-
-        override fun onVideoSizeChanged(videoSize: VideoSize) {
-            val rawW = videoSize.width
-            val rawH = videoSize.height
-            if (rawW <= 0 || rawH <= 0) return
-            val par =
-                if (videoSize.pixelWidthHeightRatio > 0f) videoSize.pixelWidthHeightRatio else 1f
-            val displayW = (rawW * par).toInt().coerceAtLeast(1)
-
-            val size = HashMap<String, Any>()
-            size["width"] = displayW
-            size["height"] = rawH
-            size["rotationDegrees"] = exoPlayer?.videoFormat?.rotationDegrees ?: 0
-            sendEvent("videoSize", size)
-        }
     }
+
+    private val exoPlayerListener = createPlayerListener { exoPlayer }
+    private val castPlayerListener = createPlayerListener { castPlayer }
 
 
     // region Snapshot / Covers
 
     private fun handleTakeSnapshot(result: Result) {
         val generation = engineGeneration.get()
+        // When casting remotely, local surface has no live frame; extract via retriever at remote playhead.
+        if (activePlayer === castPlayer && castPlayer != null) {
+            snapshotViaRetriever(result, generation)
+            return
+        }
         when (val surface = playerView?.videoSurfaceView) {
             is TextureView -> {
                 val bmp = surface.bitmap
@@ -570,7 +862,7 @@ class XueHuaNaviteVideoPlayerPlugin :
 
     private fun snapshotViaRetriever(result: Result, generation: Int) {
         val url = currentUrl
-        val positionUs = (exoPlayer?.currentPosition ?: 0L) * 1000L
+        val positionUs = ((activePlayer ?: exoPlayer)?.currentPosition ?: 0L) * 1000L
         val appContext = flutterPluginBinding?.applicationContext
         if (url == null) {
             result.error("NO_MEDIA", "No media loaded", null)
@@ -768,7 +1060,7 @@ class XueHuaNaviteVideoPlayerPlugin :
 
     private val positionRunnable = object : Runnable {
         override fun run() {
-            val player = exoPlayer
+            val player = activePlayer
             if (player != null && player.isPlaying) {
                 sendEvent("position", player.currentPosition)
                 mainHandler.postDelayed(this, 200)

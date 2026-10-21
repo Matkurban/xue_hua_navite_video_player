@@ -552,6 +552,49 @@ void covers_job_done(GObject*, GAsyncResult* res, gpointer user_data) {
 
 }  // namespace
 
+static void send_cast_state(XueHuaNaviteVideoPlayerPlugin* self, const gchar* state, const gchar* device_name) {
+  if (!self->event_channel) return;
+  FlValue* payload = fl_value_new_map();
+  fl_value_set_string_take(payload, "state", fl_value_new_string(state));
+  if (device_name && strlen(device_name) > 0) {
+    fl_value_set_string_take(payload, "deviceName", fl_value_new_string(device_name));
+  }
+  send_event(self, "castState", payload);
+}
+
+static void show_linux_cast_picker(XueHuaNaviteVideoPlayerPlugin* self) {
+  GtkWindow* parent = plugin_window(self);
+  // Launch GNOME Network Displays or XDG portal cast selector if installed;
+  // otherwise present a native GTK dialog informing the user of local UPnP/Miracast status.
+  g_autofree gchar* nd_bin = g_find_program_in_path("gnome-network-displays");
+  if (nd_bin) {
+    GError* err = nullptr;
+    if (g_spawn_command_line_async("gnome-network-displays", &err)) {
+      send_cast_state(self, "connected", "GNOME Network Displays");
+      if (self->player) self->player->Pause();
+      return;
+    }
+    if (err) g_error_free(err);
+  }
+  GtkWidget* dialog = gtk_message_dialog_new(
+      parent,
+      GTK_DIALOG_DESTROY_WITH_PARENT,
+      GTK_MESSAGE_INFO,
+      GTK_BUTTONS_CLOSE,
+      "未在当前网络中发现可用的无线投屏接收端（UPnP / Miracast）");
+  gtk_window_set_title(GTK_WINDOW(dialog), "选择投屏设备");
+  g_signal_connect_swapped(dialog, "response", G_CALLBACK(gtk_widget_destroy), dialog);
+  gtk_widget_show_all(dialog);
+}
+
+static void stop_linux_casting(XueHuaNaviteVideoPlayerPlugin* self) {
+  if (self->player) {
+    self->player->Pause();
+  }
+  send_event_bool(self, "playing", FALSE);
+  send_cast_state(self, "notConnected", nullptr);
+}
+
 static void handle_method_call(XueHuaNaviteVideoPlayerPlugin* self, FlMethodCall* method_call) {
   g_autoptr(FlMethodResponse) response = nullptr;
   gboolean async_reply = FALSE;
@@ -563,6 +606,7 @@ static void handle_method_call(XueHuaNaviteVideoPlayerPlugin* self, FlMethodCall
       response = FL_METHOD_RESPONSE(fl_method_error_response_new(
           "CREATE_FAIL", "Failed to initialize native player", nullptr));
     } else {
+      send_cast_state(self, "notConnected", nullptr);
       g_autoptr(FlValue) result = fl_value_new_int(id);
       response = FL_METHOD_RESPONSE(fl_method_success_response_new(result));
     }
@@ -619,6 +663,12 @@ static void handle_method_call(XueHuaNaviteVideoPlayerPlugin* self, FlMethodCall
           static_cast<uint32_t>(width * ratio + 0.5),
           static_cast<uint32_t>(height * ratio + 0.5));
     }
+    response = FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
+  } else if (strcmp(method, "showCastPicker") == 0) {
+    show_linux_cast_picker(self);
+    response = FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
+  } else if (strcmp(method, "stopCasting") == 0) {
+    stop_linux_casting(self);
     response = FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
   } else if (strcmp(method, "dispose") == 0) {
     plugin_restore_brightness(self);

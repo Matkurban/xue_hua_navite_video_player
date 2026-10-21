@@ -73,7 +73,7 @@ class _FakePlayerBackend implements PlayerBackend {
   Future<int> create() async => 1;
 
   @override
-  Future<void> open(String url) async {}
+  Future<void> open(String url, {String? castUrl}) async {}
 
   @override
   Future<void> play() async {}
