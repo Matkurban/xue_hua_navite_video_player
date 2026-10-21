@@ -7,6 +7,8 @@ import android.media.MediaMetadataRetriever
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
+import android.util.Log
+import android.view.ContextThemeWrapper
 import android.view.PixelCopy
 import android.view.SurfaceView
 import android.view.TextureView
@@ -56,6 +58,8 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.abs
+
+private const val TAG = "XueHuaNaviteVideoPlayer"
 
 /// 插件主类：ExoPlayer + CastPlayer（Google Cast）+ PlatformView（PlayerView.resizeMode）。
 @UnstableApi
@@ -551,7 +555,8 @@ class XueHuaNaviteVideoPlayerPlugin :
         }
         val selector = try {
             ctx.mergedSelector
-        } catch (_: Throwable) {
+        } catch (error: Throwable) {
+            Log.e(TAG, "Cast route selector unavailable", error)
             null
         }
         if (selector == null) {
@@ -560,17 +565,28 @@ class XueHuaNaviteVideoPlayerPlugin :
         }
         act.runOnUiThread {
             try {
+                // FlutterActivity uses a platform theme. MediaRoute dialogs extend
+                // AppCompatDialog and require windowActionBar on the context theme.
+                val dialogContext = castDialogContext(act)
                 if (castPlayer?.isCastSessionAvailable == true) {
-                    MediaRouteControllerDialog(act).show()
+                    MediaRouteControllerDialog(dialogContext).show()
                 } else {
-                    MediaRouteChooserDialog(act).apply {
+                    MediaRouteChooserDialog(dialogContext).apply {
                         routeSelector = selector
                     }.show()
                 }
-            } catch (_: Throwable) {
+            } catch (error: Throwable) {
+                Log.e(TAG, "Failed to show cast route dialog", error)
             }
         }
         result.success(null)
+    }
+
+    private fun castDialogContext(activity: Activity): ContextThemeWrapper {
+        return ContextThemeWrapper(
+            activity,
+            androidx.appcompat.R.style.Theme_AppCompat_DayNight_NoActionBar,
+        )
     }
 
     private fun handleStopCasting(result: Result) {

@@ -368,16 +368,21 @@ Future<void> stopCasting();
        implementation("androidx.media3:media3-ui:1.11.1")
        implementation("androidx.media3:media3-cast:1.11.1")
        implementation("androidx.mediarouter:mediarouter:1.7.0")
+       // MediaRoute*Dialog 继承 AppCompat，mediarouter 只把它标成 runtime，编译期必须直接依赖。
+       implementation("androidx.appcompat:appcompat:1.6.1")
        implementation("com.google.android.gms:play-services-cast-framework:21.5.0")
        // ...
    }
    ```
-   同时在插件自身的 `AndroidManifest.xml` 中声明默认的 `OPTIONS_PROVIDER_CLASS_NAME`（使用 `androidx.media3.cast.DefaultCastOptionsProvider`，无需宿主 App 手动编写 `OptionsProvider`，开箱即用）：
+   同时在插件自身的 `AndroidManifest.xml` 中声明默认的 `OPTIONS_PROVIDER_CLASS_NAME`（使用 `androidx.media3.cast.DefaultCastOptionsProvider`，无需宿主 App 手动编写 `OptionsProvider`，开箱即用），并注册 `MediaTransferReceiver`，让系统能发现本应用的 Cast 路由：
    ```xml
    <application>
        <meta-data
            android:name="com.google.android.gms.cast.framework.OPTIONS_PROVIDER_CLASS_NAME"
            android:value="androidx.media3.cast.DefaultCastOptionsProvider" />
+       <receiver
+           android:name="androidx.mediarouter.media.MediaTransferReceiver"
+           android:exported="false" />
    </application>
    ```
 2. **双 `Player` 统一路由架构（`exoPlayer` + `castPlayer`）**：
@@ -389,7 +394,7 @@ Future<void> stopCasting();
    - 初始化时通过 `CastContext.getSharedInstance(context, workerExecutor)` 异步获取 `CastContext`（包裹 `try-catch`，在无 GMS 的国产 ROM 上安全降级并发送 `castState("unavailable")`；若有 GMS 则初始化 `CastPlayer(castContext)` 并发送 `castState("notConnected")`）。
    - `handlePlay`、`handlePause`、`handleSeek`、`handleSetVolume`、`handleSetSpeed` 以及 `positionRunnable` 全部面向 `activePlayer` 操作。
 3. **调起系统原生选择器（`showCastPicker`）**：
-   - 使用 `android.app.Activity` 即可直接展示的 `MediaRouteChooserDialog`（来自 `androidx.mediarouter.app.MediaRouteChooserDialog`，**不强制要求宿主 `MainActivity` 继承 `FlutterFragmentActivity`**，普通 `FlutterActivity` 同样可用）：
+   - 使用 `MediaRouteChooserDialog` / `MediaRouteControllerDialog`（`androidx.mediarouter.app`）。宿主保持普通 `FlutterActivity`，不必改成 `FlutterFragmentActivity`。这两个对话框继承 `AppCompatDialog`，`show()` 会检查上下文主题是否包含 `windowActionBar`。Flutter 默认主题是 `@android:style/Theme.Light.NoTitleBar`，直接把 Activity 传进去会抛 `IllegalStateException` 并且被吞掉，表现为点击无反应。弹出前用 `ContextThemeWrapper(activity, Theme_AppCompat_DayNight_NoActionBar)` 套一层 AppCompat 主题：
      ```kotlin
      private fun handleShowCastPicker(result: Result) {
          val act = activity
@@ -403,13 +408,16 @@ Future<void> stopCasting();
              return
          }
          act.runOnUiThread {
+             val dialogContext = ContextThemeWrapper(
+                 act,
+                 androidx.appcompat.R.style.Theme_AppCompat_DayNight_NoActionBar,
+             )
              if (castPlayer?.isCastSessionAvailable == true) {
-                 val controllerDialog = MediaRouteControllerDialog(act)
-                 controllerDialog.show()
+                 MediaRouteControllerDialog(dialogContext).show()
              } else {
-                 val chooserDialog = MediaRouteChooserDialog(act)
-                 chooserDialog.routeSelector = selector
-                 chooserDialog.show()
+                 MediaRouteChooserDialog(dialogContext).apply {
+                     routeSelector = selector
+                 }.show()
              }
          }
          result.success(null)

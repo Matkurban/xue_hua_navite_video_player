@@ -6,5 +6,9 @@
     <meta-data
       android:name="com.google.android.gms.cast.framework.OPTIONS_PROVIDER_CLASS_NAME"
       android:value="androidx.media3.cast.DefaultCastOptionsProvider" />
+    <!-- Presence tells MediaRouter this app can transfer playback to Cast devices. -->
+    <receiver
+      android:name="androidx.mediarouter.media.MediaTransferReceiver"
+      android:exported="false" />
   </application>
 </manifest>
