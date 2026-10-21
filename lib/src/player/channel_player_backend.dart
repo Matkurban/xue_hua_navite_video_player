@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:signals_flutter/signals_flutter.dart';
 
 import '../data/enums/aspect_ratio_mode.dart';
+import '../data/enums/cast_state.dart';
 import '../utils/png_xfile.dart';
 import '../utils/temp_paths.dart';
 import 'player_backend.dart';
@@ -109,6 +110,20 @@ class ChannelPlayerBackend implements PlayerBackend {
         final rotation = (value['rotationDegrees'] as num?)?.toInt() ?? 0;
         final size = (w > 0 && h > 0) ? Size(w, h) : Size.zero;
         return PlayerEvent.videoSize(size, rotation % 360);
+      case 'castState':
+        final value = event['value'];
+        if (value is Map) {
+          final state = CastState.fromWire(value['state']?.toString());
+          final rawName = value['deviceName']?.toString();
+          final deviceName = (rawName != null && rawName.trim().isNotEmpty)
+              ? rawName.trim()
+              : null;
+          return PlayerEvent.castState(state, deviceName: deviceName);
+        }
+        if (value is String) {
+          return PlayerEvent.castState(CastState.fromWire(value));
+        }
+        return null;
       default:
         return null;
     }
@@ -126,8 +141,11 @@ class ChannelPlayerBackend implements PlayerBackend {
   }
 
   @override
-  Future<void> open(String url) async {
-    await _methodChannel.invokeMethod('open', {'url': url});
+  Future<void> open(String url, {String? castUrl}) async {
+    await _methodChannel.invokeMethod('open', {
+      'url': url,
+      if (castUrl != null) 'castUrl': castUrl,
+    });
   }
 
   @override
@@ -171,6 +189,28 @@ class ChannelPlayerBackend implements PlayerBackend {
       'height': height,
       'devicePixelRatio': devicePixelRatio,
     });
+  }
+
+  @override
+  Future<void> showCastPicker() async {
+    try {
+      await _methodChannel.invokeMethod('showCastPicker');
+    } on MissingPluginException {
+      // Safe no-op if platform does not implement casting.
+    } on PlatformException {
+      // Safe no-op if platform does not implement casting.
+    }
+  }
+
+  @override
+  Future<void> stopCasting() async {
+    try {
+      await _methodChannel.invokeMethod('stopCasting');
+    } on MissingPluginException {
+      // Safe no-op if platform does not implement casting.
+    } on PlatformException {
+      // Safe no-op if platform does not implement casting.
+    }
   }
 
   @override

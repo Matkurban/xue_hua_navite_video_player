@@ -26,7 +26,10 @@ abstract class PlayerBackend {
   Future<int> create();
 
   /// Opens [url] on the active session.
-  Future<void> open(String url);
+  ///
+  /// [castUrl] is an optional LAN HTTP URL (served by `LocalCastHttpServer`)
+  /// used by remote cast receivers when [url] is a local `file://` path.
+  Future<void> open(String url, {String? castUrl});
 
   Future<void> play();
 
@@ -49,6 +52,12 @@ abstract class PlayerBackend {
     required double height,
     required double devicePixelRatio,
   });
+
+  /// Presents the operating system's native wireless cast / route picker.
+  Future<void> showCastPicker() async {}
+
+  /// Disconnects the active wireless cast session and returns playback locally.
+  Future<void> stopCasting() async {}
 
   Future<void> dispose();
 

@@ -1,5 +1,7 @@
 import 'package:flutter/painting.dart';
 
+import '../data/enums/cast_state.dart';
+
 /// Typed transport events from [PlayerBackend].
 ///
 /// Wire format remains MethodChannel `{event, value}` maps; encoding lives in
@@ -21,6 +23,12 @@ sealed class PlayerEvent {
   const factory PlayerEvent.completed() = PlayerCompletedEvent;
 
   const factory PlayerEvent.videoSize(Size size, int rotationDegrees) = PlayerVideoSizeEvent;
+
+  /// Wireless casting state update from the native platform.
+  const factory PlayerEvent.castState(
+    CastState state, {
+    String? deviceName,
+  }) = PlayerCastStateEvent;
 }
 
 final class PlayerPositionEvent extends PlayerEvent {
@@ -56,4 +64,10 @@ final class PlayerVideoSizeEvent extends PlayerEvent {
   const PlayerVideoSizeEvent(this.size, this.rotationDegrees);
   final Size size;
   final int rotationDegrees;
+}
+
+final class PlayerCastStateEvent extends PlayerEvent {
+  const PlayerCastStateEvent(this.state, {this.deviceName});
+  final CastState state;
+  final String? deviceName;
 }

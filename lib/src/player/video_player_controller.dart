@@ -4,10 +4,12 @@ import 'package:signals_flutter/signals_flutter.dart';
 
 import '../core/video_source.dart';
 import '../data/enums/aspect_ratio_mode.dart';
+import '../data/enums/cast_state.dart';
 import '../data/enums/play_state.dart';
 import '../data/enums/skip_second_type.dart';
 import 'brightness_controller.dart';
 import 'fullscreen_coordinator.dart';
+import 'local_cast_http_server.dart';
 import 'playback_session.dart';
 import 'player_backend.dart';
 
@@ -20,7 +22,13 @@ class VideoPlayerController {
     PlayerBackend? backend,
     FullscreenCoordinator? fullscreen,
     BrightnessController? brightness,
-  }) : _session = PlaybackSession(backend: backend, fullscreen: fullscreen, brightness: brightness);
+    LocalCastHttpServer? localCastServer,
+  }) : _session = PlaybackSession(
+         backend: backend,
+         fullscreen: fullscreen,
+         brightness: brightness,
+         localCastServer: localCastServer,
+       );
 
   final PlaybackSession _session;
 
@@ -46,6 +54,18 @@ class VideoPlayerController {
   FlutterSignal<AspectRatioMode> get aspectRatioMode => _session.aspectRatioMode;
   FlutterSignal<bool> get isFullscreen => _session.isFullscreen;
   FlutterSignal<double> get brightness => _session.brightness;
+
+  /// Current wireless casting state.
+  FlutterSignal<CastState> get castState => _session.castState;
+
+  /// Friendly name of the connected or connecting remote cast device, if any.
+  FlutterSignal<String?> get castDeviceName => _session.castDeviceName;
+
+  /// True when the current platform/environment supports wireless casting.
+  FlutterComputed<bool> get isCastSupported => _session.isCastSupported;
+
+  /// True when a cast session is currently connecting or connected.
+  FlutterComputed<bool> get isCasting => _session.isCasting;
 
   FlutterSignal<int?> get textureId => _session.textureId;
 
@@ -96,6 +116,12 @@ class VideoPlayerController {
     required double height,
     required double devicePixelRatio,
   }) => _session.setVideoViewSize(width: width, height: height, devicePixelRatio: devicePixelRatio);
+
+  /// Presents the operating system's native wireless cast / route picker.
+  Future<void> showCastPicker() => _session.showCastPicker();
+
+  /// Disconnects the active wireless cast session and returns playback locally.
+  Future<void> stopCasting() => _session.stopCasting();
 
   /// Enters fullscreen mode: updates [isFullscreen], then applies the platform
   /// host (mobile orientation / immersive UI, desktop window fullscreen, or

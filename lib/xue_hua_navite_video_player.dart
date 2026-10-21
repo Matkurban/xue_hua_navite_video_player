@@ -6,6 +6,7 @@ export 'src/data/models/video_cover_frame.dart';
 export 'src/data/enums/play_state.dart';
 export 'src/data/enums/skip_second_type.dart';
 export 'src/data/enums/aspect_ratio_mode.dart';
+export 'src/data/enums/cast_state.dart';
 
 // Player
 export 'src/player/video_player_controller.dart';

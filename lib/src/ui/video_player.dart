@@ -3,12 +3,13 @@ import 'dart:async';
 import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:signals_flutter/signals_flutter.dart';
 import 'package:xue_hua_navite_video_player/src/data/enums/aspect_ratio_mode.dart';
+import 'package:xue_hua_navite_video_player/src/data/enums/cast_state.dart';
 import 'package:xue_hua_navite_video_player/src/data/enums/skip_second_type.dart';
 import 'package:xue_hua_navite_video_player/src/ui/core_player.dart';
 import 'package:xue_hua_navite_video_player/src/ui/widgets/player_gesture_layer.dart';
 import 'package:xue_hua_navite_video_player/src/ui/widgets/player_menu_button.dart';
-import 'package:signals_flutter/signals_flutter.dart';
 
 import '../data/enums/play_state.dart';
 import '../player/video_player_controller.dart';
@@ -58,6 +59,9 @@ class VideoPlayer extends StatefulWidget {
   /// Legacy extra actions merged into [actions].
   final List<Widget> topBarActions;
 
+  /// Whether to show the wireless cast button in the top bar when supported.
+  final bool showCastButton;
+
   final bool showAspectRatioMenu;
   final bool enableFullscreen;
 
@@ -66,6 +70,7 @@ class VideoPlayer extends StatefulWidget {
   final Widget Function(BuildContext, VideoPlayerSlotContext)? topBarBuilder;
   final Widget Function(BuildContext, VideoPlayerSlotContext)? centerControlsBuilder;
   final Widget Function(BuildContext, VideoPlayerSlotContext)? bottomScrubberBuilder;
+  final Widget Function(BuildContext, VideoPlayerSlotContext)? castingOverlayBuilder;
   final Widget Function(BuildContext, VideoPlayerSlotContext)? extraOverlayBuilder;
 
   /// Initial skip step; synced with [VideoPlayerController.skipSecondType].
@@ -84,6 +89,7 @@ class VideoPlayer extends StatefulWidget {
     this.title,
     this.actions = const <Widget>[],
     this.topBarActions = const <Widget>[],
+    this.showCastButton = true,
     this.showAspectRatioMenu = true,
     this.enableFullscreen = true,
     this.errorBuilder,
@@ -91,6 +97,7 @@ class VideoPlayer extends StatefulWidget {
     this.topBarBuilder,
     this.centerControlsBuilder,
     this.bottomScrubberBuilder,
+    this.castingOverlayBuilder,
     this.extraOverlayBuilder,
     this.skipSecondType = SkipSecondType.second10,
   });
@@ -112,10 +119,13 @@ class _VideoPlayerState extends State<VideoPlayer> {
   VoidCallback? _playingDisposer;
   VoidCallback? _bufferingDisposer;
   VoidCallback? _completedDisposer;
+  VoidCallback? _castingDisposer;
   VoidCallback? _fullscreenDisposer;
 
   bool get _canAutoHide =>
-      widget.controller.isPlaying.value && !widget.controller.isBuffering.value;
+      widget.controller.isPlaying.value &&
+      !widget.controller.isBuffering.value &&
+      !widget.controller.isCasting.value;
 
   bool get _isDesktop {
     if (kIsWeb) return true;
@@ -150,6 +160,14 @@ class _VideoPlayerState extends State<VideoPlayer> {
       final state = widget.controller.playState.value;
       if (state == PlayState.completed) {
         _showControls(scheduleAutoHide: false);
+      }
+    });
+    _castingDisposer = effect(() {
+      final casting = widget.controller.isCasting.value;
+      if (casting) {
+        _showControls(scheduleAutoHide: false);
+      } else if (widget.controller.isPlaying.value && _visible.value) {
+        _scheduleAutoHide();
       }
     });
     _fullscreenDisposer = effect(() {
@@ -198,6 +216,7 @@ class _VideoPlayerState extends State<VideoPlayer> {
     _playingDisposer?.call();
     _bufferingDisposer?.call();
     _completedDisposer?.call();
+    _castingDisposer?.call();
     _fullscreenDisposer?.call();
     if (_fullscreenPortal.isShowing) {
       _fullscreenPortal.hide();
@@ -285,6 +304,7 @@ class _VideoPlayerState extends State<VideoPlayer> {
           title: widget.title,
           actions: widget.actions,
           topBarActions: widget.topBarActions,
+          showCastButton: widget.showCastButton,
           showAspectRatioMenu: widget.showAspectRatioMenu,
           enableFullscreen: widget.enableFullscreen,
           errorBuilder: widget.errorBuilder,
@@ -292,6 +312,7 @@ class _VideoPlayerState extends State<VideoPlayer> {
           topBarBuilder: widget.topBarBuilder,
           centerControlsBuilder: widget.centerControlsBuilder,
           bottomScrubberBuilder: widget.bottomScrubberBuilder,
+          castingOverlayBuilder: widget.castingOverlayBuilder,
           extraOverlayBuilder: widget.extraOverlayBuilder,
           onClose: _handleClose,
           onToggleControls: _toggleControls,
@@ -321,6 +342,7 @@ class _VideoPlayerState extends State<VideoPlayer> {
             title: widget.title,
             actions: widget.actions,
             topBarActions: widget.topBarActions,
+            showCastButton: widget.showCastButton,
             showAspectRatioMenu: widget.showAspectRatioMenu,
             enableFullscreen: widget.enableFullscreen,
             errorBuilder: widget.errorBuilder,
@@ -328,6 +350,7 @@ class _VideoPlayerState extends State<VideoPlayer> {
             topBarBuilder: widget.topBarBuilder,
             centerControlsBuilder: widget.centerControlsBuilder,
             bottomScrubberBuilder: widget.bottomScrubberBuilder,
+            castingOverlayBuilder: widget.castingOverlayBuilder,
             extraOverlayBuilder: widget.extraOverlayBuilder,
             onClose: _handleClose,
             onToggleControls: _toggleControls,
@@ -360,6 +383,7 @@ class _PlayerBody extends StatelessWidget {
     required this.title,
     required this.actions,
     required this.topBarActions,
+    required this.showCastButton,
     required this.showAspectRatioMenu,
     required this.enableFullscreen,
     required this.errorBuilder,
@@ -367,6 +391,7 @@ class _PlayerBody extends StatelessWidget {
     required this.topBarBuilder,
     required this.centerControlsBuilder,
     required this.bottomScrubberBuilder,
+    required this.castingOverlayBuilder,
     required this.extraOverlayBuilder,
     required this.onClose,
     required this.onToggleControls,
@@ -388,6 +413,7 @@ class _PlayerBody extends StatelessWidget {
   final Widget? title;
   final List<Widget> actions;
   final List<Widget> topBarActions;
+  final bool showCastButton;
   final bool showAspectRatioMenu;
   final bool enableFullscreen;
   final Widget Function(BuildContext context, String? errorMessage)? errorBuilder;
@@ -395,6 +421,7 @@ class _PlayerBody extends StatelessWidget {
   final Widget Function(BuildContext, VideoPlayerSlotContext)? topBarBuilder;
   final Widget Function(BuildContext, VideoPlayerSlotContext)? centerControlsBuilder;
   final Widget Function(BuildContext, VideoPlayerSlotContext)? bottomScrubberBuilder;
+  final Widget Function(BuildContext, VideoPlayerSlotContext)? castingOverlayBuilder;
   final Widget Function(BuildContext, VideoPlayerSlotContext)? extraOverlayBuilder;
   final VoidCallback onClose;
   final VoidCallback onToggleControls;
@@ -420,6 +447,17 @@ class _PlayerBody extends StatelessWidget {
               backgroundColor: style.backgroundColor,
               errorBuilder: errorBuilder,
               loadingBuilder: loadingBuilder,
+            ),
+          ),
+          // Hide frozen local video frames while casting to a remote device.
+          Positioned.fill(
+            child: SignalBuilder(
+              builder: (context) {
+                if (!controller.isCasting.value) {
+                  return const SizedBox.shrink();
+                }
+                return ColoredBox(color: style.backgroundColor);
+              },
             ),
           ),
           Positioned.fill(
@@ -459,6 +497,7 @@ class _PlayerBody extends StatelessWidget {
                               title: title,
                               actions: actions,
                               topBarActions: topBarActions,
+                              showCastButton: showCastButton,
                               showAspectRatioMenu: showAspectRatioMenu,
                               onClose: onClose,
                               onShowControls: onShowControls,
@@ -483,6 +522,18 @@ class _PlayerBody extends StatelessWidget {
                   },
                 ),
               ),
+            ),
+          ),
+          // Interactive casting status & quick actions ("切换设备" / "退出投屏").
+          Positioned.fill(
+            child: SignalBuilder(
+              builder: (context) {
+                if (!controller.isCasting.value) {
+                  return const SizedBox.shrink();
+                }
+                return castingOverlayBuilder?.call(context, slot) ??
+                    _DefaultCastingOverlay(slot: slot, onInteract: onShowControls);
+              },
             ),
           ),
           if (extraOverlayBuilder != null)
@@ -535,6 +586,7 @@ class _DefaultTopBar extends StatelessWidget {
     required this.title,
     required this.actions,
     required this.topBarActions,
+    required this.showCastButton,
     required this.showAspectRatioMenu,
     required this.onClose,
     required this.onShowControls,
@@ -545,6 +597,7 @@ class _DefaultTopBar extends StatelessWidget {
   final Widget? title;
   final List<Widget> actions;
   final List<Widget> topBarActions;
+  final bool showCastButton;
   final bool showAspectRatioMenu;
   final VoidCallback onClose;
   final VoidCallback onShowControls;
@@ -559,83 +612,225 @@ class _DefaultTopBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final style = slot.theme;
     final controller = slot.controller;
-    final trailing = <Widget>[
-      ...actions,
-      ...topBarActions,
-      if (showAspectRatioMenu)
-        PlayerMenuButton(
-          icon: Icons.aspect_ratio,
-          color: style.foregroundColor,
-          tooltip: '画面模式',
-          menuBuilder: (context, hideMenu) {
-            return SignalBuilder(
-              builder: (context) {
-                final current = controller.aspectRatioMode.value;
-                return Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    for (final mode in AspectRatioMode.values)
-                      ListTile(
-                        dense: true,
-                        title: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(_aspectLabel(mode)),
-                            if (current == mode) ...[
-                              const SizedBox(width: 8),
-                              Icon(
-                                Icons.check,
-                                size: style.menuIconSize,
-                                color: style.foregroundColor,
-                              ),
-                            ],
-                          ],
-                        ),
-                        onTap: () {
-                          controller.setAspectRatioMode(mode);
-                          hideMenu();
-                          onShowControls();
-                        },
-                      ),
-                  ],
-                );
-              },
-            );
-          },
-        ),
-    ];
 
-    return Padding(
-      padding: style.topBarPadding,
-      child: Row(
-        children: [
-          Expanded(
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child:
-                  leading ??
-                  IconButton(
-                    onPressed: onClose,
-                    color: style.foregroundColor,
-                    icon: Icon(controller.isFullscreen.value ? Icons.fullscreen_exit : Icons.close),
-                  ),
-            ),
-          ),
-          Expanded(flex: 2, child: Center(child: title ?? const SizedBox.shrink())),
-          Expanded(
-            child: Align(
-              alignment: Alignment.centerRight,
-              child: trailing.isEmpty
-                  ? const SizedBox.shrink()
-                  : FittedBox(
-                      fit: BoxFit.scaleDown,
-                      alignment: Alignment.centerRight,
-                      child: Row(mainAxisSize: MainAxisSize.min, children: trailing),
+    return SignalBuilder(
+      builder: (context) {
+        final castState = controller.castState.value;
+        final castSupported = controller.isCastSupported.value;
+        final isFullscreen = controller.isFullscreen.value;
+
+        final trailing = <Widget>[
+          ...actions,
+          ...topBarActions,
+          if (showCastButton && castSupported)
+            IconButton(
+              key: const ValueKey<String>('video_player_cast_button'),
+              tooltip: castState == CastState.connected ? '正在投屏' : '投屏',
+              color: style.foregroundColor,
+              onPressed: () {
+                controller.showCastPicker();
+                onShowControls();
+              },
+              icon: castState == CastState.connecting || castState == CastState.disconnecting
+                  ? SizedBox(
+                      width: style.chromeIconSize,
+                      height: style.chromeIconSize,
+                      child: CupertinoActivityIndicator(color: style.foregroundColor),
+                    )
+                  : Icon(
+                      castState == CastState.connected ? Icons.cast_connected : Icons.cast,
+                      size: style.chromeIconSize,
                     ),
             ),
+          if (showAspectRatioMenu)
+            PlayerMenuButton(
+              icon: Icons.aspect_ratio,
+              color: style.foregroundColor,
+              tooltip: '画面模式',
+              menuBuilder: (context, hideMenu) {
+                return SignalBuilder(
+                  builder: (context) {
+                    final current = controller.aspectRatioMode.value;
+                    return Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        for (final mode in AspectRatioMode.values)
+                          ListTile(
+                            dense: true,
+                            title: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(_aspectLabel(mode)),
+                                if (current == mode) ...[
+                                  const SizedBox(width: 8),
+                                  Icon(
+                                    Icons.check,
+                                    size: style.menuIconSize,
+                                    color: style.foregroundColor,
+                                  ),
+                                ],
+                              ],
+                            ),
+                            onTap: () {
+                              controller.setAspectRatioMode(mode);
+                              hideMenu();
+                              onShowControls();
+                            },
+                          ),
+                      ],
+                    );
+                  },
+                );
+              },
+            ),
+        ];
+
+        return Padding(
+          padding: style.topBarPadding,
+          child: Row(
+            children: [
+              Expanded(
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child:
+                      leading ??
+                      IconButton(
+                        onPressed: onClose,
+                        color: style.foregroundColor,
+                        icon: Icon(isFullscreen ? Icons.fullscreen_exit : Icons.close),
+                      ),
+                ),
+              ),
+              Expanded(flex: 2, child: Center(child: title ?? const SizedBox.shrink())),
+              Expanded(
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: trailing.isEmpty
+                      ? const SizedBox.shrink()
+                      : FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerRight,
+                          child: Row(mainAxisSize: MainAxisSize.min, children: trailing),
+                        ),
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Default casting status overlay
+// ---------------------------------------------------------------------------
+
+class _DefaultCastingOverlay extends StatelessWidget {
+  const _DefaultCastingOverlay({required this.slot, required this.onInteract});
+
+  final VideoPlayerSlotContext slot;
+  final VoidCallback onInteract;
+
+  @override
+  Widget build(BuildContext context) {
+    final style = slot.theme;
+    final controller = slot.controller;
+
+    return SignalBuilder(
+      builder: (context) {
+        final state = controller.castState.value;
+        final deviceName = controller.castDeviceName.value;
+        final isConnecting = state == CastState.connecting;
+        final statusLabel = isConnecting
+            ? (deviceName != null && deviceName.isNotEmpty
+                  ? '正在连接「$deviceName」...'
+                  : '正在连接投屏设备...')
+            : (deviceName != null && deviceName.isNotEmpty
+                  ? '正在投屏至「$deviceName」'
+                  : '正在投屏播放');
+
+        return SafeArea(
+          child: Stack(
+            fit: StackFit.expand,
+            children: <Widget>[
+              // Status badge positioned above the center playback controls.
+              Align(
+                alignment: const Alignment(0, -0.56),
+                child: IgnorePointer(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: style.hudBackgroundColor,
+                      borderRadius: style.hudBorderRadius,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        Icon(
+                          Icons.cast_connected,
+                          size: style.hudIconSize,
+                          color: style.foregroundColor,
+                        ),
+                        SizedBox(width: style.hudIconGap),
+                        Flexible(
+                          child: Text(
+                            statusLabel,
+                            style: style.menuItemTextStyle,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              // Quick action buttons positioned below the center playback controls.
+              Align(
+                alignment: const Alignment(0, 0.56),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    TextButton.icon(
+                      key: const ValueKey<String>('video_player_cast_switch_button'),
+                      style: TextButton.styleFrom(
+                        foregroundColor: style.foregroundColor,
+                        backgroundColor: style.centerButtonBackgroundColor,
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                      ),
+                      onPressed: () {
+                        controller.showCastPicker();
+                        onInteract();
+                      },
+                      icon: Icon(Icons.cast, size: style.menuIconSize, color: style.foregroundColor),
+                      label: Text('切换设备', style: style.menuItemTextStyle),
+                    ),
+                    const SizedBox(width: 12),
+                    TextButton.icon(
+                      key: const ValueKey<String>('video_player_cast_stop_button'),
+                      style: TextButton.styleFrom(
+                        foregroundColor: style.foregroundColor,
+                        backgroundColor: style.centerButtonBackgroundColor,
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                      ),
+                      onPressed: () {
+                        controller.stopCasting();
+                        onInteract();
+                      },
+                      icon: Icon(
+                        Icons.stop_screen_share_outlined,
+                        size: style.menuIconSize,
+                        color: style.foregroundColor,
+                      ),
+                      label: Text('退出投屏', style: style.menuItemTextStyle),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

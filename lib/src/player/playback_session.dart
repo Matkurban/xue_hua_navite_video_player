@@ -7,12 +7,14 @@ import 'package:signals_flutter/signals_flutter.dart';
 
 import '../core/video_source.dart';
 import '../data/enums/aspect_ratio_mode.dart';
+import '../data/enums/cast_state.dart';
 import '../data/enums/play_state.dart';
 import '../data/enums/skip_second_type.dart';
 import '../utils/mime_detector.dart';
 import 'brightness_controller.dart';
 import 'channel_player_backend.dart';
 import 'fullscreen_coordinator.dart';
+import 'local_cast_http_server.dart';
 import 'player_backend.dart';
 import 'player_event.dart';
 
@@ -28,6 +30,7 @@ class PlaybackSession {
   final PlayerBackend _backend;
   final FullscreenCoordinator _fullscreen;
   final BrightnessController _brightness;
+  final LocalCastHttpServer _localCastServer;
 
   StreamSubscription<PlayerEvent>? _eventSubscription;
   StreamSubscription<bool>? _fullscreenExternalSub;
@@ -66,6 +69,8 @@ class PlaybackSession {
   final FlutterSignal<AspectRatioMode> aspectRatioMode = signal(AspectRatioMode.fit);
   final FlutterSignal<bool> isFullscreen = signal(false);
   final FlutterSignal<double> brightness = signal(1.0);
+  final FlutterSignal<CastState> castState = signal(CastState.unavailable);
+  final FlutterSignal<String?> castDeviceName = signal<String?>(null);
 
   late final FlutterComputed<double> videoAspectRatio = computed(() {
     final size = videoSize.value;
@@ -94,13 +99,26 @@ class PlaybackSession {
     return position.value.inMilliseconds / duration.value.inMilliseconds;
   });
 
+  /// Whether the current platform/environment supports wireless casting.
+  late final FlutterComputed<bool> isCastSupported = computed(() {
+    return castState.value != CastState.unavailable;
+  });
+
+  /// Whether a wireless cast session is currently connecting or connected.
+  late final FlutterComputed<bool> isCasting = computed(() {
+    final s = castState.value;
+    return s == CastState.connecting || s == CastState.connected;
+  });
+
   PlaybackSession({
     PlayerBackend? backend,
     FullscreenCoordinator? fullscreen,
     BrightnessController? brightness,
+    LocalCastHttpServer? localCastServer,
   }) : _backend = backend ?? ChannelPlayerBackend(),
        _fullscreen = fullscreen ?? SystemChromeFullscreenCoordinator(),
-       _brightness = brightness ?? ChannelBrightnessController() {
+       _brightness = brightness ?? ChannelBrightnessController(),
+       _localCastServer = localCastServer ?? LocalCastHttpServer() {
     _fullscreenExternalSub = _fullscreen.externalChanges.listen(_onExternalFullscreen);
   }
 
@@ -153,6 +171,19 @@ class PlaybackSession {
 
   void _onPlayerEvent(PlayerEvent event) {
     if (_disposed) return;
+    // Cast capability & session state events can arrive during create() before
+    // any media is opened, or across openSource() transitions.
+    if (event is PlayerCastStateEvent) {
+      batch(() {
+        castState.value = event.state;
+        if (event.state == CastState.notConnected || event.state == CastState.unavailable) {
+          castDeviceName.value = null;
+        } else if (event.deviceName != null) {
+          castDeviceName.value = event.deviceName;
+        }
+      });
+      return;
+    }
     // Ignore native events before the first open (e.g. mpv's initial
     // `pause=no` property notification) so a fresh session stays idle.
     if (_openEpoch == 0) return;
@@ -222,6 +253,8 @@ class PlaybackSession {
             _markReadySinceOpen();
           }
         }
+      case PlayerCastStateEvent():
+        break;
     }
   }
 
@@ -282,7 +315,18 @@ class PlaybackSession {
       final mediaUrl = await source.resolveToNativeUrl();
       if (_disposed || epoch != _openEpoch) return;
 
-      await _backend.open(mediaUrl);
+      String? castUrl;
+      if (!source.isNetwork) {
+        castUrl = await _localCastServer.serveLocalFileUrl(
+          mediaUrl,
+          mimeType: mimeType.value,
+        );
+      } else {
+        await _localCastServer.stop();
+      }
+      if (_disposed || epoch != _openEpoch) return;
+
+      await _backend.open(mediaUrl, castUrl: castUrl);
       if (_disposed || epoch != _openEpoch) return;
       _activeEventEpoch = epoch;
       _scheduleReadyFallback(epoch);
@@ -402,6 +446,18 @@ class PlaybackSession {
     );
   }
 
+  /// Presents the operating system's native wireless cast / route picker.
+  Future<void> showCastPicker() async {
+    if (_disposed) return;
+    await _backend.showCastPicker();
+  }
+
+  /// Disconnects the active wireless cast session and returns playback locally.
+  Future<void> stopCasting() async {
+    if (_disposed) return;
+    await _backend.stopCasting();
+  }
+
   /// See [VideoPlayerController.enterFullscreen] for the UI contract.
   Future<void> enterFullscreen() async {
     if (_disposed || isFullscreen.value) return;
@@ -478,7 +534,10 @@ class PlaybackSession {
     _fullscreen.dispose();
     await _eventSubscription?.cancel();
     _eventSubscription = null;
+    await _localCastServer.stop();
     await _backend.dispose();
+    castState.value = CastState.unavailable;
+    castDeviceName.value = null;
     _releaseNativeSession();
   }
 
@@ -501,6 +560,8 @@ class PlaybackSession {
     _backendPlaying = false;
     _backendBuffering = false;
     _backendDuration = Duration.zero;
+    // Note: castState and castDeviceName are intentionally preserved across
+    // reset() so switching media sources while casting stays connected.
     batch(() {
       playState.value = PlayState.idle;
       position.value = Duration.zero;

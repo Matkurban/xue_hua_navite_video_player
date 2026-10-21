@@ -1,4 +1,5 @@
 import AVFoundation
+import AVKit
 import Flutter
 import UIKit
 
@@ -60,7 +61,7 @@ public class XueHuaNaviteVideoPlayerPlugin: NSObject, FlutterPlugin {
 
     private func configureAudioSession() {
         let session = AVAudioSession.sharedInstance()
-        try? session.setCategory(.playback, mode: .moviePlayback, options: [])
+        try? session.setCategory(.playback, mode: .moviePlayback, options: [.allowAirPlay])
         try? session.setActive(true)
     }
 
@@ -75,14 +76,15 @@ public class XueHuaNaviteVideoPlayerPlugin: NSObject, FlutterPlugin {
                   let type = AVAudioSession.InterruptionType(rawValue: raw),
                   type == .began
             else { return }
-            self?.videoPlayer?.pause()
+            self?.videoPlayer?.pauseIfNotCasting()
         }
         backgroundObserver = NotificationCenter.default.addObserver(
             forName: UIApplication.didEnterBackgroundNotification,
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.videoPlayer?.pause()
+            // Do not pause playback when actively casting over AirPlay.
+            self?.videoPlayer?.pauseIfNotCasting()
         }
     }
 
@@ -118,7 +120,8 @@ public class XueHuaNaviteVideoPlayerPlugin: NSObject, FlutterPlugin {
                 )
                 return
             }
-            player.open(url: url)
+            let castUrl = args["castUrl"] as? String
+            player.open(url: url, castUrl: castUrl)
             result(nil)
         case "play":
             player.play()
@@ -187,6 +190,12 @@ public class XueHuaNaviteVideoPlayerPlugin: NSObject, FlutterPlugin {
             player.setAspectRatioMode(mode)
             result(nil)
         case "setVideoViewSize":
+            result(nil)
+        case "showCastPicker":
+            player.showCastPicker()
+            result(nil)
+        case "stopCasting":
+            player.stopCasting()
             result(nil)
         case "dispose":
             restoreBrightness()
@@ -310,13 +319,18 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler {
     private var statusObservation: NSKeyValueObservation?
     private var presentationSizeObservation: NSKeyValueObservation?
     private var timeControlObservation: NSKeyValueObservation?
+    private var externalPlaybackObservation: NSKeyValueObservation?
     private var keepUpObservation: NSKeyValueObservation?
     private var bufferEmptyObservation: NSKeyValueObservation?
     private var didPlayToEndObserver: NSObjectProtocol?
     private var failedToPlayToEndObserver: NSObjectProtocol?
+    private var routeChangeObserver: NSObjectProtocol?
+    private var routePickerView: AVRoutePickerView?
+    private var wasExternalPlaybackActive = false
     private weak var hostedPlayerLayer: AVPlayerLayer?
     private var videoGravity: AVLayerVideoGravity = .resizeAspect
     private var currentUrl: String?
+    private var currentCastUrl: String?
     private var snapshotGeneration = 0
 
     override init() {
@@ -355,6 +369,7 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler {
         eventSink events: @escaping FlutterEventSink
     ) -> FlutterError? {
         eventSink = events
+        emitCastState()
         return nil
     }
 
@@ -365,13 +380,21 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler {
 
     /// Returns 0 — display uses PlatformView, not Flutter Texture.
     func create() -> Int64 {
-        0
+        ensureRouteChangeObserver()
+        emitCastState()
+        return 0
     }
 
-    func open(url: String) {
-        cleanupPlayer()
+    func open(url: String, castUrl: String? = nil) {
+        let keepCastPlayer = (player?.isExternalPlaybackActive == true)
+        if keepCastPlayer {
+            cleanupPlayerItemObservers()
+        } else {
+            cleanupPlayer()
+        }
         wantsToPlay = false
         currentUrl = url
+        currentCastUrl = castUrl
 
         guard let mediaUrl = URL(string: url) else {
             sendEvent(event: "error", value: "Invalid URL: \(url)")
@@ -379,9 +402,10 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler {
         }
 
         let asset = AVURLAsset(url: mediaUrl)
-        playerItem = AVPlayerItem(asset: asset)
+        let item = AVPlayerItem(asset: asset)
+        playerItem = item
 
-        statusObservation = playerItem!.observe(\.status, options: [.new]) {
+        statusObservation = item.observe(\.status, options: [.new]) {
             [weak self] item, _ in
             guard let self = self else { return }
             switch item.status {
@@ -410,47 +434,70 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler {
                 ]
             )
         }
-        if playerItem!.presentationSize.width > 0,
-           playerItem!.presentationSize.height > 0
+        if item.presentationSize.width > 0,
+           item.presentationSize.height > 0
         {
-            reportSize(playerItem!.presentationSize)
+            reportSize(item.presentationSize)
         }
-        presentationSizeObservation = playerItem!.observe(
+        presentationSizeObservation = item.observe(
             \.presentationSize,
             options: [.new, .initial]
         ) { item, _ in
             reportSize(item.presentationSize)
         }
 
-        player = AVPlayer(playerItem: playerItem)
-        hostedPlayerLayer?.player = player
-        hostedPlayerLayer?.videoGravity = videoGravity
+        if keepCastPlayer, let existingPlayer = player {
+            existingPlayer.replaceCurrentItem(with: item)
+        } else {
+            let newPlayer = AVPlayer(playerItem: item)
+            newPlayer.allowsExternalPlayback = true
+            newPlayer.usesExternalPlaybackWhileExternalScreenIsActive = true
+            player = newPlayer
+            hostedPlayerLayer?.player = newPlayer
+            hostedPlayerLayer?.videoGravity = videoGravity
 
-        let interval = CMTime(value: 1, timescale: 5)
-        timeObserver = player?.addPeriodicTimeObserver(
-            forInterval: interval,
-            queue: .main
-        ) { [weak self] time in
-            if let ms = self?.milliseconds(from: time) {
-                self?.sendEvent(event: "position", value: ms)
+            let interval = CMTime(value: 1, timescale: 5)
+            timeObserver = newPlayer.addPeriodicTimeObserver(
+                forInterval: interval,
+                queue: .main
+            ) { [weak self] time in
+                if let ms = self?.milliseconds(from: time) {
+                    self?.sendEvent(event: "position", value: ms)
+                }
+            }
+
+            timeControlObservation = newPlayer.observe(
+                \.timeControlStatus,
+                options: [.new, .initial]
+            ) { [weak self] player, _ in
+                self?.emitTimeControlStatus(player.timeControlStatus)
+            }
+
+            externalPlaybackObservation = newPlayer.observe(
+                \.isExternalPlaybackActive,
+                options: [.new, .initial]
+            ) { [weak self] player, _ in
+                guard let self = self else { return }
+                let active = player.isExternalPlaybackActive
+                if self.wasExternalPlaybackActive && !active {
+                    // Disconnected from AirPlay: pause local playback so audio
+                    // does not unexpectedly blast from the device speaker.
+                    self.wantsToPlay = false
+                    player.pause()
+                }
+                self.wasExternalPlaybackActive = active
+                self.emitCastState()
             }
         }
 
-        timeControlObservation = player?.observe(
-            \.timeControlStatus,
-            options: [.new, .initial]
-        ) { [weak self] player, _ in
-            self?.emitTimeControlStatus(player.timeControlStatus)
-        }
-
-        keepUpObservation = playerItem!.observe(
+        keepUpObservation = item.observe(
             \.isPlaybackLikelyToKeepUp,
             options: [.new, .initial]
         ) { [weak self] item, _ in
             self?.playbackLikelyToKeepUp = item.isPlaybackLikelyToKeepUp
             self?.publishBuffering()
         }
-        bufferEmptyObservation = playerItem!.observe(
+        bufferEmptyObservation = item.observe(
             \.isPlaybackBufferEmpty,
             options: [.new, .initial]
         ) { [weak self] item, _ in
@@ -460,7 +507,7 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler {
 
         didPlayToEndObserver = NotificationCenter.default.addObserver(
             forName: .AVPlayerItemDidPlayToEndTime,
-            object: playerItem,
+            object: item,
             queue: .main
         ) { [weak self] _ in
             self?.wantsToPlay = false
@@ -470,7 +517,7 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler {
 
         failedToPlayToEndObserver = NotificationCenter.default.addObserver(
             forName: .AVPlayerItemFailedToPlayToEndTime,
-            object: playerItem,
+            object: item,
             queue: .main
         ) { [weak self] notification in
             let error = notification.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error
@@ -481,6 +528,8 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler {
             )
         }
 
+        ensureRouteChangeObserver()
+        emitCastState()
         sendEvent(event: "playing", value: false)
         sendEvent(event: "buffering", value: true)
     }
@@ -500,6 +549,13 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler {
     func pause() {
         wantsToPlay = false
         player?.pause()
+    }
+
+    func pauseIfNotCasting() {
+        if player?.isExternalPlaybackActive == true {
+            return
+        }
+        pause()
     }
 
     func seek(positionMs: Int) {
@@ -523,10 +579,138 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler {
         }
     }
 
+    func showCastPicker() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            let picker = self.ensureRoutePickerView()
+            if let button = Self.findButton(in: picker) {
+                button.sendActions(for: .touchUpInside)
+            }
+        }
+    }
+
+    func stopCasting() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self, let player = self.player else { return }
+            let currentTime = player.currentTime()
+            self.wantsToPlay = false
+            player.pause()
+            if player.isExternalPlaybackActive {
+                player.allowsExternalPlayback = false
+                DispatchQueue.main.async { [weak self] in
+                    guard let self = self, let player = self.player else { return }
+                    player.allowsExternalPlayback = true
+                    player.seek(to: currentTime, toleranceBefore: .zero, toleranceAfter: .zero)
+                    self.wasExternalPlaybackActive = false
+                    self.emitCastState()
+                }
+            } else {
+                self.emitCastState()
+            }
+        }
+    }
+
+    private func ensureRoutePickerView() -> AVRoutePickerView {
+        if let existing = routePickerView, existing.window != nil {
+            return existing
+        }
+        let picker = routePickerView ?? AVRoutePickerView(frame: CGRect(x: 0, y: 0, width: 1, height: 1))
+        picker.alpha = 0.01
+        picker.isUserInteractionEnabled = false
+        if #available(iOS 13.0, *) {
+            picker.prioritizesVideoDevices = true
+        }
+        if picker.superview == nil {
+            if let hostWindow = Self.activeWindow() {
+                hostWindow.addSubview(picker)
+            }
+        }
+        routePickerView = picker
+        return picker
+    }
+
+    private static func activeWindow() -> UIWindow? {
+        if #available(iOS 13.0, *) {
+            for scene in UIApplication.shared.connectedScenes {
+                if let windowScene = scene as? UIWindowScene {
+                    if let keyWin = windowScene.windows.first(where: { $0.isKeyWindow }) {
+                        return keyWin
+                    }
+                    if let firstWin = windowScene.windows.first {
+                        return firstWin
+                    }
+                }
+            }
+        }
+        return UIApplication.shared.keyWindow
+    }
+
+    private static func findButton(in view: UIView) -> UIButton? {
+        if let btn = view as? UIButton {
+            return btn
+        }
+        for sub in view.subviews {
+            if let found = findButton(in: sub) {
+                return found
+            }
+        }
+        return nil
+    }
+
+    private func ensureRouteChangeObserver() {
+        guard routeChangeObserver == nil else { return }
+        routeChangeObserver = NotificationCenter.default.addObserver(
+            forName: AVAudioSession.routeChangeNotification,
+            object: AVAudioSession.sharedInstance(),
+            queue: .main
+        ) { [weak self] _ in
+            self?.emitCastState()
+        }
+    }
+
+    private func currentAirPlayDeviceName() -> String? {
+        let outputs = AVAudioSession.sharedInstance().currentRoute.outputs
+        if let airPlayPort = outputs.first(where: { $0.portType == .airPlay }) {
+            let name = airPlayPort.portName.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !name.isEmpty {
+                return name
+            }
+        }
+        return player?.isExternalPlaybackActive == true ? "AirPlay" : nil
+    }
+
+    private func emitCastState() {
+        let isCasting = (player?.isExternalPlaybackActive == true) ||
+            AVAudioSession.sharedInstance().currentRoute.outputs.contains(where: { $0.portType == .airPlay })
+        if isCasting {
+            sendEvent(
+                event: "castState",
+                value: [
+                    "state": "connected",
+                    "deviceName": currentAirPlayDeviceName() ?? "AirPlay",
+                ]
+            )
+        } else {
+            sendEvent(
+                event: "castState",
+                value: [
+                    "state": "notConnected",
+                ]
+            )
+        }
+    }
+
     func dispose() {
         snapshotGeneration += 1
         cleanupPlayer()
+        if let observer = routeChangeObserver {
+            NotificationCenter.default.removeObserver(observer)
+            routeChangeObserver = nil
+        }
+        routePickerView?.removeFromSuperview()
+        routePickerView = nil
         currentUrl = nil
+        currentCastUrl = nil
     }
 
     private func milliseconds(from time: CMTime) -> Int? {
@@ -566,11 +750,7 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler {
         sendEvent(event: "buffering", value: buffering)
     }
 
-    private func cleanupPlayer() {
-        if let observer = timeObserver {
-            player?.removeTimeObserver(observer)
-            timeObserver = nil
-        }
+    private func cleanupPlayerItemObservers() {
         if let observer = didPlayToEndObserver {
             NotificationCenter.default.removeObserver(observer)
             didPlayToEndObserver = nil
@@ -583,8 +763,6 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler {
         statusObservation = nil
         presentationSizeObservation?.invalidate()
         presentationSizeObservation = nil
-        timeControlObservation?.invalidate()
-        timeControlObservation = nil
         keepUpObservation?.invalidate()
         keepUpObservation = nil
         bufferEmptyObservation?.invalidate()
@@ -592,10 +770,23 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler {
         waitingForRate = false
         playbackLikelyToKeepUp = true
         playbackBufferEmpty = false
+        playerItem = nil
+    }
+
+    private func cleanupPlayer() {
+        if let observer = timeObserver {
+            player?.removeTimeObserver(observer)
+            timeObserver = nil
+        }
+        cleanupPlayerItemObservers()
+        timeControlObservation?.invalidate()
+        timeControlObservation = nil
+        externalPlaybackObservation?.invalidate()
+        externalPlaybackObservation = nil
+        wasExternalPlaybackActive = false
         hostedPlayerLayer?.player = nil
         player?.pause()
         player = nil
-        playerItem = nil
     }
 
     private func sendEvent(event: String, value: Any?) {

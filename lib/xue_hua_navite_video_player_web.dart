@@ -1,19 +1,39 @@
 import 'dart:async';
 import 'dart:js_interop';
-
 import 'dart:ui_web' as ui_web;
 
 import 'package:flutter/services.dart';
 import 'package:flutter_web_plugins/flutter_web_plugins.dart';
 import 'package:web/web.dart' as html;
 
-/// Web 平台视频播放器插件实现，基于 HTML5 <video> 元素。
+extension _HTMLVideoRemotePlaybackExt on html.HTMLVideoElement {
+  external _JSRemotePlayback? get remote;
+  external set disableRemotePlayback(bool value);
+  external bool get disableRemotePlayback;
+
+  @JS('webkitShowPlaybackTargetPicker')
+  external JSFunction? get webkitShowPlaybackTargetPicker;
+
+  @JS('webkitCurrentPlaybackTargetIsWireless')
+  external bool? get webkitCurrentPlaybackTargetIsWireless;
+}
+
+extension type _JSRemotePlayback._(JSObject _) implements JSObject {
+  external String get state;
+  external JSPromise<JSNumber> watchAvailability(JSFunction callback);
+  external JSPromise<JSAny?> prompt();
+  external void addEventListener(String type, JSFunction listener);
+}
+
+/// Web 平台视频播放器插件实现，基于 HTML5 <video> 元素与 W3C Remote Playback API。
 /// Web platform video player plugin implementation using HTML5 <video> element.
 class XueHuaNaviteVideoPlayerWeb {
   html.HTMLVideoElement? _videoElement;
   Timer? _positionTimer;
   final _eventController = StreamController<dynamic>.broadcast();
   bool _viewRegistered = false;
+  String _castState = 'unavailable';
+  String? _castDeviceName;
 
   /// 注册 Web 插件。 / Registers the web plugin.
   static void registerWith(Registrar registrar) {
@@ -37,6 +57,15 @@ class XueHuaNaviteVideoPlayerWeb {
 
   void _sendEvent(String name, dynamic value) {
     _eventController.add(<String, dynamic>{'event': name, 'value': value});
+  }
+
+  void _sendCastState(String state, {String? deviceName}) {
+    _castState = state;
+    _castDeviceName = deviceName;
+    _sendEvent('castState', <String, dynamic>{
+      'state': state,
+      if (deviceName != null) 'deviceName': deviceName,
+    });
   }
 
   Future<dynamic> _handleMethodCall(MethodCall call) async {
@@ -81,6 +110,12 @@ class XueHuaNaviteVideoPlayerWeb {
         return null;
       case 'setVideoViewSize':
         // Web sizes via CSS 100%; no-op.
+        return null;
+      case 'showCastPicker':
+        await _showCastPicker();
+        return null;
+      case 'stopCasting':
+        await _stopCasting();
         return null;
       case 'dispose':
         _dispose();
@@ -129,6 +164,9 @@ class XueHuaNaviteVideoPlayerWeb {
       );
       _viewRegistered = true;
       _setupListeners(_videoElement!);
+    } else {
+      // Re-emit current cast state on subsequent session creation.
+      _sendCastState(_castState, deviceName: _castDeviceName);
     }
 
     return 0;
@@ -232,6 +270,115 @@ class XueHuaNaviteVideoPlayerWeb {
         _sendEvent('buffering', false);
       }).toJS,
     );
+
+    _setupRemotePlayback(video);
+  }
+
+  void _setupRemotePlayback(html.HTMLVideoElement video) {
+    try {
+      final remote = video.remote;
+      if (remote != null) {
+        _sendCastState('notConnected');
+
+        remote.addEventListener(
+          'connecting',
+          ((html.Event _) {
+            _sendCastState('connecting', deviceName: 'Web Cast');
+          }).toJS,
+        );
+
+        remote.addEventListener(
+          'connect',
+          ((html.Event _) {
+            _sendCastState('connected', deviceName: 'Web Cast');
+          }).toJS,
+        );
+
+        remote.addEventListener(
+          'disconnect',
+          ((html.Event _) {
+            // Pause local playback when disconnecting from remote screen.
+            video.pause();
+            _sendCastState('notConnected');
+          }).toJS,
+        );
+
+        try {
+          remote
+              .watchAvailability(
+                ((JSBoolean available) {
+                  if (_castState == 'connected' || _castState == 'connecting') {
+                    return;
+                  }
+                  _sendCastState(available.toDart ? 'notConnected' : 'unavailable');
+                }).toJS,
+              )
+              .toDart
+              .catchError((Object _) {
+                // If watchAvailability is unsupported or disabled, keep 'notConnected'
+                // so prompt() can still be invoked by user gesture.
+                if (_castState == 'unavailable') {
+                  _sendCastState('notConnected');
+                }
+                return 0.toJS;
+              });
+        } catch (_) {}
+        return;
+      }
+
+      if (video.webkitShowPlaybackTargetPicker != null) {
+        _sendCastState('notConnected');
+        video.addEventListener(
+          'webkitcurrentplaybacktargetiswirelesschanged',
+          ((html.Event _) {
+            final wireless = video.webkitCurrentPlaybackTargetIsWireless ?? false;
+            if (wireless) {
+              _sendCastState('connected', deviceName: 'AirPlay');
+            } else {
+              video.pause();
+              _sendCastState('notConnected');
+            }
+          }).toJS,
+        );
+        return;
+      }
+    } catch (_) {}
+
+    _sendCastState('unavailable');
+  }
+
+  Future<void> _showCastPicker() async {
+    final video = _videoElement;
+    if (video == null) return;
+    try {
+      final remote = video.remote;
+      if (remote != null) {
+        await remote.prompt().toDart;
+        return;
+      }
+      final webkitPicker = video.webkitShowPlaybackTargetPicker;
+      if (webkitPicker != null) {
+        webkitPicker.callAsFunction(video);
+      }
+    } catch (_) {
+      // User cancelled picker or no devices found; keep existing cast state.
+    }
+  }
+
+  Future<void> _stopCasting() async {
+    final video = _videoElement;
+    if (video == null) return;
+    try {
+      video.pause();
+      // Toggling disableRemotePlayback forces W3C RemotePlayback disconnection;
+      // if browser ignores it, fall back to prompt() so user can disconnect.
+      video.disableRemotePlayback = true;
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      video.disableRemotePlayback = false;
+      _sendCastState('notConnected');
+    } catch (_) {
+      await _showCastPicker();
+    }
   }
 
   void _open(String url) {
