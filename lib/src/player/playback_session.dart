@@ -323,10 +323,7 @@ class PlaybackSession {
       String? castUrl;
       try {
         if (!source.isNetwork) {
-          castUrl = await _localCastServer.serveLocalFileUrl(
-            mediaUrl,
-            mimeType: mimeType.value,
-          );
+          castUrl = await _localCastServer.serveLocalFileUrl(mediaUrl, mimeType: mimeType.value);
         } else {
           await _localCastServer.stop();
         }

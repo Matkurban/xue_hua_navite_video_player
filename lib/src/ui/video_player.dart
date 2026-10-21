@@ -743,12 +743,8 @@ class _DefaultCastingOverlay extends StatelessWidget {
         final deviceName = controller.castDeviceName.value;
         final isConnecting = state == CastState.connecting;
         final statusLabel = isConnecting
-            ? (deviceName != null && deviceName.isNotEmpty
-                  ? '正在连接「$deviceName」...'
-                  : '正在连接投屏设备...')
-            : (deviceName != null && deviceName.isNotEmpty
-                  ? '正在投屏至「$deviceName」'
-                  : '正在投屏播放');
+            ? (deviceName != null && deviceName.isNotEmpty ? '正在连接「$deviceName」...' : '正在连接投屏设备...')
+            : (deviceName != null && deviceName.isNotEmpty ? '正在投屏至「$deviceName」' : '正在投屏播放');
 
         return SafeArea(
           child: Stack(
@@ -802,7 +798,11 @@ class _DefaultCastingOverlay extends StatelessWidget {
                         controller.showCastPicker();
                         onInteract();
                       },
-                      icon: Icon(Icons.cast, size: style.menuIconSize, color: style.foregroundColor),
+                      icon: Icon(
+                        Icons.cast,
+                        size: style.menuIconSize,
+                        color: style.foregroundColor,
+                      ),
                       label: Text('切换设备', style: style.menuItemTextStyle),
                     ),
                     const SizedBox(width: 12),

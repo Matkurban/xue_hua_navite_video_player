@@ -25,10 +25,7 @@ sealed class PlayerEvent {
   const factory PlayerEvent.videoSize(Size size, int rotationDegrees) = PlayerVideoSizeEvent;
 
   /// Wireless casting state update from the native platform.
-  const factory PlayerEvent.castState(
-    CastState state, {
-    String? deviceName,
-  }) = PlayerCastStateEvent;
+  const factory PlayerEvent.castState(CastState state, {String? deviceName}) = PlayerCastStateEvent;
 }
 
 final class PlayerPositionEvent extends PlayerEvent {

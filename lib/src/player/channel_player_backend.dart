@@ -115,9 +115,7 @@ class ChannelPlayerBackend implements PlayerBackend {
         if (value is Map) {
           final state = CastState.fromWire(value['state']?.toString());
           final rawName = value['deviceName']?.toString();
-          final deviceName = (rawName != null && rawName.trim().isNotEmpty)
-              ? rawName.trim()
-              : null;
+          final deviceName = (rawName != null && rawName.trim().isNotEmpty) ? rawName.trim() : null;
           return PlayerEvent.castState(state, deviceName: deviceName);
         }
         if (value is String) {
@@ -142,10 +140,7 @@ class ChannelPlayerBackend implements PlayerBackend {
 
   @override
   Future<void> open(String url, {String? castUrl}) async {
-    await _methodChannel.invokeMethod('open', {
-      'url': url,
-      'castUrl': ?castUrl,
-    });
+    await _methodChannel.invokeMethod('open', {'url': url, 'castUrl': ?castUrl});
   }
 
   @override

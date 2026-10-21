@@ -71,11 +71,7 @@ class LocalCastHttpServer {
     final addr = bindAddress ?? InternetAddress.anyIPv4;
     final server = await HttpServer.bind(addr, 0, shared: true);
     _server = server;
-    server.listen(
-      _handleRequest,
-      onError: (_) {},
-      cancelOnError: false,
-    );
+    server.listen(_handleRequest, onError: (_) {}, cancelOnError: false);
   }
 
   Future<void> _handleRequest(HttpRequest request) async {
@@ -135,10 +131,7 @@ class LocalCastHttpServer {
 
           final chunkLength = end - start + 1;
           response.statusCode = HttpStatus.partialContent;
-          response.headers.set(
-            HttpHeaders.contentRangeHeader,
-            'bytes $start-$end/$totalLength',
-          );
+          response.headers.set(HttpHeaders.contentRangeHeader, 'bytes $start-$end/$totalLength');
           response.contentLength = chunkLength;
 
           if (request.method == 'HEAD') {
@@ -209,7 +202,8 @@ class LocalCastHttpServer {
       for (final iface in interfaces) {
         final name = iface.name.toLowerCase();
         // Skip virtual/tunnel interfaces when possible
-        final isVirtual = name.startsWith('tun') ||
+        final isVirtual =
+            name.startsWith('tun') ||
             name.startsWith('tap') ||
             name.startsWith('utun') ||
             name.startsWith('docker') ||
@@ -219,9 +213,7 @@ class LocalCastHttpServer {
           if (addr.isLoopback) continue;
           final ip = addr.address;
           if (!isVirtual &&
-              (ip.startsWith('192.168.') ||
-                  ip.startsWith('10.') ||
-                  ip.startsWith('172.'))) {
+              (ip.startsWith('192.168.') || ip.startsWith('10.') || ip.startsWith('172.'))) {
             return ip;
           }
           fallbackIp ??= ip;

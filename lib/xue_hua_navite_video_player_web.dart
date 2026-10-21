@@ -61,10 +61,7 @@ class XueHuaNaviteVideoPlayerWeb {
   void _sendCastState(String state, {String? deviceName}) {
     _castState = state;
     _castDeviceName = deviceName;
-    _sendEvent('castState', <String, dynamic>{
-      'state': state,
-      'deviceName': ?deviceName,
-    });
+    _sendEvent('castState', <String, dynamic>{'state': state, 'deviceName': ?deviceName});
   }
 
   Future<dynamic> _handleMethodCall(MethodCall call) async {
