@@ -1,3 +1,20 @@
+## 2.5.0
+
+- **Material & Cupertino Design Separation**:
+  - Added `VideoPlayerDesignStyle` (`material`, `cupertino`, `adaptive`) and `VideoPlayerTheme` presets (`VideoPlayerTheme.material()`, `VideoPlayerTheme.cupertino()`, `VideoPlayerTheme.adaptive()`), plus optional per-instance `VideoPlayer(theme: ...)` override.
+  - Material style uses Material 3 `IconButton` / `TextButton.icon` ink ripples, `CircularProgressIndicator`, compact `ListTile` popup menus, and rounded Material `Icons`.
+  - Cupertino style uses `CupertinoButton` spring opacity feedback, `CupertinoActivityIndicator`, frosted glass translucent chrome bars and pills (`BackdropFilter` via `backdropBlurSigma`, `barBackgroundColor`, `barBorderRadius`), and Apple SF-style `CupertinoIcons`.
+- **Architecture & Modularization**:
+  - Split `video_player.dart` and UI chrome into focused, single-responsibility widget files (`PlayerBody`, `PlayerTopBar`, `PlayerCenterControls`, `PlayerBottomScrubber`, `PlayerCastingOverlay`, `PlayerGlassSurface`, `PlayerIconButton`, `PlayerLoadingIndicator`, `PlayerMenuOptionTile`, `VideoPlayerSlotContext`) and eliminated widget-returning helper methods.
+  - Modularized `PlaybackSession` (`PlaybackSessionState`), `ChannelPlayerBackend` (`PlayerEventDecoder`), and Web implementation (`WebRemotePlaybackInterop`, `WebRemotePlaybackController`, `WebMediaProbeService`).
+- **Bug Fixes & Stability**:
+  - Fixed `VideoPlayer` controller hot-swap in `didUpdateWidget` so reactive signal effects rebind cleanly when the `controller` instance changes.
+  - Fixed `AnimatedSwitcher` fade transitions in `PlayerBody` by keying visible/hidden children outside `SignalBuilder`, and ensured fullscreen gesture layers react immediately inside the fullscreen overlay.
+  - Fixed `PlaybackSession.seek()` while in `PlayState.completed` so seeking away from the end transitions back to `paused`/`playing` instead of resetting to `00:00` on subsequent `play()`.
+  - Cleared stale scrubber drag state when switching sources or when media duration resets to zero.
+  - Made native asset extraction atomic via temp-file write + rename in `AssetExtractor` to prevent corrupted partial cache files.
+  - Hardened `MediaProbe.extractCovers` error handling and normalized negative video rotation angles in `PlayerEventDecoder`.
+
 ## 2.4.0
 
 - Add wireless casting: `showCastPicker()`, `stopCasting()`, `CastState`, and a `VideoPlayer` cast button plus status overlay (`showCastButton`, `castingOverlayBuilder`).
