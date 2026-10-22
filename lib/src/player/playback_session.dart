@@ -15,6 +15,7 @@ import 'brightness_controller.dart';
 import 'channel_player_backend.dart';
 import 'fullscreen_coordinator.dart';
 import 'local_cast_http_server.dart';
+import 'playback_session_state.dart';
 import 'player_backend.dart';
 import 'player_event.dart';
 
@@ -31,6 +32,7 @@ class PlaybackSession {
   final FullscreenCoordinator _fullscreen;
   final BrightnessController _brightness;
   final LocalCastHttpServer _localCastServer;
+  final PlaybackSessionState _state = PlaybackSessionState();
 
   StreamSubscription<PlayerEvent>? _eventSubscription;
   StreamSubscription<bool>? _fullscreenExternalSub;
@@ -53,62 +55,32 @@ class PlaybackSession {
   @visibleForTesting
   static Duration readyFallbackDelay = const Duration(seconds: 3);
 
-  final FlutterSignal<PlayState> playState = signal(PlayState.idle);
-  final FlutterSignal<Duration> position = signal(Duration.zero);
-  final FlutterSignal<Duration> duration = signal(Duration.zero);
-  final FlutterSignal<double> volume = signal(1.0);
-  final FlutterSignal<double> speed = signal(1.0);
-  final FlutterSignal<bool> isBuffering = signal(false);
-  final FlutterSignal<String?> errorMessage = signal<String?>(null);
-  final FlutterSignal<String?> currentUrl = signal<String?>(null);
-  final FlutterSignal<String?> mimeType = signal<String?>(null);
-  final FlutterSignal<Size> videoSize = signal<Size>(Size.zero);
-  final FlutterSignal<int> rotationDegrees = signal<int>(0);
-  final FlutterSignal<bool> muted = signal(false);
-  final FlutterSignal<SkipSecondType> skipSecondType = signal(SkipSecondType.second10);
-  final FlutterSignal<AspectRatioMode> aspectRatioMode = signal(AspectRatioMode.fit);
-  final FlutterSignal<bool> isFullscreen = signal(false);
-  final FlutterSignal<double> brightness = signal(1.0);
-  final FlutterSignal<CastState> castState = signal(CastState.unavailable);
-  final FlutterSignal<String?> castDeviceName = signal<String?>(null);
+  FlutterSignal<PlayState> get playState => _state.playState;
+  FlutterSignal<Duration> get position => _state.position;
+  FlutterSignal<Duration> get duration => _state.duration;
+  FlutterSignal<double> get volume => _state.volume;
+  FlutterSignal<double> get speed => _state.speed;
+  FlutterSignal<bool> get isBuffering => _state.isBuffering;
+  FlutterSignal<String?> get errorMessage => _state.errorMessage;
+  FlutterSignal<String?> get currentUrl => _state.currentUrl;
+  FlutterSignal<String?> get mimeType => _state.mimeType;
+  FlutterSignal<Size> get videoSize => _state.videoSize;
+  FlutterSignal<int> get rotationDegrees => _state.rotationDegrees;
+  FlutterSignal<bool> get muted => _state.muted;
+  FlutterSignal<SkipSecondType> get skipSecondType => _state.skipSecondType;
+  FlutterSignal<AspectRatioMode> get aspectRatioMode => _state.aspectRatioMode;
+  FlutterSignal<bool> get isFullscreen => _state.isFullscreen;
+  FlutterSignal<double> get brightness => _state.brightness;
+  FlutterSignal<CastState> get castState => _state.castState;
+  FlutterSignal<String?> get castDeviceName => _state.castDeviceName;
 
-  late final FlutterComputed<double> videoAspectRatio = computed(() {
-    final size = videoSize.value;
-    if (size.width <= 0 || size.height <= 0) return 16 / 9;
-    final rot = rotationDegrees.value % 360;
-    if (rot == 90 || rot == 270) {
-      return size.height / size.width;
-    }
-    return size.width / size.height;
-  });
-
-  late final FlutterComputed<bool> isVideo = computed(() {
-    return mimeType.value?.startsWith('video/') ?? false;
-  });
-
-  late final FlutterComputed<bool> isAudio = computed(() {
-    return mimeType.value?.startsWith('audio/') ?? false;
-  });
-
-  late final FlutterComputed<bool> isPlaying = computed(() {
-    return playState.value == PlayState.playing;
-  });
-
-  late final FlutterComputed<double> progressPercent = computed(() {
-    if (duration.value.inMilliseconds == 0) return 0.0;
-    return position.value.inMilliseconds / duration.value.inMilliseconds;
-  });
-
-  /// Whether the current platform/environment supports wireless casting.
-  late final FlutterComputed<bool> isCastSupported = computed(() {
-    return castState.value != CastState.unavailable;
-  });
-
-  /// Whether a wireless cast session is currently connecting or connected.
-  late final FlutterComputed<bool> isCasting = computed(() {
-    final s = castState.value;
-    return s == CastState.connecting || s == CastState.connected;
-  });
+  FlutterComputed<double> get videoAspectRatio => _state.videoAspectRatio;
+  FlutterComputed<bool> get isVideo => _state.isVideo;
+  FlutterComputed<bool> get isAudio => _state.isAudio;
+  FlutterComputed<bool> get isPlaying => _state.isPlaying;
+  FlutterComputed<double> get progressPercent => _state.progressPercent;
+  FlutterComputed<bool> get isCastSupported => _state.isCastSupported;
+  FlutterComputed<bool> get isCasting => _state.isCasting;
 
   PlaybackSession({
     PlayerBackend? backend,
@@ -186,80 +158,88 @@ class PlaybackSession {
     }
     // Ignore native events before the first open (e.g. mpv's initial
     // `pause=no` property notification) so a fresh session stays idle.
-    if (_openEpoch == 0) return;
-    if (_activeEventEpoch != _openEpoch) return;
+    if (_openEpoch == 0 || _activeEventEpoch != _openEpoch) return;
+
     switch (event) {
       case PlayerPlayingEvent(:final playing):
-        if (playState.value == PlayState.error) return;
-        _backendPlaying = playing;
-        if (playing) {
-          final wasFirstPlay = !_hasPlayedSinceOpen;
-          _hasPlayedSinceOpen = true;
-          _markReadySinceOpen();
-          if (wasFirstPlay && _backendDuration > Duration.zero) {
-            duration.value = _backendDuration;
-          }
-          playState.value = PlayState.playing;
-          return;
-        }
-        if (!_hasReadySinceOpen) {
-          // Live / audio-only: native may report paused after metadata without
-          // a positive duration.
-          if (_hasReceivedMetadata) {
-            _markReadySinceOpen();
-          }
-          return;
-        }
-        // Keep explicit stop / natural EOS; do not collapse into paused.
-        if (playState.value == PlayState.stopped || playState.value == PlayState.completed) {
-          return;
-        }
-        // Buffering stalls (e.g. 4K network) may emit playing=false while the
-        // session still intends to play — keep PlayState.playing.
-        if (_backendBuffering || isBuffering.value) {
-          if (playState.value == PlayState.playing) {
-            return;
-          }
-        }
-        playState.value = PlayState.paused;
+        _handlePlayingEvent(playing);
       case PlayerPositionEvent(:final position):
-        if (!_hasReadySinceOpen || playState.value == PlayState.error) return;
-        this.position.value = position;
-      case PlayerDurationEvent(:final duration):
-        if (playState.value == PlayState.error) return;
-        _hasReceivedMetadata = true;
-        _backendDuration = duration;
-        if (!_hasReadySinceOpen) {
-          _markReadySinceOpen();
+        if (_hasReadySinceOpen && playState.value != PlayState.error) {
+          this.position.value = position;
         }
-        if (!_hasReadySinceOpen) return;
-        this.duration.value = duration;
+      case PlayerDurationEvent(:final duration):
+        _handleDurationEvent(duration);
       case PlayerBufferingEvent(:final buffering):
-        if (playState.value == PlayState.error) return;
-        _backendBuffering = buffering;
-        if (!_hasReadySinceOpen) return;
-        isBuffering.value = buffering;
+        if (playState.value != PlayState.error) {
+          _backendBuffering = buffering;
+          if (_hasReadySinceOpen) {
+            isBuffering.value = buffering;
+          }
+        }
       case PlayerErrorEvent(:final message):
         isBuffering.value = false;
         errorMessage.value = message;
         playState.value = PlayState.error;
       case PlayerCompletedEvent():
-        if (!_hasPlayedSinceOpen || playState.value == PlayState.error) {
-          return;
+        if (_hasPlayedSinceOpen && playState.value != PlayState.error) {
+          playState.value = PlayState.completed;
         }
-        playState.value = PlayState.completed;
       case PlayerVideoSizeEvent(:final size, :final rotationDegrees):
-        if (playState.value == PlayState.error) return;
-        videoSize.value = size;
-        this.rotationDegrees.value = rotationDegrees;
-        if (size.width > 0 && size.height > 0) {
-          _hasReceivedMetadata = true;
-          if (!_hasReadySinceOpen) {
-            _markReadySinceOpen();
-          }
-        }
+        _handleVideoSizeEvent(size, rotationDegrees);
       case PlayerCastStateEvent():
         break;
+    }
+  }
+
+  void _handlePlayingEvent(bool playing) {
+    if (playState.value == PlayState.error) return;
+    _backendPlaying = playing;
+    if (playing) {
+      final wasFirstPlay = !_hasPlayedSinceOpen;
+      _hasPlayedSinceOpen = true;
+      _markReadySinceOpen();
+      if (wasFirstPlay && _backendDuration > Duration.zero) {
+        duration.value = _backendDuration;
+      }
+      playState.value = PlayState.playing;
+      return;
+    }
+    if (!_hasReadySinceOpen) {
+      if (_hasReceivedMetadata) {
+        _markReadySinceOpen();
+      }
+      return;
+    }
+    if (playState.value == PlayState.stopped || playState.value == PlayState.completed) {
+      return;
+    }
+    if ((_backendBuffering || isBuffering.value) && playState.value == PlayState.playing) {
+      return;
+    }
+    playState.value = PlayState.paused;
+  }
+
+  void _handleDurationEvent(Duration reportedDuration) {
+    if (playState.value == PlayState.error) return;
+    _hasReceivedMetadata = true;
+    _backendDuration = reportedDuration;
+    if (!_hasReadySinceOpen) {
+      _markReadySinceOpen();
+    }
+    if (_hasReadySinceOpen) {
+      duration.value = reportedDuration;
+    }
+  }
+
+  void _handleVideoSizeEvent(Size size, int rotationDegrees) {
+    if (playState.value == PlayState.error) return;
+    videoSize.value = size;
+    this.rotationDegrees.value = rotationDegrees;
+    if (size.width > 0 && size.height > 0) {
+      _hasReceivedMetadata = true;
+      if (!_hasReadySinceOpen) {
+        _markReadySinceOpen();
+      }
     }
   }
 
@@ -277,33 +257,21 @@ class PlaybackSession {
     }
   }
 
-  Future<void> playNetwork(String url) {
-    return openSource(VideoSource.network(url), autoPlay: true);
-  }
+  Future<void> playNetwork(String url) => openSource(VideoSource.network(url), autoPlay: true);
 
-  Future<void> openNetwork(String url) {
-    return openSource(VideoSource.network(url), autoPlay: false);
-  }
+  Future<void> openNetwork(String url) => openSource(VideoSource.network(url), autoPlay: false);
 
-  Future<void> playFile(String path) {
-    return openSource(VideoSource.file(path), autoPlay: true);
-  }
+  Future<void> playFile(String path) => openSource(VideoSource.file(path), autoPlay: true);
 
-  Future<void> openFile(String path) {
-    return openSource(VideoSource.file(path), autoPlay: false);
-  }
+  Future<void> openFile(String path) => openSource(VideoSource.file(path), autoPlay: false);
 
-  Future<void> playAsset(String assetPath, {AssetBundle? bundle}) {
-    return openSource(VideoSource.asset(assetPath, bundle: bundle), autoPlay: true);
-  }
+  Future<void> playAsset(String assetPath, {AssetBundle? bundle}) =>
+      openSource(VideoSource.asset(assetPath, bundle: bundle), autoPlay: true);
 
-  Future<void> openAsset(String assetPath, {AssetBundle? bundle}) {
-    return openSource(VideoSource.asset(assetPath, bundle: bundle), autoPlay: false);
-  }
+  Future<void> openAsset(String assetPath, {AssetBundle? bundle}) =>
+      openSource(VideoSource.asset(assetPath, bundle: bundle), autoPlay: false);
 
-  Future<void> playSource(VideoSource source) {
-    return openSource(source, autoPlay: true);
-  }
+  Future<void> playSource(VideoSource source) => openSource(source, autoPlay: true);
 
   Future<void> openSource(VideoSource source, {bool autoPlay = false}) async {
     if (_disposed) return;
@@ -320,17 +288,7 @@ class PlaybackSession {
       final mediaUrl = await source.resolveToNativeUrl();
       if (_disposed || epoch != _openEpoch) return;
 
-      String? castUrl;
-      try {
-        if (!source.isNetwork) {
-          castUrl = await _localCastServer.serveLocalFileUrl(mediaUrl, mimeType: mimeType.value);
-        } else {
-          await _localCastServer.stop();
-        }
-      } catch (_) {
-        // Never allow local cast HTTP server setup to block normal video playback.
-        castUrl = null;
-      }
+      final castUrl = await _resolveCastUrl(source, mediaUrl);
       if (_disposed || epoch != _openEpoch) return;
 
       await _backend.open(mediaUrl, castUrl: castUrl);
@@ -354,6 +312,18 @@ class PlaybackSession {
       errorMessage.value = e.toString();
       playState.value = PlayState.error;
     }
+  }
+
+  Future<String?> _resolveCastUrl(VideoSource source, String mediaUrl) async {
+    try {
+      if (!source.isNetwork) {
+        return await _localCastServer.serveLocalFileUrl(mediaUrl, mimeType: mimeType.value);
+      }
+      await _localCastServer.stop();
+    } catch (_) {
+      // Never allow local cast HTTP server setup to block normal video playback.
+    }
+    return null;
   }
 
   Future<void> play() async {
@@ -469,8 +439,6 @@ class PlaybackSession {
   Future<void> enterFullscreen() async {
     if (_disposed || isFullscreen.value) return;
     final landscape = videoAspectRatio.value > 1.0;
-    // Signal UI first so OverlayPortal can reparent the PlatformView before
-    // the orientation change queues a VirtualDisplay resize.
     isFullscreen.value = true;
     await _fullscreen.enter(landscapeVideo: landscape);
   }
@@ -567,18 +535,6 @@ class PlaybackSession {
     _backendPlaying = false;
     _backendBuffering = false;
     _backendDuration = Duration.zero;
-    // Note: castState and castDeviceName are intentionally preserved across
-    // reset() so switching media sources while casting stays connected.
-    batch(() {
-      playState.value = PlayState.idle;
-      position.value = Duration.zero;
-      duration.value = Duration.zero;
-      isBuffering.value = false;
-      errorMessage.value = null;
-      currentUrl.value = null;
-      mimeType.value = null;
-      videoSize.value = Size.zero;
-      rotationDegrees.value = 0;
-    });
+    _state.resetMediaSignals();
   }
 }

@@ -1,11 +1,13 @@
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
-import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../../player/video_player_controller.dart';
+import '../style/player_icon_catalog.dart';
 import '../style/video_player_theme.dart';
+import 'player_glass_surface.dart';
 
 const _leftZoneRatio = 0.4;
 const _rightZoneRatio = 0.6;
@@ -42,6 +44,8 @@ class _PlayerGestureLayerState extends State<PlayerGestureLayer> {
   double? _volumeBaseline;
   PlayerHudKind? _hudKind;
   String? _hudLabel;
+  double _hudProgress = 0.0;
+  bool _seekForward = true;
 
   _GestureZone _zoneFor(double x, double width) {
     if (x < width * _leftZoneRatio) return _GestureZone.left;
@@ -99,6 +103,7 @@ class _PlayerGestureLayerState extends State<PlayerGestureLayer> {
       final sign = seconds >= 0 ? '+' : '';
       setState(() {
         _hudKind = PlayerHudKind.seek;
+        _seekForward = seconds >= 0;
         _hudLabel = '$sign${seconds.toStringAsFixed(0)}s';
       });
       return;
@@ -115,6 +120,7 @@ class _PlayerGestureLayerState extends State<PlayerGestureLayer> {
       await widget.controller.setBrightness(next);
       setState(() {
         _hudKind = PlayerHudKind.brightness;
+        _hudProgress = next;
         _hudLabel = '${(next * 100).round()}%';
       });
     } else if (_zone == _GestureZone.right) {
@@ -123,6 +129,7 @@ class _PlayerGestureLayerState extends State<PlayerGestureLayer> {
       await widget.controller.setVolume(next);
       setState(() {
         _hudKind = PlayerHudKind.volume;
+        _hudProgress = next;
         _hudLabel = '${(next * 100).round()}%';
       });
     }
@@ -157,7 +164,7 @@ class _PlayerGestureLayerState extends State<PlayerGestureLayer> {
     final style = VideoPlayerTheme.of(context);
     return Stack(
       fit: StackFit.expand,
-      children: [
+      children: <Widget>[
         GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: widget.onTap,
@@ -168,33 +175,66 @@ class _PlayerGestureLayerState extends State<PlayerGestureLayer> {
         ),
         if (_hudKind != null && _hudLabel != null)
           Center(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: style.hudBackgroundColor,
-                borderRadius: style.hudBorderRadius,
-              ),
-              child: Padding(
-                padding: style.hudPadding,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      switch (_hudKind!) {
-                        PlayerHudKind.seek => Icons.fast_forward,
-                        PlayerHudKind.brightness => Icons.brightness_6,
-                        PlayerHudKind.volume => Icons.volume_up,
-                      },
-                      color: style.foregroundColor,
-                      size: style.hudIconSize,
-                    ),
-                    SizedBox(width: style.hudIconGap),
-                    Text(_hudLabel!, style: style.hudTextStyle),
-                  ],
-                ),
-              ),
+            child: _GestureHudBadge(
+              style: style,
+              kind: _hudKind!,
+              label: _hudLabel!,
+              progress: _hudProgress,
+              seekForward: _seekForward,
             ),
           ),
       ],
+    );
+  }
+}
+
+class _GestureHudBadge extends StatelessWidget {
+  const _GestureHudBadge({
+    required this.style,
+    required this.kind,
+    required this.label,
+    required this.progress,
+    required this.seekForward,
+  });
+
+  final VideoPlayerTheme style;
+  final PlayerHudKind kind;
+  final String label;
+  final double progress;
+  final bool seekForward;
+
+  @override
+  Widget build(BuildContext context) {
+    final isCupertino = style.isCupertino;
+    final iconData = switch (kind) {
+      PlayerHudKind.seek => PlayerIconCatalog.hudSeek(
+        isCupertino: isCupertino,
+        forward: seekForward,
+      ),
+      PlayerHudKind.brightness => PlayerIconCatalog.hudBrightness(isCupertino: isCupertino),
+      PlayerHudKind.volume => PlayerIconCatalog.hudVolume(
+        isCupertino: isCupertino,
+        muted: progress <= 0.0,
+      ),
+    };
+
+    return PlayerGlassSurface(
+      backgroundColor: style.hudBackgroundColor,
+      borderRadius: style.hudBorderRadius,
+      blurSigma: isCupertino ? style.backdropBlurSigma : 0.0,
+      padding: style.hudPadding,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Icon(
+            iconData,
+            color: style.foregroundColor,
+            size: style.hudIconSize,
+          ),
+          SizedBox(width: style.hudIconGap),
+          Text(label, style: style.hudTextStyle),
+        ],
+      ),
     );
   }
 }

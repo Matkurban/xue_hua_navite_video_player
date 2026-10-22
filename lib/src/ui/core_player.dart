@@ -1,8 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
-import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:signals_flutter/signals_flutter.dart';
 
 import '../data/enums/play_state.dart';
@@ -31,13 +31,6 @@ class CorePlayer extends SignalWidget {
     this.loadingBuilder,
   });
 
-  static bool get _usesPlatformView {
-    if (kIsWeb) return false;
-    return defaultTargetPlatform == TargetPlatform.iOS ||
-        defaultTargetPlatform == TargetPlatform.macOS ||
-        defaultTargetPlatform == TargetPlatform.android;
-  }
-
   @override
   Widget build(BuildContext context) {
     final FlutterSignal<PlayState> state = controller.playState;
@@ -58,7 +51,6 @@ class CorePlayer extends SignalWidget {
       );
     }
 
-    final media = _buildMediaSurface();
     final showLoading = state.value == PlayState.loading || buffering.value;
 
     return ColoredBox(
@@ -66,15 +58,31 @@ class CorePlayer extends SignalWidget {
       child: Stack(
         fit: StackFit.expand,
         alignment: Alignment.center,
-        children: [
-          Positioned.fill(child: media),
+        children: <Widget>[
+          Positioned.fill(
+            child: _MediaSurface(controller: controller),
+          ),
           if (showLoading) loadingBuilder?.call(context) ?? const SizedBox.shrink(),
         ],
       ),
     );
   }
+}
 
-  Widget _buildMediaSurface() {
+class _MediaSurface extends StatelessWidget {
+  const _MediaSurface({required this.controller});
+
+  final VideoPlayerController controller;
+
+  static bool get _usesPlatformView {
+    if (kIsWeb) return false;
+    return defaultTargetPlatform == TargetPlatform.iOS ||
+        defaultTargetPlatform == TargetPlatform.macOS ||
+        defaultTargetPlatform == TargetPlatform.android;
+  }
+
+  @override
+  Widget build(BuildContext context) {
     if (kIsWeb) {
       return const HtmlElementView(viewType: kWebPlayerViewType);
     }

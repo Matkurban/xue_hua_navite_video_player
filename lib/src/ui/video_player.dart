@@ -1,35 +1,17 @@
 import 'dart:async';
 
-import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:signals_flutter/signals_flutter.dart';
-import 'package:xue_hua_navite_video_player/src/data/enums/aspect_ratio_mode.dart';
-import 'package:xue_hua_navite_video_player/src/data/enums/cast_state.dart';
-import 'package:xue_hua_navite_video_player/src/data/enums/skip_second_type.dart';
-import 'package:xue_hua_navite_video_player/src/ui/core_player.dart';
-import 'package:xue_hua_navite_video_player/src/ui/widgets/player_gesture_layer.dart';
-import 'package:xue_hua_navite_video_player/src/ui/widgets/player_menu_button.dart';
 
 import '../data/enums/play_state.dart';
+import '../data/enums/skip_second_type.dart';
 import '../player/video_player_controller.dart';
 import 'style/video_player_theme.dart';
-import 'widgets/player_scrubber_slider.dart';
+import 'video_player_slot_context.dart';
+import 'widgets/player_body.dart';
 
-/// 传递给自定义槽位 builder 的上下文。
-class VideoPlayerSlotContext {
-  final VideoPlayerController controller;
-  final VideoPlayerTheme theme;
-  final VoidCallback showControls;
-  final VoidCallback hideControls;
-
-  const VideoPlayerSlotContext({
-    required this.controller,
-    required this.theme,
-    required this.showControls,
-    required this.hideControls,
-  });
-}
+export 'video_player_slot_context.dart';
 
 /// 高性能的默认视频播放器组件。
 ///
@@ -65,6 +47,10 @@ class VideoPlayer extends StatefulWidget {
   final bool showAspectRatioMenu;
   final bool enableFullscreen;
 
+  /// Optional theme override for this player instance. Falls back to
+  /// `VideoPlayerTheme.of(context)` when null.
+  final VideoPlayerTheme? theme;
+
   final Widget Function(BuildContext context, String? errorMessage)? errorBuilder;
   final Widget Function(BuildContext context)? loadingBuilder;
   final Widget Function(BuildContext, VideoPlayerSlotContext)? topBarBuilder;
@@ -92,6 +78,7 @@ class VideoPlayer extends StatefulWidget {
     this.showCastButton = true,
     this.showAspectRatioMenu = true,
     this.enableFullscreen = true,
+    this.theme,
     this.errorBuilder,
     this.loadingBuilder,
     this.topBarBuilder,
@@ -112,7 +99,7 @@ class _VideoPlayerState extends State<VideoPlayer> {
   final OverlayPortalController _fullscreenPortal = OverlayPortalController();
   final GlobalKey _playerSurfaceKey = GlobalKey();
 
-  /// When true, in-tree [_PlayerBody] is omitted so overlay can host alone.
+  /// When true, in-tree [PlayerBody] is omitted so overlay can host alone.
   bool _inlineSuppressed = false;
 
   Timer? _hideTimer;
@@ -274,859 +261,105 @@ class _VideoPlayerState extends State<VideoPlayer> {
     }
   }
 
-  VideoPlayerSlotContext _slotContext() {
-    return VideoPlayerSlotContext(
+  @override
+  Widget build(BuildContext context) {
+    final effectiveTheme = widget.theme ?? VideoPlayerTheme.of(context);
+    final slot = VideoPlayerSlotContext(
       controller: widget.controller,
-      theme: VideoPlayerTheme.of(context),
+      theme: effectiveTheme,
       showControls: _showControls,
       hideControls: _hideControls,
     );
-  }
 
-  @override
-  Widget build(BuildContext context) {
-    final slot = _slotContext();
-    return OverlayPortal(
-      controller: _fullscreenPortal,
-      overlayChildBuilder: (context) => Material(
-        color: slot.theme.backgroundColor,
-        child: _PlayerBody(
-          slot: slot,
-          controller: widget.controller,
-          surfaceKey: _playerSurfaceKey,
-          aspectRatio: widget.aspectRatio,
-          fill: true,
-          fadeDuration: widget.fadeDuration,
-          visible: _visible,
-          isDesktop: _isDesktop,
-          focusNode: _focusNode,
-          leading: widget.leading,
-          title: widget.title,
-          actions: widget.actions,
-          topBarActions: widget.topBarActions,
-          showCastButton: widget.showCastButton,
-          showAspectRatioMenu: widget.showAspectRatioMenu,
-          enableFullscreen: widget.enableFullscreen,
-          errorBuilder: widget.errorBuilder,
-          loadingBuilder: widget.loadingBuilder,
-          topBarBuilder: widget.topBarBuilder,
-          centerControlsBuilder: widget.centerControlsBuilder,
-          bottomScrubberBuilder: widget.bottomScrubberBuilder,
-          castingOverlayBuilder: widget.castingOverlayBuilder,
-          extraOverlayBuilder: widget.extraOverlayBuilder,
-          onClose: _handleClose,
-          onToggleControls: _toggleControls,
-          onShowControls: _showControls,
-          onCancelHideTimer: () => _hideTimer?.cancel(),
-          onScheduleAutoHide: _scheduleAutoHide,
+    final baseTheme = Theme.of(context);
+    final themedData = widget.theme != null
+        ? baseTheme.copyWith(
+            extensions: <ThemeExtension<dynamic>>[
+              ...baseTheme.extensions.values.where((ext) => ext is! VideoPlayerTheme),
+              effectiveTheme,
+            ],
+          )
+        : baseTheme;
+
+    return Theme(
+      data: themedData,
+      child: OverlayPortal(
+        controller: _fullscreenPortal,
+        overlayChildBuilder: (context) => Theme(
+          data: themedData,
+          child: Material(
+            color: slot.theme.backgroundColor,
+            child: PlayerBody(
+              slot: slot,
+              controller: widget.controller,
+              surfaceKey: _playerSurfaceKey,
+              aspectRatio: widget.aspectRatio,
+              fill: true,
+              fadeDuration: widget.fadeDuration,
+              visible: _visible,
+              isDesktop: _isDesktop,
+              focusNode: _focusNode,
+              leading: widget.leading,
+              title: widget.title,
+              actions: widget.actions,
+              topBarActions: widget.topBarActions,
+              showCastButton: widget.showCastButton,
+              showAspectRatioMenu: widget.showAspectRatioMenu,
+              enableFullscreen: widget.enableFullscreen,
+              errorBuilder: widget.errorBuilder,
+              loadingBuilder: widget.loadingBuilder,
+              topBarBuilder: widget.topBarBuilder,
+              centerControlsBuilder: widget.centerControlsBuilder,
+              bottomScrubberBuilder: widget.bottomScrubberBuilder,
+              castingOverlayBuilder: widget.castingOverlayBuilder,
+              extraOverlayBuilder: widget.extraOverlayBuilder,
+              onClose: _handleClose,
+              onToggleControls: _toggleControls,
+              onShowControls: _showControls,
+              onCancelHideTimer: () => _hideTimer?.cancel(),
+              onScheduleAutoHide: _scheduleAutoHide,
+            ),
+          ),
         ),
-      ),
-      child: SignalBuilder(
-        builder: (context) {
-          widget.controller.isFullscreen.value;
-          if (_inlineSuppressed || _fullscreenPortal.isShowing) {
-            return const SizedBox.shrink();
-          }
-          final fs = widget.controller.isFullscreen.value;
-          return _PlayerBody(
-            slot: slot,
-            controller: widget.controller,
-            surfaceKey: _playerSurfaceKey,
-            aspectRatio: widget.aspectRatio,
-            fill: widget.fill || fs,
-            fadeDuration: widget.fadeDuration,
-            visible: _visible,
-            isDesktop: _isDesktop,
-            focusNode: _focusNode,
-            leading: widget.leading,
-            title: widget.title,
-            actions: widget.actions,
-            topBarActions: widget.topBarActions,
-            showCastButton: widget.showCastButton,
-            showAspectRatioMenu: widget.showAspectRatioMenu,
-            enableFullscreen: widget.enableFullscreen,
-            errorBuilder: widget.errorBuilder,
-            loadingBuilder: widget.loadingBuilder,
-            topBarBuilder: widget.topBarBuilder,
-            centerControlsBuilder: widget.centerControlsBuilder,
-            bottomScrubberBuilder: widget.bottomScrubberBuilder,
-            castingOverlayBuilder: widget.castingOverlayBuilder,
-            extraOverlayBuilder: widget.extraOverlayBuilder,
-            onClose: _handleClose,
-            onToggleControls: _toggleControls,
-            onShowControls: _showControls,
-            onCancelHideTimer: () => _hideTimer?.cancel(),
-            onScheduleAutoHide: _scheduleAutoHide,
-          );
-        },
-      ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Player body (inline + fullscreen overlay)
-// ---------------------------------------------------------------------------
-
-class _PlayerBody extends StatelessWidget {
-  const _PlayerBody({
-    required this.slot,
-    required this.controller,
-    required this.surfaceKey,
-    required this.aspectRatio,
-    required this.fill,
-    required this.fadeDuration,
-    required this.visible,
-    required this.isDesktop,
-    required this.focusNode,
-    required this.leading,
-    required this.title,
-    required this.actions,
-    required this.topBarActions,
-    required this.showCastButton,
-    required this.showAspectRatioMenu,
-    required this.enableFullscreen,
-    required this.errorBuilder,
-    required this.loadingBuilder,
-    required this.topBarBuilder,
-    required this.centerControlsBuilder,
-    required this.bottomScrubberBuilder,
-    required this.castingOverlayBuilder,
-    required this.extraOverlayBuilder,
-    required this.onClose,
-    required this.onToggleControls,
-    required this.onShowControls,
-    required this.onCancelHideTimer,
-    required this.onScheduleAutoHide,
-  });
-
-  final VideoPlayerSlotContext slot;
-  final VideoPlayerController controller;
-  final Key surfaceKey;
-  final double? aspectRatio;
-  final bool fill;
-  final Duration fadeDuration;
-  final FlutterSignal<bool> visible;
-  final bool isDesktop;
-  final FocusNode focusNode;
-  final Widget? leading;
-  final Widget? title;
-  final List<Widget> actions;
-  final List<Widget> topBarActions;
-  final bool showCastButton;
-  final bool showAspectRatioMenu;
-  final bool enableFullscreen;
-  final Widget Function(BuildContext context, String? errorMessage)? errorBuilder;
-  final Widget Function(BuildContext context)? loadingBuilder;
-  final Widget Function(BuildContext, VideoPlayerSlotContext)? topBarBuilder;
-  final Widget Function(BuildContext, VideoPlayerSlotContext)? centerControlsBuilder;
-  final Widget Function(BuildContext, VideoPlayerSlotContext)? bottomScrubberBuilder;
-  final Widget Function(BuildContext, VideoPlayerSlotContext)? castingOverlayBuilder;
-  final Widget Function(BuildContext, VideoPlayerSlotContext)? extraOverlayBuilder;
-  final VoidCallback onClose;
-  final VoidCallback onToggleControls;
-  final VoidCallback onShowControls;
-  final VoidCallback onCancelHideTimer;
-  final VoidCallback onScheduleAutoHide;
-
-  @override
-  Widget build(BuildContext context) {
-    final style = slot.theme;
-    final isFullscreen = controller.isFullscreen.value;
-
-    Widget stack = ColoredBox(
-      color: style.backgroundColor,
-      child: Stack(
-        fit: StackFit.expand,
-        children: <Widget>[
-          Positioned.fill(
-            child: CorePlayer(
-              key: surfaceKey,
-              controller: controller,
-              aspectRatio: aspectRatio,
-              backgroundColor: style.backgroundColor,
-              errorBuilder: errorBuilder,
-              loadingBuilder: loadingBuilder,
-            ),
-          ),
-          // Hide frozen local video frames while casting to a remote device.
-          Positioned.fill(
-            child: SignalBuilder(
-              builder: (context) {
-                if (!controller.isCasting.value) {
-                  return const SizedBox.shrink();
-                }
-                return ColoredBox(color: style.backgroundColor);
-              },
-            ),
-          ),
-          Positioned.fill(
-            child: isFullscreen && !kIsWeb
-                ? PlayerGestureLayer(
-                    controller: controller,
-                    onTap: onToggleControls,
-                    child: const SizedBox.expand(),
-                  )
-                : GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: () {
-                      if (isDesktop) {
-                        focusNode.requestFocus();
-                      }
-                      onToggleControls();
-                    },
-                    child: const SizedBox.expand(),
-                  ),
-          ),
-          Positioned.fill(
-            child: SafeArea(
-              child: AnimatedSwitcher(
-                duration: fadeDuration,
-                child: SignalBuilder(
-                  builder: (context) {
-                    if (!visible.value) {
-                      return const SizedBox.shrink();
-                    }
-                    return Column(
-                      mainAxisSize: MainAxisSize.max,
-                      children: <Widget>[
-                        topBarBuilder?.call(context, slot) ??
-                            _DefaultTopBar(
-                              slot: slot,
-                              leading: leading,
-                              title: title,
-                              actions: actions,
-                              topBarActions: topBarActions,
-                              showCastButton: showCastButton,
-                              showAspectRatioMenu: showAspectRatioMenu,
-                              onClose: onClose,
-                              onShowControls: onShowControls,
-                            ),
-                        Expanded(
-                          child: Center(
-                            child:
-                                centerControlsBuilder?.call(context, slot) ??
-                                _DefaultCenterControls(slot: slot, onInteract: onShowControls),
-                          ),
-                        ),
-                        bottomScrubberBuilder?.call(context, slot) ??
-                            _DefaultBottomScrubber(
-                              slot: slot,
-                              enableFullscreen: enableFullscreen,
-                              onInteractStart: onCancelHideTimer,
-                              onInteractEnd: onScheduleAutoHide,
-                              onInteract: onShowControls,
-                            ),
-                      ],
-                    );
-                  },
-                ),
-              ),
-            ),
-          ),
-          // Interactive casting status & quick actions ("切换设备" / "退出投屏").
-          Positioned.fill(
-            child: SignalBuilder(
-              builder: (context) {
-                if (!controller.isCasting.value) {
-                  return const SizedBox.shrink();
-                }
-                return castingOverlayBuilder?.call(context, slot) ??
-                    _DefaultCastingOverlay(slot: slot, onInteract: onShowControls);
-              },
-            ),
-          ),
-          if (extraOverlayBuilder != null)
-            Positioned.fill(child: extraOverlayBuilder!(context, slot)),
-        ],
-      ),
-    );
-
-    if (isDesktop) {
-      stack = Focus(
-        focusNode: focusNode,
-        autofocus: isFullscreen,
-        onKeyEvent: (node, event) => handlePlayerKeyEvent(controller, event),
-        child: stack,
-      );
-    }
-
-    if (fill || isFullscreen) {
-      return stack;
-    }
-
-    return SignalBuilder(
-      builder: (context) {
-        final double effectiveAspectRatio;
-        if (aspectRatio != null) {
-          effectiveAspectRatio = aspectRatio!;
-        } else {
-          final reported = controller.videoAspectRatio.value;
-          const double minInlineAspect = 16 / 9;
-          if (reported > 0) {
-            effectiveAspectRatio = reported >= minInlineAspect ? reported : minInlineAspect;
-          } else {
-            effectiveAspectRatio = minInlineAspect;
-          }
-        }
-        return AspectRatio(aspectRatio: effectiveAspectRatio, child: stack);
-      },
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Default top bar
-// ---------------------------------------------------------------------------
-
-class _DefaultTopBar extends StatelessWidget {
-  const _DefaultTopBar({
-    required this.slot,
-    required this.leading,
-    required this.title,
-    required this.actions,
-    required this.topBarActions,
-    required this.showCastButton,
-    required this.showAspectRatioMenu,
-    required this.onClose,
-    required this.onShowControls,
-  });
-
-  final VideoPlayerSlotContext slot;
-  final Widget? leading;
-  final Widget? title;
-  final List<Widget> actions;
-  final List<Widget> topBarActions;
-  final bool showCastButton;
-  final bool showAspectRatioMenu;
-  final VoidCallback onClose;
-  final VoidCallback onShowControls;
-
-  static String _aspectLabel(AspectRatioMode mode) => switch (mode) {
-    AspectRatioMode.fit => '适应',
-    AspectRatioMode.fill => '铺满',
-    AspectRatioMode.stretch => '拉伸',
-  };
-
-  @override
-  Widget build(BuildContext context) {
-    final style = slot.theme;
-    final controller = slot.controller;
-
-    return SignalBuilder(
-      builder: (context) {
-        final castState = controller.castState.value;
-        final castSupported = controller.isCastSupported.value;
-        final isFullscreen = controller.isFullscreen.value;
-
-        final trailing = <Widget>[
-          ...actions,
-          ...topBarActions,
-          if (showCastButton && castSupported)
-            IconButton(
-              key: const ValueKey<String>('video_player_cast_button'),
-              tooltip: castState == CastState.connected ? '正在投屏' : '投屏',
-              color: style.foregroundColor,
-              onPressed: () {
-                controller.showCastPicker();
-                onShowControls();
-              },
-              icon: castState == CastState.connecting || castState == CastState.disconnecting
-                  ? SizedBox(
-                      width: style.chromeIconSize,
-                      height: style.chromeIconSize,
-                      child: CupertinoActivityIndicator(color: style.foregroundColor),
-                    )
-                  : Icon(
-                      castState == CastState.connected ? Icons.cast_connected : Icons.cast,
-                      size: style.chromeIconSize,
-                    ),
-            ),
-          if (showAspectRatioMenu)
-            PlayerMenuButton(
-              icon: Icons.aspect_ratio,
-              color: style.foregroundColor,
-              tooltip: '画面模式',
-              menuBuilder: (context, hideMenu) {
-                return SignalBuilder(
-                  builder: (context) {
-                    final current = controller.aspectRatioMode.value;
-                    return Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        for (final mode in AspectRatioMode.values)
-                          ListTile(
-                            dense: true,
-                            title: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(_aspectLabel(mode)),
-                                if (current == mode) ...[
-                                  const SizedBox(width: 8),
-                                  Icon(
-                                    Icons.check,
-                                    size: style.menuIconSize,
-                                    color: style.foregroundColor,
-                                  ),
-                                ],
-                              ],
-                            ),
-                            onTap: () {
-                              controller.setAspectRatioMode(mode);
-                              hideMenu();
-                              onShowControls();
-                            },
-                          ),
-                      ],
-                    );
-                  },
-                );
-              },
-            ),
-        ];
-
-        return Padding(
-          padding: style.topBarPadding,
-          child: Row(
-            children: [
-              Expanded(
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child:
-                      leading ??
-                      IconButton(
-                        onPressed: onClose,
-                        color: style.foregroundColor,
-                        icon: Icon(isFullscreen ? Icons.fullscreen_exit : Icons.close),
-                      ),
-                ),
-              ),
-              Expanded(flex: 2, child: Center(child: title ?? const SizedBox.shrink())),
-              Expanded(
-                child: Align(
-                  alignment: Alignment.centerRight,
-                  child: trailing.isEmpty
-                      ? const SizedBox.shrink()
-                      : FittedBox(
-                          fit: BoxFit.scaleDown,
-                          alignment: Alignment.centerRight,
-                          child: Row(mainAxisSize: MainAxisSize.min, children: trailing),
-                        ),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Default casting status overlay
-// ---------------------------------------------------------------------------
-
-class _DefaultCastingOverlay extends StatelessWidget {
-  const _DefaultCastingOverlay({required this.slot, required this.onInteract});
-
-  final VideoPlayerSlotContext slot;
-  final VoidCallback onInteract;
-
-  @override
-  Widget build(BuildContext context) {
-    final style = slot.theme;
-    final controller = slot.controller;
-
-    return SignalBuilder(
-      builder: (context) {
-        final state = controller.castState.value;
-        final deviceName = controller.castDeviceName.value;
-        final isConnecting = state == CastState.connecting;
-        final statusLabel = isConnecting
-            ? (deviceName != null && deviceName.isNotEmpty ? '正在连接「$deviceName」...' : '正在连接投屏设备...')
-            : (deviceName != null && deviceName.isNotEmpty ? '正在投屏至「$deviceName」' : '正在投屏播放');
-
-        return SafeArea(
-          child: Stack(
-            fit: StackFit.expand,
-            children: <Widget>[
-              // Status badge positioned above the center playback controls.
-              Align(
-                alignment: const Alignment(0, -0.56),
-                child: IgnorePointer(
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: style.hudBackgroundColor,
-                      borderRadius: style.hudBorderRadius,
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: <Widget>[
-                        Icon(
-                          Icons.cast_connected,
-                          size: style.hudIconSize,
-                          color: style.foregroundColor,
-                        ),
-                        SizedBox(width: style.hudIconGap),
-                        Flexible(
-                          child: Text(
-                            statusLabel,
-                            style: style.menuItemTextStyle,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              // Quick action buttons positioned below the center playback controls.
-              Align(
-                alignment: const Alignment(0, 0.56),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    TextButton.icon(
-                      key: const ValueKey<String>('video_player_cast_switch_button'),
-                      style: TextButton.styleFrom(
-                        foregroundColor: style.foregroundColor,
-                        backgroundColor: style.centerButtonBackgroundColor,
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                      ),
-                      onPressed: () {
-                        controller.showCastPicker();
-                        onInteract();
-                      },
-                      icon: Icon(
-                        Icons.cast,
-                        size: style.menuIconSize,
-                        color: style.foregroundColor,
-                      ),
-                      label: Text('切换设备', style: style.menuItemTextStyle),
-                    ),
-                    const SizedBox(width: 12),
-                    TextButton.icon(
-                      key: const ValueKey<String>('video_player_cast_stop_button'),
-                      style: TextButton.styleFrom(
-                        foregroundColor: style.foregroundColor,
-                        backgroundColor: style.centerButtonBackgroundColor,
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                      ),
-                      onPressed: () {
-                        controller.stopCasting();
-                        onInteract();
-                      },
-                      icon: Icon(
-                        Icons.stop_screen_share_outlined,
-                        size: style.menuIconSize,
-                        color: style.foregroundColor,
-                      ),
-                      label: Text('退出投屏', style: style.menuItemTextStyle),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Center controls
-// ---------------------------------------------------------------------------
-
-class _DefaultCenterControls extends StatelessWidget {
-  final VideoPlayerSlotContext slot;
-  final VoidCallback onInteract;
-
-  const _DefaultCenterControls({required this.slot, required this.onInteract});
-
-  IconData _skipBackwardIcon(SkipSecondType seconds) {
-    switch (seconds) {
-      case SkipSecondType.second5:
-        return CupertinoIcons.gobackward;
-      case SkipSecondType.second10:
-        return CupertinoIcons.gobackward_10;
-      case SkipSecondType.second15:
-        return CupertinoIcons.gobackward_15;
-      case SkipSecondType.second30:
-        return CupertinoIcons.gobackward_30;
-      case SkipSecondType.second45:
-        return CupertinoIcons.gobackward_45;
-      case SkipSecondType.second60:
-        return CupertinoIcons.gobackward_60;
-    }
-  }
-
-  IconData _skipForwardIcon(SkipSecondType seconds) {
-    switch (seconds) {
-      case SkipSecondType.second5:
-        return CupertinoIcons.goforward;
-      case SkipSecondType.second10:
-        return CupertinoIcons.goforward_10;
-      case SkipSecondType.second15:
-        return CupertinoIcons.goforward_15;
-      case SkipSecondType.second30:
-        return CupertinoIcons.goforward_30;
-      case SkipSecondType.second45:
-        return CupertinoIcons.goforward_45;
-      case SkipSecondType.second60:
-        return CupertinoIcons.goforward_60;
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final style = slot.theme;
-    final controller = slot.controller;
-
-    return SignalBuilder(
-      builder: (context) {
-        final state = controller.playState.value;
-        final buffering = controller.isBuffering.value;
-        final isPlaying = state == PlayState.playing;
-        final isCompleted = state == PlayState.completed;
-        final canInteract = state != PlayState.loading && state != PlayState.error;
-        final skip = controller.skipSecondType.value;
-
-        Widget centerButton;
-        if (state == PlayState.loading || buffering) {
-          centerButton = SizedBox(child: CupertinoActivityIndicator(color: style.foregroundColor));
-        } else if (isCompleted) {
-          centerButton = IconButton(
-            icon: Icon(CupertinoIcons.arrow_counterclockwise, size: style.centerPlayButtonIconSize),
-            color: style.foregroundColor,
-            style: IconButton.styleFrom(backgroundColor: style.centerButtonBackgroundColor),
-            onPressed: () async {
-              await controller.play();
-              onInteract();
-            },
-          );
-        } else {
-          centerButton = IconButton(
-            icon: Icon(
-              isPlaying ? CupertinoIcons.pause_fill : CupertinoIcons.play_fill,
-              size: style.centerPlayButtonIconSize,
-            ),
-            color: style.foregroundColor,
-            style: IconButton.styleFrom(backgroundColor: style.centerButtonBackgroundColor),
-            onPressed: canInteract
-                ? () {
-                    controller.playOrPause();
-                    onInteract();
-                  }
-                : null,
-          );
-        }
-
-        return Row(
-          spacing: style.centerControlsSpacing,
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: <Widget>[
-            IconButton(
-              icon: Icon(_skipBackwardIcon(skip), size: style.centerSkipButtonIconSize),
-              color: style.foregroundColor,
-              style: IconButton.styleFrom(backgroundColor: style.centerButtonBackgroundColor),
-              onPressed: canInteract
-                  ? () async {
-                      await controller.seekBackward();
-                      onInteract();
-                    }
-                  : null,
-            ),
-            centerButton,
-            IconButton(
-              icon: Icon(_skipForwardIcon(skip), size: style.centerSkipButtonIconSize),
-              color: style.foregroundColor,
-              style: IconButton.styleFrom(backgroundColor: style.centerButtonBackgroundColor),
-              onPressed: canInteract
-                  ? () async {
-                      await controller.seekForward();
-                      onInteract();
-                    }
-                  : null,
-            ),
-          ],
-        );
-      },
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Bottom scrubber
-// ---------------------------------------------------------------------------
-
-class _DefaultBottomScrubber extends StatefulWidget {
-  final VideoPlayerSlotContext slot;
-  final VoidCallback onInteractStart;
-  final VoidCallback onInteractEnd;
-  final VoidCallback onInteract;
-  final bool enableFullscreen;
-
-  const _DefaultBottomScrubber({
-    required this.slot,
-    required this.onInteractStart,
-    required this.onInteractEnd,
-    required this.onInteract,
-    required this.enableFullscreen,
-  });
-
-  @override
-  State<_DefaultBottomScrubber> createState() => _DefaultBottomScrubberState();
-}
-
-class _DefaultBottomScrubberState extends State<_DefaultBottomScrubber> {
-  final FlutterSignal<double?> _dragValue = signal(null);
-
-  String _formatDuration(Duration duration, {bool negative = false}) {
-    if (duration.isNegative) duration = Duration.zero;
-    final totalSeconds = duration.inSeconds;
-    final hours = totalSeconds ~/ 3600;
-    final minutes = (totalSeconds % 3600) ~/ 60;
-    final seconds = totalSeconds % 60;
-    String two(int v) => v.toString().padLeft(2, '0');
-    final body = hours > 0
-        ? '${two(hours)}:${two(minutes)}:${two(seconds)}'
-        : '${two(minutes)}:${two(seconds)}';
-    return negative ? '-$body' : body;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final style = widget.slot.theme;
-    final controller = widget.slot.controller;
-
-    return Padding(
-      padding: style.bottomBarPadding,
-      child: SignalBuilder(
-        builder: (context) {
-          final position = controller.position.value;
-          final duration = controller.duration.value;
-          final hasDuration = duration.inMilliseconds > 0;
-          final progress = hasDuration
-              ? (position.inMilliseconds / duration.inMilliseconds).clamp(0.0, 1.0)
-              : 0.0;
-          final effectiveValue = _dragValue.value ?? progress;
-          final previewDuration = Duration(
-            milliseconds: (duration.inMilliseconds * effectiveValue).round(),
-          );
-          final remaining = hasDuration ? (duration - previewDuration) : Duration.zero;
-          final muted = controller.muted.value || controller.volume.value == 0;
-          final speed = controller.speed.value;
-          final fullscreen = controller.isFullscreen.value;
-          const speeds = <double>[0.5, 1.0, 1.25, 1.5, 2.0];
-
-          return Row(
-            spacing: 8,
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: <Widget>[
-              IconButton(
-                visualDensity: VisualDensity.compact,
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-                onPressed: () {
-                  controller.toggleMuted();
-                  widget.onInteract();
-                },
-                color: style.foregroundColor,
-                icon: Icon(muted ? Icons.volume_off : Icons.volume_up, size: style.chromeIconSize),
-              ),
-              Text(_formatDuration(previewDuration), style: style.timeTextStyle),
-              Expanded(
-                child: PlayerScrubberSlider(
-                  value: effectiveValue,
-                  activeColor: style.scrubberActiveColor,
-                  bufferedColor: style.scrubberBufferedColor,
-                  inactiveColor: style.scrubberInactiveColor,
-                  thumbColor: style.scrubberThumbColor,
-                  thumbShadowColor: style.scrubberThumbShadowColor,
-                  trackHeight: style.scrubberTrackHeight,
-                  activeTrackHeight: style.scrubberActiveTrackHeight,
-                  thumbRadius: style.scrubberThumbRadius,
-                  activeThumbRadius: style.scrubberActiveThumbRadius,
-                  onChangeStart: hasDuration
-                      ? (v) {
-                          _dragValue.value = v;
-                          widget.onInteractStart();
-                        }
-                      : null,
-                  onChanged: hasDuration
-                      ? (v) {
-                          _dragValue.value = v;
-                        }
-                      : null,
-                  onChangeEnd: hasDuration
-                      ? (v) {
-                          final target = Duration(
-                            milliseconds: (duration.inMilliseconds * v).round(),
-                          );
-                          controller.seek(target);
-                          _dragValue.value = null;
-                          widget.onInteractEnd();
-                        }
-                      : null,
-                ),
-              ),
-              Text(_formatDuration(remaining, negative: true), style: style.timeTextStyle),
-              PlayerMenuButton(
-                icon: Icons.speed,
-                color: style.foregroundColor,
-                tooltip: '倍速',
-                menuBuilder: (context, hideMenu) {
-                  return Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      for (final s in speeds)
-                        ListTile(
-                          dense: true,
-                          title: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text('${s}x'),
-                              if ((s - speed).abs() < 0.01) ...[
-                                const SizedBox(width: 8),
-                                Icon(
-                                  Icons.check,
-                                  size: style.menuIconSize,
-                                  color: style.foregroundColor,
-                                ),
-                              ],
-                            ],
-                          ),
-                          onTap: () {
-                            controller.setSpeed(s);
-                            hideMenu();
-                            widget.onInteract();
-                          },
-                        ),
-                    ],
-                  );
-                },
-              ),
-              if (widget.enableFullscreen)
-                IconButton(
-                  visualDensity: VisualDensity.compact,
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-                  onPressed: () {
-                    controller.toggleFullscreen();
-                    widget.onInteract();
-                  },
-                  color: style.foregroundColor,
-                  icon: Icon(
-                    fullscreen ? Icons.fullscreen_exit : Icons.fullscreen,
-                    size: style.chromeIconSize,
-                  ),
-                ),
-            ],
-          );
-        },
+        child: SignalBuilder(
+          builder: (context) {
+            widget.controller.isFullscreen.value;
+            if (_inlineSuppressed || _fullscreenPortal.isShowing) {
+              return const SizedBox.shrink();
+            }
+            final fs = widget.controller.isFullscreen.value;
+            return PlayerBody(
+              slot: slot,
+              controller: widget.controller,
+              surfaceKey: _playerSurfaceKey,
+              aspectRatio: widget.aspectRatio,
+              fill: widget.fill || fs,
+              fadeDuration: widget.fadeDuration,
+              visible: _visible,
+              isDesktop: _isDesktop,
+              focusNode: _focusNode,
+              leading: widget.leading,
+              title: widget.title,
+              actions: widget.actions,
+              topBarActions: widget.topBarActions,
+              showCastButton: widget.showCastButton,
+              showAspectRatioMenu: widget.showAspectRatioMenu,
+              enableFullscreen: widget.enableFullscreen,
+              errorBuilder: widget.errorBuilder,
+              loadingBuilder: widget.loadingBuilder,
+              topBarBuilder: widget.topBarBuilder,
+              centerControlsBuilder: widget.centerControlsBuilder,
+              bottomScrubberBuilder: widget.bottomScrubberBuilder,
+              castingOverlayBuilder: widget.castingOverlayBuilder,
+              extraOverlayBuilder: widget.extraOverlayBuilder,
+              onClose: _handleClose,
+              onToggleControls: _toggleControls,
+              onShowControls: _showControls,
+              onCancelHideTimer: () => _hideTimer?.cancel(),
+              onScheduleAutoHide: _scheduleAutoHide,
+            );
+          },
+        ),
       ),
     );
   }

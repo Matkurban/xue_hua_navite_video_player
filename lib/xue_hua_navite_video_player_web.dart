@@ -6,33 +6,22 @@ import 'package:flutter/services.dart';
 import 'package:flutter_web_plugins/flutter_web_plugins.dart';
 import 'package:web/web.dart' as html;
 
-extension _HTMLVideoRemotePlaybackExt on html.HTMLVideoElement {
-  @JS('remote')
-  external _JSRemotePlayback? get remotePlayback;
+import 'src/web/web_media_probe_service.dart';
+import 'src/web/web_remote_playback_controller.dart';
 
-  @JS('webkitShowPlaybackTargetPicker')
-  external JSFunction? get webkitShowPlaybackTargetPicker;
-
-  @JS('webkitCurrentPlaybackTargetIsWireless')
-  external bool? get webkitCurrentPlaybackTargetIsWireless;
-}
-
-extension type _JSRemotePlayback._(JSObject _) implements JSObject {
-  external String get state;
-  external JSPromise<JSNumber> watchAvailability(JSFunction callback);
-  external JSPromise<JSAny?> prompt();
-  external void addEventListener(String type, JSFunction listener);
-}
-
-/// Web 平台视频播放器插件实现，基于 HTML5 <video> 元素与 W3C Remote Playback API。
-/// Web platform video player plugin implementation using HTML5 <video> element.
+/// Web 平台视频播放器插件实现，基于 HTML5 `<video>` 元素与 W3C Remote Playback API。
+/// Web platform video player plugin implementation using HTML5 `<video>` element.
 class XueHuaNaviteVideoPlayerWeb {
   html.HTMLVideoElement? _videoElement;
   Timer? _positionTimer;
   final _eventController = StreamController<dynamic>.broadcast();
   bool _viewRegistered = false;
-  String _castState = 'unavailable';
-  String? _castDeviceName;
+
+  late final WebRemotePlaybackController _remotePlayback = WebRemotePlaybackController(
+    onStateChanged: (state, {deviceName}) {
+      _sendEvent('castState', <String, dynamic>{'state': state, 'deviceName': ?deviceName});
+    },
+  );
 
   /// 注册 Web 插件。 / Registers the web plugin.
   static void registerWith(Registrar registrar) {
@@ -56,12 +45,6 @@ class XueHuaNaviteVideoPlayerWeb {
 
   void _sendEvent(String name, dynamic value) {
     _eventController.add(<String, dynamic>{'event': name, 'value': value});
-  }
-
-  void _sendCastState(String state, {String? deviceName}) {
-    _castState = state;
-    _castDeviceName = deviceName;
-    _sendEvent('castState', <String, dynamic>{'state': state, 'deviceName': ?deviceName});
   }
 
   Future<dynamic> _handleMethodCall(MethodCall call) async {
@@ -108,22 +91,22 @@ class XueHuaNaviteVideoPlayerWeb {
         // Web sizes via CSS 100%; no-op.
         return null;
       case 'showCastPicker':
-        await _showCastPicker();
+        await _remotePlayback.showPicker(_videoElement);
         return null;
       case 'stopCasting':
-        await _stopCasting();
+        await _remotePlayback.stopCasting(_videoElement);
         return null;
       case 'dispose':
         _dispose();
         return null;
       case 'takeSnapshot':
-        return _takeSnapshot();
+        return WebMediaProbeService.takeSnapshot(_videoElement);
       case 'extractCovers':
         final args = Map<String, dynamic>.from(call.arguments as Map);
-        return _extractCovers(args);
+        return WebMediaProbeService.extractCovers(args);
       case 'getDuration':
         final args = Map<String, dynamic>.from(call.arguments as Map);
-        return _getDuration(args);
+        return WebMediaProbeService.getDuration(args);
       case 'getBrightness':
         return 1.0;
       case 'setBrightness':
@@ -162,7 +145,7 @@ class XueHuaNaviteVideoPlayerWeb {
       _setupListeners(_videoElement!);
     } else {
       // Re-emit current cast state on subsequent session creation.
-      _sendCastState(_castState, deviceName: _castDeviceName);
+      _remotePlayback.emitCurrentState();
     }
 
     return 0;
@@ -181,7 +164,6 @@ class XueHuaNaviteVideoPlayerWeb {
     video.addEventListener(
       'loadedmetadata',
       ((html.Event e) {
-        // Live streams often report Infinity/NaN — never call toInt() on those.
         if (video.duration.isFinite && video.duration > 0) {
           final durationMs = (video.duration * 1000).toInt();
           _sendEvent('duration', durationMs);
@@ -192,8 +174,6 @@ class XueHuaNaviteVideoPlayerWeb {
         if (vw > 0 && vh > 0) {
           _sendEvent('videoSize', {'width': vw, 'height': vh});
         }
-        // 如果视频未在自动播放，通知 Dart 转入 paused 状态（而非停留在 loading）。
-        // If the video is not auto-playing, notify Dart to transition to paused (instead of staying in loading).
         if (video.paused) {
           _sendEvent('playing', false);
         }
@@ -267,114 +247,7 @@ class XueHuaNaviteVideoPlayerWeb {
       }).toJS,
     );
 
-    _setupRemotePlayback(video);
-  }
-
-  void _setupRemotePlayback(html.HTMLVideoElement video) {
-    try {
-      final remote = video.remotePlayback;
-      if (remote != null) {
-        _sendCastState('notConnected');
-
-        remote.addEventListener(
-          'connecting',
-          ((html.Event _) {
-            _sendCastState('connecting', deviceName: 'Web Cast');
-          }).toJS,
-        );
-
-        remote.addEventListener(
-          'connect',
-          ((html.Event _) {
-            _sendCastState('connected', deviceName: 'Web Cast');
-          }).toJS,
-        );
-
-        remote.addEventListener(
-          'disconnect',
-          ((html.Event _) {
-            // Pause local playback when disconnecting from remote screen.
-            video.pause();
-            _sendCastState('notConnected');
-          }).toJS,
-        );
-
-        try {
-          remote
-              .watchAvailability(
-                ((JSBoolean available) {
-                  if (_castState == 'connected' || _castState == 'connecting') {
-                    return;
-                  }
-                  _sendCastState(available.toDart ? 'notConnected' : 'unavailable');
-                }).toJS,
-              )
-              .toDart
-              .catchError((Object _) {
-                // If watchAvailability is unsupported or disabled, keep 'notConnected'
-                // so prompt() can still be invoked by user gesture.
-                if (_castState == 'unavailable') {
-                  _sendCastState('notConnected');
-                }
-                return 0.toJS;
-              });
-        } catch (_) {}
-        return;
-      }
-
-      if (video.webkitShowPlaybackTargetPicker != null) {
-        _sendCastState('notConnected');
-        video.addEventListener(
-          'webkitcurrentplaybacktargetiswirelesschanged',
-          ((html.Event _) {
-            final wireless = video.webkitCurrentPlaybackTargetIsWireless ?? false;
-            if (wireless) {
-              _sendCastState('connected', deviceName: 'AirPlay');
-            } else {
-              video.pause();
-              _sendCastState('notConnected');
-            }
-          }).toJS,
-        );
-        return;
-      }
-    } catch (_) {}
-
-    _sendCastState('unavailable');
-  }
-
-  Future<void> _showCastPicker() async {
-    final video = _videoElement;
-    if (video == null) return;
-    try {
-      final remote = video.remotePlayback;
-      if (remote != null) {
-        await remote.prompt().toDart;
-        return;
-      }
-      final webkitPicker = video.webkitShowPlaybackTargetPicker;
-      if (webkitPicker != null) {
-        webkitPicker.callAsFunction(video);
-      }
-    } catch (_) {
-      // User cancelled picker or no devices found; keep existing cast state.
-    }
-  }
-
-  Future<void> _stopCasting() async {
-    final video = _videoElement;
-    if (video == null) return;
-    try {
-      video.pause();
-      // Toggling disableRemotePlayback forces W3C RemotePlayback disconnection;
-      // if browser ignores it, fall back to prompt() so user can disconnect.
-      video.disableRemotePlayback = true;
-      await Future<void>.delayed(const Duration(milliseconds: 50));
-      video.disableRemotePlayback = false;
-      _sendCastState('notConnected');
-    } catch (_) {
-      await _showCastPicker();
-    }
+    _remotePlayback.attach(video);
   }
 
   void _open(String url) {
@@ -409,166 +282,5 @@ class XueHuaNaviteVideoPlayerWeb {
     try {
       video.load();
     } catch (_) {}
-  }
-
-  /// 截取当前 `<video>` 画面为 PNG，返回 data URL（`data:image/png;base64,...`）。
-  /// 如果跨域阻止读取（canvas tainted），则返回 null。
-  ///
-  /// Capture the current `<video>` frame as a PNG data URL. Returns null if
-  /// the canvas is tainted due to cross-origin restrictions.
-  String? _takeSnapshot() {
-    final video = _videoElement;
-    if (video == null) return null;
-    try {
-      final w = video.videoWidth == 0 ? 640 : video.videoWidth;
-      final h = video.videoHeight == 0 ? 360 : video.videoHeight;
-      final canvas = html.HTMLCanvasElement()
-        ..width = w
-        ..height = h;
-      final ctx = canvas.getContext('2d') as html.CanvasRenderingContext2D?;
-      if (ctx == null) return null;
-      ctx.drawImage(video, 0, 0, w.toDouble(), h.toDouble());
-      return canvas.toDataURL('image/png');
-    } catch (_) {
-      return null;
-    }
-  }
-
-  /// 在 Web 上使用离屏 `<video>` 元素抽取候选封面帧，返回 data URL 列表。
-  ///
-  /// On Web, extract cover candidates with an offscreen `<video>`. Each frame
-  /// `path` field is a `data:` URL; caller stores it in an [XFile].
-  Future<List<Map<String, dynamic>>> _extractCovers(Map<String, dynamic> args) async {
-    final url = args['url'] as String? ?? '';
-    final count = (args['count'] as int?) ?? 5;
-    final candidates = (args['candidates'] as int?) ?? (count * 3);
-    final minBrightness = (args['minBrightness'] as num?)?.toDouble() ?? 0.08;
-    if (url.isEmpty) return const [];
-
-    final video = html.HTMLVideoElement()
-      ..crossOrigin = 'anonymous'
-      ..muted = true
-      ..preload = 'auto'
-      ..src = url;
-    try {
-      try {
-        await video.onLoadedMetadata.first.timeout(const Duration(seconds: 15));
-      } catch (_) {
-        return const [];
-      }
-      final durationSec = video.duration;
-      if (!durationSec.isFinite || durationSec <= 0) return const [];
-
-      final lower = durationSec * 0.05;
-      final upper = durationSec * 0.95;
-      final span = (upper - lower).clamp(0.1, double.infinity);
-      final n = candidates > count ? candidates : count;
-
-      final frames = <Map<String, dynamic>>[];
-      final canvas = html.HTMLCanvasElement();
-      for (var i = 0; i < n; i++) {
-        final t = lower + span * (i + 0.5) / n;
-        video.currentTime = t;
-        try {
-          await video.onSeeked.first.timeout(const Duration(seconds: 5));
-        } catch (_) {
-          continue;
-        }
-        final w = video.videoWidth == 0 ? 640 : video.videoWidth;
-        final h = video.videoHeight == 0 ? 360 : video.videoHeight;
-        canvas
-          ..width = w
-          ..height = h;
-        final ctx = canvas.getContext('2d') as html.CanvasRenderingContext2D?;
-        if (ctx == null) continue;
-        try {
-          ctx.drawImage(video, 0, 0, w.toDouble(), h.toDouble());
-          final brightness = _canvasAverageBrightness(ctx, w, h);
-          if (brightness < minBrightness) continue;
-          final dataUrl = canvas.toDataURL('image/png');
-          frames.add({'path': dataUrl, 'positionMs': (t * 1000).toInt(), 'brightness': brightness});
-        } catch (_) {
-          continue;
-        }
-      }
-      frames.sort(
-        (a, b) =>
-            ((b['brightness'] as num).toDouble()).compareTo((a['brightness'] as num).toDouble()),
-      );
-      return frames.take(count).toList();
-    } finally {
-      try {
-        video.removeAttribute('src');
-      } catch (_) {}
-    }
-  }
-
-  /// 使用离屏 `<video>` 元素仅加载媒体元数据以获取精确时长（毫秒）。
-  /// CORS 失败 / 超时 / `duration` 非有限值时返回 `null`。
-  ///
-  /// Probe accurate media duration (milliseconds) using a detached offscreen
-  /// `<video>` element with `preload=metadata`. Returns `null` on CORS
-  /// failure, timeout, or non-finite duration (HLS / live streams).
-  Future<int?> _getDuration(Map<String, dynamic> args) async {
-    final url = args['url'] as String? ?? '';
-    final timeoutMs = (args['timeoutMs'] as int?) ?? 15000;
-    if (url.isEmpty) return null;
-
-    final video = html.HTMLVideoElement()
-      ..crossOrigin = 'anonymous'
-      ..muted = true
-      ..preload = 'metadata'
-      ..src = url;
-    try {
-      await video.onLoadedMetadata.first.timeout(Duration(milliseconds: timeoutMs));
-    } catch (_) {
-      try {
-        video.removeAttribute('src');
-      } catch (_) {}
-      return null;
-    }
-    try {
-      final seconds = video.duration;
-      if (!seconds.isFinite || seconds <= 0) return null;
-      return (seconds * 1000).toInt();
-    } finally {
-      try {
-        video.removeAttribute('src');
-      } catch (_) {}
-    }
-  }
-
-  double _canvasAverageBrightness(html.CanvasRenderingContext2D ctx, int width, int height) {
-    // Sample a downscaled region to keep work bounded; we re-draw on a
-    // temp canvas to 64x64 then read imageData.
-    const sw = 64;
-    const sh = 64;
-    final tmp = html.HTMLCanvasElement()
-      ..width = sw
-      ..height = sh;
-    final tctx = tmp.getContext('2d') as html.CanvasRenderingContext2D?;
-    if (tctx == null) return 0;
-    tctx.drawImage(
-      ctx.canvas,
-      0,
-      0,
-      width.toDouble(),
-      height.toDouble(),
-      0,
-      0,
-      sw.toDouble(),
-      sh.toDouble(),
-    );
-    final imageData = tctx.getImageData(0, 0, sw, sh);
-    final data = imageData.data.toDart;
-    var total = 0.0;
-    for (var i = 0; i < data.length; i += 4) {
-      final r = data[i] / 255.0;
-      final g = data[i + 1] / 255.0;
-      final b = data[i + 2] / 255.0;
-      total += 0.299 * r + 0.587 * g + 0.114 * b;
-    }
-    final pixels = sw * sh;
-    return total / pixels;
   }
 }

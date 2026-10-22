@@ -14,6 +14,8 @@ export 'src/player/video_player_controller.dart';
 // UI
 export 'src/ui/core_player.dart';
 export 'src/ui/video_player.dart';
+export 'src/ui/video_player_slot_context.dart';
+export 'src/ui/style/video_player_design_style.dart';
 export 'src/ui/style/video_player_theme.dart';
 export 'src/ui/widgets/player_scrubber_slider.dart';
 

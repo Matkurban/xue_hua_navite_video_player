@@ -1,3 +1,4 @@
+import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:signals_flutter/signals_flutter.dart';
@@ -10,44 +11,40 @@ Future<void> main() async {
   runApp(const ExampleApp());
 }
 
-class ExampleApp extends StatefulWidget {
+final FlutterSignal<VideoPlayerDesignStyle> _playerStyleSignal = signal(
+  VideoPlayerDesignStyle.adaptive,
+);
+
+VideoPlayerTheme _resolveExamplePlayerTheme(VideoPlayerDesignStyle style) {
+  return switch (style) {
+    VideoPlayerDesignStyle.material => const VideoPlayerTheme.material(),
+    VideoPlayerDesignStyle.cupertino => const VideoPlayerTheme.cupertino(),
+    VideoPlayerDesignStyle.adaptive => VideoPlayerTheme.adaptive(),
+  };
+}
+
+class ExampleApp extends StatelessWidget {
   const ExampleApp({super.key});
 
   @override
-  State<ExampleApp> createState() => _ExampleAppState();
-}
-
-class _ExampleAppState extends State<ExampleApp> {
-  @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Video Player',
-      debugShowCheckedModeBanner: false,
-      themeMode: ThemeMode.system,
-      theme: AppTheme.light.copyWith(
-        extensions: const <ThemeExtension<dynamic>>[
-          VideoPlayerTheme(
-            foregroundColor: Colors.white,
-            backgroundColor: Colors.black,
+    return SignalBuilder(
+      builder: (context) {
+        final playerTheme = _resolveExamplePlayerTheme(_playerStyleSignal.value);
+        return MaterialApp(
+          title: 'Video Player',
+          debugShowCheckedModeBanner: false,
+          themeMode: ThemeMode.system,
+          theme: AppTheme.light.copyWith(
+            extensions: <ThemeExtension<dynamic>>[playerTheme],
           ),
-        ],
-      ),
-      darkTheme: AppTheme.dark.copyWith(
-        extensions: const <ThemeExtension<dynamic>>[
-          VideoPlayerTheme(
-            foregroundColor: Colors.white,
-            backgroundColor: Colors.black,
+          darkTheme: AppTheme.dark.copyWith(
+            extensions: <ThemeExtension<dynamic>>[playerTheme],
           ),
-        ],
-      ),
-      home: const HomePage(),
+          home: const HomePage(),
+        );
+      },
     );
-  }
-
-  @override
-  void dispose() {
-    XueHuaNaviteVideoPlayer.instance.dispose();
-    super.dispose();
   }
 }
 
@@ -88,7 +85,16 @@ class HomePage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Video Player')),
+      appBar: AppBar(
+        title: const Text('Video Player'),
+        bottom: const PreferredSize(
+          preferredSize: Size.fromHeight(48),
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(16, 0, 16, 10),
+            child: _DesignStyleSelector(),
+          ),
+        ),
+      ),
       body: ListView.separated(
         padding: const EdgeInsets.symmetric(vertical: 8),
         itemCount: _demoPlaylist.length,
@@ -114,6 +120,41 @@ class HomePage extends StatelessWidget {
           );
         },
       ),
+    );
+  }
+}
+
+class _DesignStyleSelector extends StatelessWidget {
+  const _DesignStyleSelector();
+
+  @override
+  Widget build(BuildContext context) {
+    return SignalBuilder(
+      builder: (context) {
+        final current = _playerStyleSignal.value;
+        return CupertinoSlidingSegmentedControl<VideoPlayerDesignStyle>(
+          groupValue: current,
+          children: const <VideoPlayerDesignStyle, Widget>{
+            VideoPlayerDesignStyle.adaptive: Padding(
+              padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              child: Text('Adaptive'),
+            ),
+            VideoPlayerDesignStyle.material: Padding(
+              padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              child: Text('Material'),
+            ),
+            VideoPlayerDesignStyle.cupertino: Padding(
+              padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              child: Text('Cupertino'),
+            ),
+          },
+          onValueChanged: (value) {
+            if (value != null) {
+              _playerStyleSignal.value = value;
+            }
+          },
+        );
+      },
     );
   }
 }
@@ -170,6 +211,10 @@ class _PlayerPageState extends State<PlayerPage> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  child: _DesignStyleSelector(),
+                ),
                 ListTile(
                   dense: true,
                   leading: const Icon(Icons.skip_previous),
@@ -295,7 +340,7 @@ class _PlayerPageState extends State<PlayerPage> {
           style: const TextStyle(color: Colors.white),
           overflow: TextOverflow.ellipsis,
         ),
-        actions: [
+        actions: <Widget>[
           IconButton(
             icon: const Icon(Icons.more_horiz),
             color: Colors.white,
