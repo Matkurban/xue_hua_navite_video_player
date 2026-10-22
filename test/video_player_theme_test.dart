@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:cross_file/cross_file.dart';
 import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';

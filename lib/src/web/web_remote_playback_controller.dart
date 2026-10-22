@@ -11,8 +11,7 @@ typedef WebCastStateCallback = void Function(String state, {String? deviceName})
 /// Coordinates W3C Remote Playback API and Safari WebKit AirPlay target picking
 /// for an [html.HTMLVideoElement].
 class WebRemotePlaybackController {
-  WebRemotePlaybackController({required WebCastStateCallback onStateChanged})
-    : _onStateChanged = onStateChanged;
+  WebRemotePlaybackController({required this._onStateChanged});
 
   final WebCastStateCallback _onStateChanged;
   String _state = 'unavailable';
