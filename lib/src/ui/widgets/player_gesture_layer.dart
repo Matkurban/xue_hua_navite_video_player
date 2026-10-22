@@ -205,7 +205,7 @@ class _GestureHudBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isCupertino = style.isCupertino;
+    final isCupertino = style.isCupertinoFor(context);
     final iconData = switch (kind) {
       PlayerHudKind.seek => PlayerIconCatalog.hudSeek(
         isCupertino: isCupertino,
@@ -226,11 +226,7 @@ class _GestureHudBadge extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          Icon(
-            iconData,
-            color: style.foregroundColor,
-            size: style.hudIconSize,
-          ),
+          Icon(iconData, color: style.foregroundColor, size: style.hudIconSize),
           SizedBox(width: style.hudIconGap),
           Text(label, style: style.hudTextStyle),
         ],

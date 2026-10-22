@@ -31,8 +31,40 @@ class PlayerBottomScrubber extends StatefulWidget {
 
 class _PlayerBottomScrubberState extends State<PlayerBottomScrubber> {
   final FlutterSignal<double?> _dragValue = signal(null);
+  VoidCallback? _durationResetDisposer;
 
   static const List<double> _speeds = <double>[0.5, 1.0, 1.25, 1.5, 2.0];
+
+  @override
+  void initState() {
+    super.initState();
+    _bindDurationListener();
+  }
+
+  void _bindDurationListener() {
+    _durationResetDisposer?.call();
+    _durationResetDisposer = effect(() {
+      final hasDuration = widget.slot.controller.duration.value.inMilliseconds > 0;
+      if (!hasDuration && _dragValue.value != null) {
+        _dragValue.value = null;
+      }
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant PlayerBottomScrubber oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.slot.controller, widget.slot.controller)) {
+      _dragValue.value = null;
+      _bindDurationListener();
+    }
+  }
+
+  @override
+  void dispose() {
+    _durationResetDisposer?.call();
+    super.dispose();
+  }
 
   static String _formatDuration(Duration duration, {bool negative = false}) {
     if (duration.isNegative) duration = Duration.zero;
@@ -51,7 +83,7 @@ class _PlayerBottomScrubberState extends State<PlayerBottomScrubber> {
   Widget build(BuildContext context) {
     final style = widget.slot.theme;
     final controller = widget.slot.controller;
-    final isCupertino = style.isCupertino;
+    final isCupertino = style.isCupertinoFor(context);
 
     return Padding(
       padding: style.bottomBarPadding,
@@ -63,7 +95,7 @@ class _PlayerBottomScrubberState extends State<PlayerBottomScrubber> {
           final progress = hasDuration
               ? (position.inMilliseconds / duration.inMilliseconds).clamp(0.0, 1.0)
               : 0.0;
-          final effectiveValue = _dragValue.value ?? progress;
+          final effectiveValue = hasDuration ? (_dragValue.value ?? progress) : 0.0;
           final previewDuration = Duration(
             milliseconds: (duration.inMilliseconds * effectiveValue).round(),
           );

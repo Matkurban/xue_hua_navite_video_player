@@ -53,11 +53,10 @@ class MediaProbe {
   }) async {
     assert(count > 0, 'count must be > 0');
     final candidateCount = (count * 3).clamp(count, 30);
-    final resolved = await source.resolveToNativeUrl();
-
-    final dir = kIsWeb ? '' : (outputDir ?? await pluginCoverDir());
 
     try {
+      final resolved = await source.resolveToNativeUrl();
+      final dir = kIsWeb ? '' : (outputDir ?? await pluginCoverDir());
       final raw = await _channel
           .invokeMethod<dynamic>('extractCovers', {
             'url': resolved,
@@ -67,15 +66,16 @@ class MediaProbe {
             'outputDir': dir,
           })
           .timeout(const Duration(seconds: 60));
-      if (raw == null) return const <VideoCoverFrame>[];
-      final list = (raw as List)
-          .map((e) => Map<String, dynamic>.from(e as Map))
+      if (raw is! List) return const <VideoCoverFrame>[];
+      final list = raw
+          .whereType<Map<Object?, Object?>>()
+          .map(Map<String, dynamic>.from)
           .map(_frameFromMap)
           .whereType<VideoCoverFrame>()
           .toList();
       list.sort((a, b) => b.brightness.compareTo(a.brightness));
       return list;
-    } on TimeoutException {
+    } catch (_) {
       return const <VideoCoverFrame>[];
     }
   }

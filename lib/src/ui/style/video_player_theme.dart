@@ -278,8 +278,13 @@ class VideoPlayerTheme extends ThemeExtension<VideoPlayerTheme> {
     return const VideoPlayerTheme.material();
   }
 
-  /// Whether this theme resolves to Cupertino design on the active platform.
+  /// Whether this theme resolves to Cupertino design on [defaultTargetPlatform].
   bool get isCupertino => designStyle.isCupertino();
+
+  /// Whether this theme resolves to Cupertino design respecting `Theme.of(context).platform`.
+  bool isCupertinoFor(BuildContext context) {
+    return designStyle.isCupertino(Theme.of(context).platform);
+  }
 
   /// Resolves [VideoPlayerTheme] from [context], falling back to platform-adaptive defaults.
   static VideoPlayerTheme of(BuildContext context) {

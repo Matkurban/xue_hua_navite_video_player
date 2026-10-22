@@ -350,9 +350,22 @@ class PlaybackSession {
     }
   }
 
-  Future<void> seek(Duration position) async {
+  Future<void> seek(Duration targetPosition) async {
     if (_disposed) return;
-    await _backend.seek(position.inMilliseconds);
+    final total = duration.value;
+    var clamped = targetPosition < Duration.zero ? Duration.zero : targetPosition;
+    if (total > Duration.zero && clamped > total) {
+      clamped = total;
+    }
+    await _backend.seek(clamped.inMilliseconds);
+    if (_disposed) return;
+    position.value = clamped;
+    // If the user seeks away from the end while in completed state, transition
+    // to paused so that subsequent play() resumes from the seeked position
+    // instead of resetting back to 00:00.
+    if (playState.value == PlayState.completed && (total == Duration.zero || clamped < total)) {
+      playState.value = _backendPlaying ? PlayState.playing : PlayState.paused;
+    }
   }
 
   Future<void> setVolume(double value) async {

@@ -59,9 +59,7 @@ class CorePlayer extends SignalWidget {
         fit: StackFit.expand,
         alignment: Alignment.center,
         children: <Widget>[
-          Positioned.fill(
-            child: _MediaSurface(controller: controller),
-          ),
+          Positioned.fill(child: _MediaSurface(controller: controller)),
           if (showLoading) loadingBuilder?.call(context) ?? const SizedBox.shrink(),
         ],
       ),

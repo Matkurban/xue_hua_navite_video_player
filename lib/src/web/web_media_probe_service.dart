@@ -26,9 +26,7 @@ abstract final class WebMediaProbeService {
   }
 
   /// Extracts candidate cover frames using an offscreen `<video>` element.
-  static Future<List<Map<String, dynamic>>> extractCovers(
-    Map<String, dynamic> args,
-  ) async {
+  static Future<List<Map<String, dynamic>>> extractCovers(Map<String, dynamic> args) async {
     final url = args['url'] as String? ?? '';
     final count = (args['count'] as int?) ?? 5;
     final candidates = (args['candidates'] as int?) ?? (count * 3);
@@ -76,19 +74,14 @@ abstract final class WebMediaProbeService {
           final brightness = _canvasAverageBrightness(ctx, w, h);
           if (brightness < minBrightness) continue;
           final dataUrl = canvas.toDataURL('image/png');
-          frames.add({
-            'path': dataUrl,
-            'positionMs': (t * 1000).toInt(),
-            'brightness': brightness,
-          });
+          frames.add({'path': dataUrl, 'positionMs': (t * 1000).toInt(), 'brightness': brightness});
         } catch (_) {
           continue;
         }
       }
       frames.sort(
-        (a, b) => ((b['brightness'] as num).toDouble()).compareTo(
-          (a['brightness'] as num).toDouble(),
-        ),
+        (a, b) =>
+            ((b['brightness'] as num).toDouble()).compareTo((a['brightness'] as num).toDouble()),
       );
       return frames.take(count).toList();
     } finally {
@@ -128,11 +121,7 @@ abstract final class WebMediaProbeService {
     }
   }
 
-  static double _canvasAverageBrightness(
-    html.CanvasRenderingContext2D ctx,
-    int width,
-    int height,
-  ) {
+  static double _canvasAverageBrightness(html.CanvasRenderingContext2D ctx, int width, int height) {
     const sw = 64;
     const sh = 64;
     final tmp = html.HTMLCanvasElement()

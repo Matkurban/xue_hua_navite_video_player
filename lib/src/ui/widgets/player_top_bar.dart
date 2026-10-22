@@ -39,7 +39,7 @@ class PlayerTopBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final style = slot.theme;
     final controller = slot.controller;
-    final isCupertino = style.isCupertino;
+    final isCupertino = style.isCupertinoFor(context);
 
     return SignalBuilder(
       builder: (context) {
@@ -51,28 +51,19 @@ class PlayerTopBar extends StatelessWidget {
           ...actions,
           ...topBarActions,
           if (showCastButton && castSupported)
-            _TopBarCastButton(
-              slot: slot,
-              castState: castState,
-              onShowControls: onShowControls,
-            ),
+            _TopBarCastButton(slot: slot, castState: castState, onShowControls: onShowControls),
           if (showAspectRatioMenu)
-            _TopBarAspectRatioMenu(
-              slot: slot,
-              onShowControls: onShowControls,
-            ),
+            _TopBarAspectRatioMenu(slot: slot, onShowControls: onShowControls),
         ];
 
-        final closeButton = leading ??
+        final closeButton =
+            leading ??
             PlayerIconButton(
               compact: isCupertino,
               onPressed: onClose,
               color: style.foregroundColor,
               icon: Icon(
-                PlayerIconCatalog.close(
-                  isCupertino: isCupertino,
-                  isFullscreen: isFullscreen,
-                ),
+                PlayerIconCatalog.close(isCupertino: isCupertino, isFullscreen: isFullscreen),
                 size: style.chromeIconSize,
               ),
             );
@@ -108,22 +99,11 @@ class PlayerTopBar extends StatelessWidget {
           child: Row(
             children: <Widget>[
               Expanded(
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: wrappedLeading,
-                ),
+                child: Align(alignment: Alignment.centerLeft, child: wrappedLeading),
               ),
+              Expanded(flex: 2, child: Center(child: title ?? const SizedBox.shrink())),
               Expanded(
-                flex: 2,
-                child: Center(
-                  child: title ?? const SizedBox.shrink(),
-                ),
-              ),
-              Expanded(
-                child: Align(
-                  alignment: Alignment.centerRight,
-                  child: trailingRow,
-                ),
+                child: Align(alignment: Alignment.centerRight, child: trailingRow),
               ),
             ],
           ),
@@ -148,9 +128,8 @@ class _TopBarCastButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final style = slot.theme;
     final controller = slot.controller;
-    final isCupertino = style.isCupertino;
-    final isBusy =
-        castState == CastState.connecting || castState == CastState.disconnecting;
+    final isCupertino = style.isCupertinoFor(context);
+    final isBusy = castState == CastState.connecting || castState == CastState.disconnecting;
 
     return PlayerIconButton(
       key: const ValueKey<String>('video_player_cast_button'),
@@ -162,15 +141,9 @@ class _TopBarCastButton extends StatelessWidget {
         onShowControls();
       },
       icon: isBusy
-          ? PlayerLoadingIndicator(
-              size: style.chromeIconSize,
-              color: style.foregroundColor,
-            )
+          ? PlayerLoadingIndicator(size: style.chromeIconSize, color: style.foregroundColor)
           : Icon(
-              PlayerIconCatalog.cast(
-                isCupertino: isCupertino,
-                state: castState,
-              ),
+              PlayerIconCatalog.cast(isCupertino: isCupertino, state: castState),
               size: style.chromeIconSize,
             ),
     );
@@ -178,10 +151,7 @@ class _TopBarCastButton extends StatelessWidget {
 }
 
 class _TopBarAspectRatioMenu extends StatelessWidget {
-  const _TopBarAspectRatioMenu({
-    required this.slot,
-    required this.onShowControls,
-  });
+  const _TopBarAspectRatioMenu({required this.slot, required this.onShowControls});
 
   final VideoPlayerSlotContext slot;
   final VoidCallback onShowControls;
@@ -196,7 +166,7 @@ class _TopBarAspectRatioMenu extends StatelessWidget {
   Widget build(BuildContext context) {
     final style = slot.theme;
     final controller = slot.controller;
-    final isCupertino = style.isCupertino;
+    final isCupertino = style.isCupertinoFor(context);
     const modes = AspectRatioMode.values;
 
     return PlayerMenuButton(

@@ -100,7 +100,7 @@ class PlayerMenuOptionTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final style = VideoPlayerTheme.of(context);
-    final isCupertino = style.isCupertino;
+    final isCupertino = style.isCupertinoFor(context);
     final checkIcon = PlayerIconCatalog.check(isCupertino: isCupertino);
 
     if (isCupertino) {
@@ -133,11 +133,7 @@ class PlayerMenuOptionTile extends StatelessWidget {
                 width: style.menuIconSize,
                 height: style.menuIconSize,
                 child: selected
-                    ? Icon(
-                        checkIcon,
-                        size: style.menuIconSize,
-                        color: style.foregroundColor,
-                      )
+                    ? Icon(checkIcon, size: style.menuIconSize, color: style.foregroundColor)
                     : null,
               ),
             ],
@@ -154,11 +150,7 @@ class PlayerMenuOptionTile extends StatelessWidget {
           Text(label),
           if (selected) ...<Widget>[
             const SizedBox(width: 8),
-            Icon(
-              checkIcon,
-              size: style.menuIconSize,
-              color: style.foregroundColor,
-            ),
+            Icon(checkIcon, size: style.menuIconSize, color: style.foregroundColor),
           ],
         ],
       ),

@@ -1,4 +1,5 @@
 import 'dart:js_interop';
+
 import 'package:web/web.dart' as html;
 
 /// JS interop extensions for HTML5 `<video>` remote playback (W3C Remote Playback API & Safari AirPlay).

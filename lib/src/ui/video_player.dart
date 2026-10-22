@@ -125,6 +125,11 @@ class _VideoPlayerState extends State<VideoPlayer> {
   void initState() {
     super.initState();
     widget.controller.setSkipSecondType(widget.skipSecondType);
+    _bindControllerEffects();
+  }
+
+  void _bindControllerEffects() {
+    _disposeControllerEffects();
 
     _playingDisposer = effect(() {
       final playing = widget.controller.isPlaying.value;
@@ -189,10 +194,27 @@ class _VideoPlayerState extends State<VideoPlayer> {
     });
   }
 
+  void _disposeControllerEffects() {
+    _playingDisposer?.call();
+    _playingDisposer = null;
+    _bufferingDisposer?.call();
+    _bufferingDisposer = null;
+    _completedDisposer?.call();
+    _completedDisposer = null;
+    _castingDisposer?.call();
+    _castingDisposer = null;
+    _fullscreenDisposer?.call();
+    _fullscreenDisposer = null;
+  }
+
   @override
   void didUpdateWidget(covariant VideoPlayer oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.skipSecondType != widget.skipSecondType) {
+    if (!identical(oldWidget.controller, widget.controller)) {
+      _hideTimer?.cancel();
+      widget.controller.setSkipSecondType(widget.skipSecondType);
+      _bindControllerEffects();
+    } else if (oldWidget.skipSecondType != widget.skipSecondType) {
       widget.controller.setSkipSecondType(widget.skipSecondType);
     }
   }
@@ -200,11 +222,7 @@ class _VideoPlayerState extends State<VideoPlayer> {
   @override
   void dispose() {
     _hideTimer?.cancel();
-    _playingDisposer?.call();
-    _bufferingDisposer?.call();
-    _completedDisposer?.call();
-    _castingDisposer?.call();
-    _fullscreenDisposer?.call();
+    _disposeControllerEffects();
     if (_fullscreenPortal.isShowing) {
       _fullscreenPortal.hide();
     }

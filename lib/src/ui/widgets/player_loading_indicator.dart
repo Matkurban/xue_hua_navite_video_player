@@ -6,12 +6,7 @@ import '../style/video_player_theme.dart';
 /// Theme-adaptive activity indicator: [CupertinoActivityIndicator] for Cupertino,
 /// [CircularProgressIndicator] for Material.
 class PlayerLoadingIndicator extends StatelessWidget {
-  const PlayerLoadingIndicator({
-    super.key,
-    this.size,
-    this.color,
-    this.strokeWidth = 2.2,
-  });
+  const PlayerLoadingIndicator({super.key, this.size, this.color, this.strokeWidth = 2.2});
 
   final double? size;
   final Color? color;
@@ -23,7 +18,7 @@ class PlayerLoadingIndicator extends StatelessWidget {
     final effectiveColor = color ?? theme.foregroundColor;
     final effectiveSize = size ?? theme.chromeIconSize;
 
-    if (theme.isCupertino) {
+    if (theme.isCupertinoFor(context)) {
       return SizedBox(
         width: effectiveSize,
         height: effectiveSize,

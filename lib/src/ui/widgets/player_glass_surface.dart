@@ -26,11 +26,7 @@ class PlayerGlassSurface extends StatelessWidget {
   Widget build(BuildContext context) {
     final content = padding != null ? Padding(padding: padding!, child: child) : child;
     final decorated = DecoratedBox(
-      decoration: BoxDecoration(
-        color: backgroundColor,
-        borderRadius: borderRadius,
-        border: border,
-      ),
+      decoration: BoxDecoration(color: backgroundColor, borderRadius: borderRadius, border: border),
       child: content,
     );
 

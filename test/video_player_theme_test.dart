@@ -77,7 +77,7 @@ void main() {
     });
   });
 
-  group('Material vs Cupertino UI rendering', () {
+  group('Material vs Cupertino UI rendering & bug regressions', () {
     testWidgets('renders Material controls when VideoPlayerTheme.material is configured', (
       WidgetTester tester,
     ) async {
@@ -170,12 +170,44 @@ void main() {
 
       await controller.dispose();
     });
+
+    test('seek while completed transitions state to paused so subsequent play resumes at seeked position', () async {
+      final backend = _FakeBackend();
+      final controller = VideoPlayerController(
+        backend: backend,
+        fullscreen: _NoopFullscreen(),
+      );
+      await controller.initialize();
+      await controller.playNetwork('https://example.com/sample.mp4');
+
+      backend.emit(const PlayerEvent.duration(Duration(seconds: 60)));
+      backend.emit(const PlayerEvent.playing(true));
+      backend.emit(const PlayerEvent.position(Duration(seconds: 60)));
+      await Future<void>.delayed(Duration.zero);
+
+      backend.emit(const PlayerEvent.playing(false));
+      backend.emit(const PlayerEvent.completed());
+      await Future<void>.delayed(Duration.zero);
+      expect(controller.playState.value, PlayState.completed);
+
+      // Seek back to 20s while in completed state.
+      await controller.seek(const Duration(seconds: 20));
+      expect(controller.position.value, const Duration(seconds: 20));
+      expect(controller.playState.value, PlayState.paused);
+
+      // Calling play() should resume from 20s instead of seeking back to 0.
+      await controller.play();
+      expect(backend.lastSeekMs, 20000);
+
+      await controller.dispose();
+    });
   });
 }
 
 class _FakeBackend implements PlayerBackend {
   final StreamController<PlayerEvent> _events = StreamController<PlayerEvent>.broadcast();
   final FlutterSignal<int?> _textureId = signal<int?>(1);
+  int? lastSeekMs;
 
   void emit(PlayerEvent event) {
     if (!_events.isClosed) {
@@ -202,7 +234,9 @@ class _FakeBackend implements PlayerBackend {
   Future<void> pause() async {}
 
   @override
-  Future<void> seek(int positionMs) async {}
+  Future<void> seek(int positionMs) async {
+    lastSeekMs = positionMs;
+  }
 
   @override
   Future<void> setVolume(double volume) async {}

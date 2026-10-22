@@ -77,131 +77,136 @@ class PlayerBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final style = slot.theme;
-    final isFullscreen = controller.isFullscreen.value;
-
-    Widget stack = ColoredBox(
-      color: style.backgroundColor,
-      child: Stack(
-        fit: StackFit.expand,
-        children: <Widget>[
-          Positioned.fill(
-            child: CorePlayer(
-              key: surfaceKey,
-              controller: controller,
-              aspectRatio: aspectRatio,
-              backgroundColor: style.backgroundColor,
-              errorBuilder: errorBuilder,
-              loadingBuilder: loadingBuilder,
-            ),
-          ),
-          // Hide frozen local video frames while casting to a remote device.
-          Positioned.fill(
-            child: SignalBuilder(
-              builder: (context) {
-                if (!controller.isCasting.value) {
-                  return const SizedBox.shrink();
-                }
-                return ColoredBox(color: style.backgroundColor);
-              },
-            ),
-          ),
-          Positioned.fill(
-            child: isFullscreen && !kIsWeb
-                ? PlayerGestureLayer(
-                    controller: controller,
-                    onTap: onToggleControls,
-                    child: const SizedBox.expand(),
-                  )
-                : GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: () {
-                      if (isDesktop) {
-                        focusNode.requestFocus();
-                      }
-                      onToggleControls();
-                    },
-                    child: const SizedBox.expand(),
-                  ),
-          ),
-          Positioned.fill(
-            child: SafeArea(
-              child: AnimatedSwitcher(
-                duration: fadeDuration,
-                child: SignalBuilder(
-                  builder: (context) {
-                    if (!visible.value) {
-                      return const SizedBox.shrink();
-                    }
-                    return Column(
-                      mainAxisSize: MainAxisSize.max,
-                      children: <Widget>[
-                        topBarBuilder?.call(context, slot) ??
-                            PlayerTopBar(
-                              slot: slot,
-                              leading: leading,
-                              title: title,
-                              actions: actions,
-                              topBarActions: topBarActions,
-                              showCastButton: showCastButton,
-                              showAspectRatioMenu: showAspectRatioMenu,
-                              onClose: onClose,
-                              onShowControls: onShowControls,
-                            ),
-                        Expanded(
-                          child: Center(
-                            child:
-                                centerControlsBuilder?.call(context, slot) ??
-                                PlayerCenterControls(slot: slot, onInteract: onShowControls),
-                          ),
-                        ),
-                        bottomScrubberBuilder?.call(context, slot) ??
-                            PlayerBottomScrubber(
-                              slot: slot,
-                              enableFullscreen: enableFullscreen,
-                              onInteractStart: onCancelHideTimer,
-                              onInteractEnd: onScheduleAutoHide,
-                              onInteract: onShowControls,
-                            ),
-                      ],
-                    );
-                  },
-                ),
-              ),
-            ),
-          ),
-          // Interactive casting status & quick actions ("切换设备" / "退出投屏").
-          Positioned.fill(
-            child: SignalBuilder(
-              builder: (context) {
-                if (!controller.isCasting.value) {
-                  return const SizedBox.shrink();
-                }
-                return castingOverlayBuilder?.call(context, slot) ??
-                    PlayerCastingOverlay(slot: slot, onInteract: onShowControls);
-              },
-            ),
-          ),
-          if (extraOverlayBuilder != null)
-            Positioned.fill(child: extraOverlayBuilder!(context, slot)),
-        ],
-      ),
-    );
-
-    if (isDesktop) {
-      stack = Focus(
-        focusNode: focusNode,
-        autofocus: isFullscreen,
-        onKeyEvent: (node, event) => handlePlayerKeyEvent(controller, event),
-        child: stack,
-      );
-    }
-
-    if (fill || isFullscreen) {
-      return stack;
-    }
 
     return SignalBuilder(
       builder: (context) {
+        final isFullscreen = controller.isFullscreen.value;
+
+        Widget stack = ColoredBox(
+          color: style.backgroundColor,
+          child: Stack(
+            fit: StackFit.expand,
+            children: <Widget>[
+              Positioned.fill(
+                child: CorePlayer(
+                  key: surfaceKey,
+                  controller: controller,
+                  aspectRatio: aspectRatio,
+                  backgroundColor: style.backgroundColor,
+                  errorBuilder: errorBuilder,
+                  loadingBuilder: loadingBuilder,
+                ),
+              ),
+              // Hide frozen local video frames while casting to a remote device.
+              Positioned.fill(
+                child: SignalBuilder(
+                  builder: (context) {
+                    if (!controller.isCasting.value) {
+                      return const SizedBox.shrink();
+                    }
+                    return ColoredBox(color: style.backgroundColor);
+                  },
+                ),
+              ),
+              Positioned.fill(
+                child: isFullscreen && !kIsWeb
+                    ? PlayerGestureLayer(
+                        controller: controller,
+                        onTap: onToggleControls,
+                        child: const SizedBox.expand(),
+                      )
+                    : GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () {
+                          if (isDesktop) {
+                            focusNode.requestFocus();
+                          }
+                          onToggleControls();
+                        },
+                        child: const SizedBox.expand(),
+                      ),
+              ),
+              Positioned.fill(
+                child: SafeArea(
+                  child: SignalBuilder(
+                    builder: (context) {
+                      final isVisible = visible.value;
+                      return AnimatedSwitcher(
+                        duration: fadeDuration,
+                        child: !isVisible
+                            ? const SizedBox.shrink(key: ValueKey<bool>(false))
+                            : Column(
+                                key: const ValueKey<bool>(true),
+                                mainAxisSize: MainAxisSize.max,
+                                children: <Widget>[
+                                  topBarBuilder?.call(context, slot) ??
+                                      PlayerTopBar(
+                                        slot: slot,
+                                        leading: leading,
+                                        title: title,
+                                        actions: actions,
+                                        topBarActions: topBarActions,
+                                        showCastButton: showCastButton,
+                                        showAspectRatioMenu: showAspectRatioMenu,
+                                        onClose: onClose,
+                                        onShowControls: onShowControls,
+                                      ),
+                                  Expanded(
+                                    child: Center(
+                                      child:
+                                          centerControlsBuilder?.call(context, slot) ??
+                                          PlayerCenterControls(
+                                            slot: slot,
+                                            onInteract: onShowControls,
+                                          ),
+                                    ),
+                                  ),
+                                  bottomScrubberBuilder?.call(context, slot) ??
+                                      PlayerBottomScrubber(
+                                        slot: slot,
+                                        enableFullscreen: enableFullscreen,
+                                        onInteractStart: onCancelHideTimer,
+                                        onInteractEnd: onScheduleAutoHide,
+                                        onInteract: onShowControls,
+                                      ),
+                                ],
+                              ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+              // Interactive casting status & quick actions ("切换设备" / "退出投屏").
+              Positioned.fill(
+                child: SignalBuilder(
+                  builder: (context) {
+                    if (!controller.isCasting.value) {
+                      return const SizedBox.shrink();
+                    }
+                    return castingOverlayBuilder?.call(context, slot) ??
+                        PlayerCastingOverlay(slot: slot, onInteract: onShowControls);
+                  },
+                ),
+              ),
+              if (extraOverlayBuilder != null)
+                Positioned.fill(child: extraOverlayBuilder!(context, slot)),
+            ],
+          ),
+        );
+
+        if (isDesktop) {
+          stack = Focus(
+            focusNode: focusNode,
+            autofocus: isFullscreen,
+            onKeyEvent: (node, event) => handlePlayerKeyEvent(controller, event),
+            child: stack,
+          );
+        }
+
+        if (fill || isFullscreen) {
+          return stack;
+        }
+
         final double effectiveAspectRatio;
         if (aspectRatio != null) {
           effectiveAspectRatio = aspectRatio!;

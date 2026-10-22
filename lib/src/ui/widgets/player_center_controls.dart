@@ -10,11 +10,7 @@ import 'player_loading_indicator.dart';
 
 /// Default center playback transport controls (skip backward, play/pause/replay, skip forward).
 class PlayerCenterControls extends StatelessWidget {
-  const PlayerCenterControls({
-    super.key,
-    required this.slot,
-    required this.onInteract,
-  });
+  const PlayerCenterControls({super.key, required this.slot, required this.onInteract});
 
   final VideoPlayerSlotContext slot;
   final VoidCallback onInteract;
@@ -23,7 +19,7 @@ class PlayerCenterControls extends StatelessWidget {
   Widget build(BuildContext context) {
     final style = slot.theme;
     final controller = slot.controller;
-    final isCupertino = style.isCupertino;
+    final isCupertino = style.isCupertinoFor(context);
 
     return SignalBuilder(
       builder: (context) {
@@ -48,10 +44,7 @@ class PlayerCenterControls extends StatelessWidget {
                     }
                   : null,
               icon: Icon(
-                PlayerIconCatalog.skipBackward(
-                  isCupertino: isCupertino,
-                  seconds: skip,
-                ),
+                PlayerIconCatalog.skipBackward(isCupertino: isCupertino, seconds: skip),
                 size: style.centerSkipButtonIconSize,
               ),
             ),
@@ -73,10 +66,7 @@ class PlayerCenterControls extends StatelessWidget {
                     }
                   : null,
               icon: Icon(
-                PlayerIconCatalog.skipForward(
-                  isCupertino: isCupertino,
-                  seconds: skip,
-                ),
+                PlayerIconCatalog.skipForward(isCupertino: isCupertino, seconds: skip),
                 size: style.centerSkipButtonIconSize,
               ),
             ),
@@ -106,7 +96,7 @@ class _CenterPrimaryControlButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final style = slot.theme;
     final controller = slot.controller;
-    final isCupertino = style.isCupertino;
+    final isCupertino = style.isCupertinoFor(context);
 
     if (state == PlayState.loading || buffering) {
       final indicator = PlayerLoadingIndicator(

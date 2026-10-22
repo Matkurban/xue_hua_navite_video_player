@@ -1,13 +1,10 @@
 import 'package:flutter/services.dart';
-import 'package:signals_flutter/signals_flutter.dart';
 
-import '../data/enums/aspect_ratio_mode.dart';
 import '../data/enums/cast_state.dart';
+import 'player_event.dart';
 
 /// Decodes raw event maps from `EventChannel('xue_hua_navite_video_player/player/events')`
 /// into strongly-typed [PlayerEvent] instances.
-import 'player_event.dart';
-
 abstract final class PlayerEventDecoder {
   static PlayerEvent? decode(Map<String, dynamic> event) {
     final type = event['event'] as String?;
@@ -40,8 +37,9 @@ abstract final class PlayerEventDecoder {
         final w = (value['width'] as num?)?.toDouble() ?? 0;
         final h = (value['height'] as num?)?.toDouble() ?? 0;
         final rotation = (value['rotationDegrees'] as num?)?.toInt() ?? 0;
+        final normalizedRotation = ((rotation % 360) + 360) % 360;
         final size = (w > 0 && h > 0) ? Size(w, h) : Size.zero;
-        return PlayerEvent.videoSize(size, rotation % 360);
+        return PlayerEvent.videoSize(size, normalizedRotation);
       case 'castState':
         final value = event['value'];
         if (value is Map) {

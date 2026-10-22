@@ -9,11 +9,7 @@ import 'player_icon_button.dart';
 
 /// Default wireless casting status overlay and quick action buttons ("切换设备" / "退出投屏").
 class PlayerCastingOverlay extends StatelessWidget {
-  const PlayerCastingOverlay({
-    super.key,
-    required this.slot,
-    required this.onInteract,
-  });
+  const PlayerCastingOverlay({super.key, required this.slot, required this.onInteract});
 
   final VideoPlayerSlotContext slot;
   final VoidCallback onInteract;
@@ -22,7 +18,7 @@ class PlayerCastingOverlay extends StatelessWidget {
   Widget build(BuildContext context) {
     final style = slot.theme;
     final controller = slot.controller;
-    final isCupertino = style.isCupertino;
+    final isCupertino = style.isCupertinoFor(context);
 
     return SignalBuilder(
       builder: (context) {

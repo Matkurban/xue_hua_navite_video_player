@@ -38,8 +38,9 @@ class PlayerIconButton extends StatelessWidget {
     final style = VideoPlayerTheme.of(context);
     final foreground = color ?? style.foregroundColor;
 
-    if (style.isCupertino) {
-      final buttonPadding = padding ??
+    if (style.isCupertinoFor(context)) {
+      final buttonPadding =
+          padding ??
           (circularGlassInCupertino
               ? const EdgeInsets.all(12)
               : (compact ? const EdgeInsets.all(6) : const EdgeInsets.all(8)));
@@ -107,7 +108,7 @@ class PlayerActionPillButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final style = VideoPlayerTheme.of(context);
 
-    if (style.isCupertino) {
+    if (style.isCupertinoFor(context)) {
       return PlayerGlassSurface(
         backgroundColor: style.barBackgroundColor,
         borderRadius: BorderRadius.circular(999),

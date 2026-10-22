@@ -41,12 +41,24 @@ class AssetExtractor {
     if (await file.exists() && await file.length() > 0) {
       return outPath;
     }
+
     final bytes = await bundle.load(assetPath);
     final buffer = bytes.buffer.asUint8List(bytes.offsetInBytes, bytes.lengthInBytes);
-    final sink = file.openWrite();
-    sink.add(buffer);
-    await sink.flush();
-    await sink.close();
+
+    // Write to a temporary file first and rename atomically so interrupted writes
+    // never leave a truncated/corrupted media file at outPath.
+    final tmpFile = File('$outPath.tmp.${DateTime.now().microsecondsSinceEpoch}');
+    try {
+      await tmpFile.writeAsBytes(buffer, flush: true);
+      await tmpFile.rename(outPath);
+    } catch (_) {
+      try {
+        if (await tmpFile.exists()) {
+          await tmpFile.delete();
+        }
+      } catch (_) {}
+      rethrow;
+    }
     return outPath;
   }
 }

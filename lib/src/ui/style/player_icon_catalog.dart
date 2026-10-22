@@ -26,9 +26,7 @@ abstract final class PlayerIconCatalog {
   }
 
   static IconData aspectRatio({required bool isCupertino}) {
-    return isCupertino
-        ? CupertinoIcons.arrow_up_left_arrow_down_right
-        : Icons.aspect_ratio;
+    return isCupertino ? CupertinoIcons.arrow_up_left_arrow_down_right : Icons.aspect_ratio;
   }
 
   static IconData check({required bool isCupertino}) {
@@ -47,10 +45,7 @@ abstract final class PlayerIconCatalog {
     return isCupertino ? CupertinoIcons.arrow_counterclockwise : Icons.replay_rounded;
   }
 
-  static IconData skipBackward({
-    required bool isCupertino,
-    required SkipSecondType seconds,
-  }) {
+  static IconData skipBackward({required bool isCupertino, required SkipSecondType seconds}) {
     if (isCupertino) {
       return switch (seconds) {
         SkipSecondType.second5 => CupertinoIcons.gobackward,
@@ -71,10 +66,7 @@ abstract final class PlayerIconCatalog {
     };
   }
 
-  static IconData skipForward({
-    required bool isCupertino,
-    required SkipSecondType seconds,
-  }) {
+  static IconData skipForward({required bool isCupertino, required SkipSecondType seconds}) {
     if (isCupertino) {
       return switch (seconds) {
         SkipSecondType.second5 => CupertinoIcons.goforward,
@@ -108,9 +100,7 @@ abstract final class PlayerIconCatalog {
 
   static IconData fullscreen({required bool isCupertino, required bool isFullscreen}) {
     if (isCupertino) {
-      return isFullscreen
-          ? CupertinoIcons.fullscreen_exit
-          : CupertinoIcons.fullscreen;
+      return isFullscreen ? CupertinoIcons.fullscreen_exit : CupertinoIcons.fullscreen;
     }
     return isFullscreen ? Icons.fullscreen_exit_rounded : Icons.fullscreen_rounded;
   }
