@@ -1,4 +1,4 @@
-# XueHuaNaviteVideoPlayer, VideoCoverFrame, XFile
+# XueHuaNaviteVideoPlayer, VideoCoverFrame, NaviteFile
 
 `MediaProbe` is **not** exported. Use the singleton below.
 
@@ -59,7 +59,7 @@ Behavior:
 - Null channel result → empty list.
 - Frames with missing/empty `path` are dropped.
 - Remaining frames sorted by `brightness` **descending**.
-- Each frame image is PNG `XFile`. `uri` is the cross-platform id (`file://` on native, a data or blob URL on web). The raw native path is `FileSystemXFile.path`.
+- Each frame image is PNG `NaviteFile`. `uri` is the cross-platform id (`file://` on native, a data or blob URL on web). The local file path is `NaviteFile.path`.
 
 ### `Future<Duration?> getDuration`
 
@@ -88,27 +88,54 @@ class VideoCoverFrame {
     required this.brightness,
   });
 
-  final XFile image;
+  final NaviteFile image;
   final Duration position;
   final double brightness;
 }
 ```
 
-| Field        | Type       | Meaning                                                                                                         |
-| ------------ | ---------- | --------------------------------------------------------------------------------------------------------------- |
-| `image`      | `XFile`    | Cover PNG. `uri` is `file://` on native and a data or blob URL on web. Raw native path: `FileSystemXFile.path`. |
-| `position`   | `Duration` | Timestamp in the video.                                                                                         |
-| `brightness` | `double`   | Average brightness 0.0–1.0 (clamped when parsed from native).                                                   |
+| Field        | Type         | Meaning                                                                                                    |
+| ------------ | ------------ | ---------------------------------------------------------------------------------------------------------- |
+| `image`      | `NaviteFile` | Cover PNG. `uri` is `file://` on native and a data or blob URL on web. Local file path: `NaviteFile.path`. |
+| `position`   | `Duration`   | Timestamp in the video.                                                                                    |
+| `brightness` | `double`     | Average brightness 0.0–1.0 (clamped when parsed from native).                                              |
 
 `toString()` includes position, brightness (3 decimals), and `image.uri`. No `copyWith` / `==` override.
 
-## `XFile`
+## `NaviteFile`
 
-Re-exported from `package:cross_file/cross_file.dart` (`show XFile, FileSystemXFile`). Dependents do not need a direct `cross_file` dependency for snapshot/cover return types.
+Built-in cross-platform file representation exported from `package:xue_hua_navite_video_player/xue_hua_navite_video_player.dart` (no `cross_file` dependency needed).
 
-- `uri` is the cross-platform identifier.
-- Native filesystem paths: cast to `FileSystemXFile` and read `path`.
-- `name()` returns `Future<String?>`. `mimeType` and `saveTo` are not part of `cross_file` 0.4.
+```dart
+@immutable
+class NaviteFile {
+  final String path;
+  final String uri;
+  final String name;
+  final String mimeType;
+
+  const NaviteFile({
+    required this.path,
+    required this.uri,
+    required this.name,
+    this.mimeType = 'image/png',
+    Uint8List? bytes,
+  });
+
+  factory NaviteFile.fromLocation(String location, {String? name, String mimeType = 'image/png'});
+  factory NaviteFile.fromBytes(Uint8List bytes, {String name = 'snapshot.png', String mimeType = 'image/png', String? path});
+
+  Future<Uint8List> readAsBytes();
+  Future<int> length();
+  Future<void> saveTo(String targetPath);
+}
+```
+
+- `uri` is the cross-platform identifier (`file://` on native, `data:` or `blob:` URL on Web).
+- `path` is the local filesystem path on native, or the URL on Web.
+- `name` is the synchronous file name (for example `snapshot-1700000000000.png`).
+- `mimeType` defaults to `'image/png'`.
+- `readAsBytes()`, `length()`, and `saveTo(targetPath)` provide unified byte reading and saving.
 
 ## Example
 

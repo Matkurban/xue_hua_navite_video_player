@@ -1,12 +1,11 @@
 import 'dart:async';
 
-import 'package:cross_file/cross_file.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:signals_flutter/signals_flutter.dart';
 
 import '../data/enums/aspect_ratio_mode.dart';
-import '../utils/png_xfile.dart';
+import '../data/models/navite_file.dart';
 import '../utils/temp_paths.dart';
 import 'player_backend.dart';
 import 'player_event.dart';
@@ -159,21 +158,21 @@ class ChannelPlayerBackend implements PlayerBackend {
   }
 
   @override
-  Future<XFile> takeSnapshot({String? savePath}) async {
+  Future<NaviteFile> takeSnapshot({String? savePath}) async {
     final raw = await _methodChannel.invokeMethod<dynamic>('takeSnapshot');
     if (raw == null) {
       throw StateError('Native player returned no snapshot data.');
     }
     if (kIsWeb) {
       if (raw is String) {
-        return pngXFileFromLocation(raw);
+        return NaviteFile.fromLocation(raw, name: _defaultSnapshotName());
       }
-      return pngXFileFromBytes(_asUint8List(raw));
+      return NaviteFile.fromBytes(_asUint8List(raw), name: _defaultSnapshotName());
     }
     final bytes = _asUint8List(raw);
     final outPath = savePath ?? await pluginSnapshotPath(_defaultSnapshotName());
     await writeFileBytes(outPath, bytes);
-    return pngXFileFromLocation(outPath);
+    return NaviteFile.fromLocation(outPath);
   }
 
   static Uint8List _asUint8List(dynamic raw) {

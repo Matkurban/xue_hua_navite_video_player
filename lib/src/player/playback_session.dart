@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:cross_file/cross_file.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:signals_flutter/signals_flutter.dart';
@@ -10,6 +9,7 @@ import '../data/enums/aspect_ratio_mode.dart';
 import '../data/enums/cast_state.dart';
 import '../data/enums/play_state.dart';
 import '../data/enums/skip_second_type.dart';
+import '../data/models/navite_file.dart';
 import '../utils/mime_detector.dart';
 import 'brightness_controller.dart';
 import 'channel_player_backend.dart';
@@ -489,7 +489,7 @@ class PlaybackSession {
     playState.value = PlayState.stopped;
   }
 
-  Future<XFile> takeSnapshot({String? savePath}) async {
+  Future<NaviteFile> takeSnapshot({String? savePath}) async {
     if (_disposed) {
       throw StateError('PlaybackSession has been disposed.');
     }

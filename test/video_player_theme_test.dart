@@ -265,7 +265,7 @@ class _FakeBackend implements PlayerBackend {
   }
 
   @override
-  Future<XFile> takeSnapshot({String? savePath}) async {
+  Future<NaviteFile> takeSnapshot({String? savePath}) async {
     throw UnsupportedError('not used');
   }
 }

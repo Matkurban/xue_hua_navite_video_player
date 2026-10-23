@@ -130,7 +130,7 @@ See [CONTEXT.md](CONTEXT.md) for domain notes.
 
 ```yaml
 dependencies:
-  xue_hua_navite_video_player: ^2.5.0
+  xue_hua_navite_video_player: ^2.6.0
 ```
 
 ```bash
@@ -141,7 +141,7 @@ flutter pub get
 import 'package:xue_hua_navite_video_player/xue_hua_navite_video_player.dart';
 ```
 
-Public exports include: `VideoSource`, `VideoPlayerController`, `VideoPlayer`, `CorePlayer`, `VideoPlayerTheme`, `PlayState`, `CastState`, `AspectRatioMode`, `SkipSecondType`, `VideoCoverFrame`, `XueHuaNaviteVideoPlayer`, `PlayerScrubberSlider`, `VideoPlayerSlotContext`, `XFile`, and `FileSystemXFile` (re-exported from `cross_file`).
+Public exports include: `VideoSource`, `VideoPlayerController`, `VideoPlayer`, `CorePlayer`, `VideoPlayerTheme`, `PlayState`, `CastState`, `AspectRatioMode`, `SkipSecondType`, `VideoCoverFrame`, `NaviteFile`, `XueHuaNaviteVideoPlayer`, `PlayerScrubberSlider`, and `VideoPlayerSlotContext`.
 
 ---
 
@@ -409,8 +409,8 @@ See [Fullscreen contract](#fullscreen-contract).
 ### Snapshot
 
 ```dart
-final XFile png = await controller.takeSnapshot();
-final XFile saved = await controller.takeSnapshot(savePath: '/tmp/frame.png');
+final NaviteFile png = await controller.takeSnapshot();
+final NaviteFile saved = await controller.takeSnapshot(savePath: '/tmp/frame.png');
 ```
 
 ### Reactive signals
@@ -648,13 +648,13 @@ Active while fullscreen **and** a `VideoPlayer` is mounted (`kIsWeb` uses tap-on
 ### Current-frame snapshot
 
 ```dart
-final XFile png = await controller.takeSnapshot();
+final NaviteFile png = await controller.takeSnapshot();
 ```
 
 - **iOS / macOS:** `AVAssetImageGenerator` at the current time (PlatformView display; no Texture frame buffer required)
 - **Other platforms:** native snapshot paths
-- Returns a PNG `XFile` (`XFile` and `FileSystemXFile` are re-exported; no need to depend on `cross_file` yourself)
-- Cross-platform id is `uri` (`file://` on native, a `data:` or `blob:` URL on web). The raw native path is `FileSystemXFile.path`. `mimeType` and `saveTo` are gone; `name()` is asynchronous and may be null.
+- Returns a PNG `NaviteFile` (built-in cross-platform file representation; no `cross_file` dependency required)
+- Cross-platform id is `uri` (`file://` on native, a `data:` or `blob:` URL on web). The local file path is `path`. Also exposes `name`, `mimeType`, `readAsBytes()`, `length()`, and `saveTo(targetPath)`.
 
 ### Cover candidates (no playback session)
 
@@ -670,7 +670,7 @@ for (final frame in frames) {
 }
 ```
 
-`uri` is the cross-platform id (`file://` on native, a `data:` or `blob:` URL on web). The raw native path is `FileSystemXFile.path`.
+`uri` is the cross-platform id (`file://` on native, a `data:` or `blob:` URL on web). The local file path is `frame.image.path`.
 
 ### Duration probe (no playback session)
 

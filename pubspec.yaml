@@ -1,6 +1,6 @@
 name: xue_hua_navite_video_player
 description: "A cross-platform Flutter audio/video player plugin powered by native players (ExoPlayer, AVPlayer, mpv)."
-version: 2.5.0
+version: 2.6.0
 homepage: https://github.com/Matkurban
 repository: https://github.com/Matkurban/xue_hua_navite_video_player
 topics:
@@ -21,7 +21,6 @@ dependencies:
     sdk: flutter
   web: ^1.1.2
   crypto: ^3.0.7
-  cross_file: ^0.4.0
   path_provider: ^2.1.6
   signals_flutter: ^7.1.0
   chat_context_menu: ^4.2.0

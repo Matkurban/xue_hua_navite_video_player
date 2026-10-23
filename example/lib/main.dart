@@ -407,7 +407,7 @@ class _Chip extends StatelessWidget {
 }
 
 class _SnapshotDialog extends StatelessWidget {
-  final XFile file;
+  final NaviteFile file;
 
   const _SnapshotDialog({required this.file});
 
@@ -423,14 +423,11 @@ class _SnapshotDialog extends StatelessWidget {
             const SizedBox(height: 8),
             ConstrainedBox(
               constraints: const BoxConstraints(maxHeight: 360),
-              child: _XFileImage(file: file),
+              child: _NaviteFileImage(file: file),
             ),
             const SizedBox(height: 8),
             SelectableText(
-              switch (file) {
-                FileSystemXFile(:final path) => path,
-                _ => file.uri,
-              },
+              file.path,
               style: Theme.of(context).textTheme.bodySmall,
               maxLines: 2,
             ),
@@ -481,7 +478,7 @@ class _CoversDialog extends StatelessWidget {
                       SizedBox(
                         width: 100,
                         height: 56,
-                        child: _XFileImage(file: f.image, fit: BoxFit.cover),
+                        child: _NaviteFileImage(file: f.image, fit: BoxFit.cover),
                       ),
                       const SizedBox(width: 10),
                       Expanded(
@@ -519,11 +516,11 @@ class _CoversDialog extends StatelessWidget {
   }
 }
 
-class _XFileImage extends StatelessWidget {
-  final XFile file;
+class _NaviteFileImage extends StatelessWidget {
+  final NaviteFile file;
   final BoxFit fit;
 
-  const _XFileImage({required this.file, this.fit = BoxFit.contain});
+  const _NaviteFileImage({required this.file, this.fit = BoxFit.contain});
 
   @override
   Widget build(BuildContext context) {

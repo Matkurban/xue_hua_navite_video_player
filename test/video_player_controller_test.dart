@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:cross_file/cross_file.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
@@ -10,6 +9,7 @@ import 'package:xue_hua_navite_video_player/src/data/enums/aspect_ratio_mode.dar
 import 'package:xue_hua_navite_video_player/src/data/enums/cast_state.dart';
 import 'package:xue_hua_navite_video_player/src/data/enums/play_state.dart';
 import 'package:xue_hua_navite_video_player/src/data/enums/skip_second_type.dart';
+import 'package:xue_hua_navite_video_player/src/data/models/navite_file.dart';
 import 'package:xue_hua_navite_video_player/src/player/brightness_controller.dart';
 import 'package:xue_hua_navite_video_player/src/player/channel_player_backend.dart';
 import 'package:xue_hua_navite_video_player/src/player/fullscreen_coordinator.dart';
@@ -745,7 +745,7 @@ class _FakePlayerBackend implements PlayerBackend {
   }
 
   @override
-  Future<XFile> takeSnapshot({String? savePath}) async {
+  Future<NaviteFile> takeSnapshot({String? savePath}) async {
     throw UnsupportedError('not used in tests');
   }
 

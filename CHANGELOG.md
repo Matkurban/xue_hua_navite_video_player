@@ -1,3 +1,12 @@
+## 2.6.0
+
+- **Remove `cross_file` Dependency & Introduce `NaviteFile`**:
+  - Removed the `cross_file` package dependency to prevent version conflicts (`0.3.x` vs `0.4.x`) across ecosystem plugins.
+  - Added built-in cross-platform `NaviteFile` model (`path`, `uri`, `name`, `mimeType`, `readAsBytes()`, `length()`, `saveTo()`), exported directly from the main barrel.
+  - **Breaking**: `VideoPlayerController.takeSnapshot()` and `VideoCoverFrame.image` now return `NaviteFile` instead of `XFile` / `FileSystemXFile`.
+- Updated `web` dependency constraint to `^1.1.2`.
+- Updated `README.md`, `README_ZH.md`, example app, and package `skills/` documentation for `NaviteFile`.
+
 ## 2.5.0
 
 - **Material & Cupertino Design Separation**:

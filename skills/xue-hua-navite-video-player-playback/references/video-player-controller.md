@@ -153,13 +153,13 @@ Visual edge-to-edge Overlay chrome requires a mounted `VideoPlayer` under an `Ov
 ## Snapshot
 
 ```dart
-Future<XFile> takeSnapshot({String? savePath});
+Future<NaviteFile> takeSnapshot({String? savePath});
 ```
 
 - Throws `StateError('PlaybackSession has been disposed.')` if disposed.
 - Throws `StateError('No media is currently loaded.')` if `currentUrl` is null.
-- Returns a PNG `XFile` (barrel re-exports `XFile` and `FileSystemXFile`). `savePath` is optional and used on native only.
-- `uri` is the cross-platform id. Raw native path: `FileSystemXFile.path`.
+- Returns a PNG `NaviteFile` (barrel exports `NaviteFile`). `savePath` is optional and used on native only.
+- `uri` is the cross-platform id. Local file path: `NaviteFile.path`. Also exposes `name`, `mimeType`, `readAsBytes()`, `length()`, and `saveTo(targetPath)`.
 - iOS/macOS: `AVAssetImageGenerator` at current time. Other platforms: native snapshot paths.
 
 ## Watch state

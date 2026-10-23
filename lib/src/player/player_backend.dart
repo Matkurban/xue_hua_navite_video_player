@@ -1,7 +1,7 @@
-import 'package:cross_file/cross_file.dart';
 import 'package:signals_flutter/signals_flutter.dart';
 
 import '../data/enums/aspect_ratio_mode.dart';
+import '../data/models/navite_file.dart';
 import 'player_event.dart';
 
 /// Session-transport seam for the single active native player.
@@ -61,5 +61,5 @@ abstract class PlayerBackend {
 
   Future<void> dispose();
 
-  Future<XFile> takeSnapshot({String? savePath});
+  Future<NaviteFile> takeSnapshot({String? savePath});
 }

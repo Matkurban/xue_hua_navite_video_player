@@ -140,7 +140,7 @@ XueHuaNaviteVideoPlayer.instance
 
 ```yaml
 dependencies:
-  xue_hua_navite_video_player: ^2.5.0
+  xue_hua_navite_video_player: ^2.6.0
 ```
 
 然后执行：
@@ -155,7 +155,7 @@ flutter pub get
 import 'package:xue_hua_navite_video_player/xue_hua_navite_video_player.dart';
 ```
 
-公开导出主要包括：`VideoSource`、`VideoPlayerController`、`VideoPlayer`、`CorePlayer`、`VideoPlayerTheme`、`PlayState`、`CastState`、`AspectRatioMode`、`SkipSecondType`、`VideoCoverFrame`、`XueHuaNaviteVideoPlayer`、`PlayerScrubberSlider`、`VideoPlayerSlotContext`，以及 `XFile`、`FileSystemXFile`（来自 `cross_file`）。
+公开导出主要包括：`VideoSource`、`VideoPlayerController`、`VideoPlayer`、`CorePlayer`、`VideoPlayerTheme`、`PlayState`、`CastState`、`AspectRatioMode`、`SkipSecondType`、`VideoCoverFrame`、`NaviteFile`、`XueHuaNaviteVideoPlayer`、`PlayerScrubberSlider`、`VideoPlayerSlotContext`。
 
 ---
 
@@ -430,9 +430,9 @@ await controller.toggleFullscreen();
 ### 截图
 
 ```dart
-final XFile png = await controller.takeSnapshot();
+final NaviteFile png = await controller.takeSnapshot();
 // 可选：指定保存路径
-final XFile saved = await controller.takeSnapshot(savePath: '/tmp/frame.png');
+final NaviteFile saved = await controller.takeSnapshot(savePath: '/tmp/frame.png');
 ```
 
 ### 响应式 Signals
@@ -713,13 +713,13 @@ await controller.exitFullscreen();
 ### 当前帧截图
 
 ```dart
-final XFile png = await controller.takeSnapshot();
+final NaviteFile png = await controller.takeSnapshot();
 ```
 
 - **iOS / macOS**：在当前播放时间点用 `AVAssetImageGenerator` 取帧（画面由 `AVPlayerLayer` PlatformView 显示，不依赖 Texture 推帧）
 - **其他平台**：走各自原生截图路径
-- 返回 PNG 格式的 `XFile`（barrel 已 re-export `XFile` 与 `FileSystemXFile`，无需单独依赖 `cross_file`）
-- 跨平台标识是 `uri`（原生为 `file://`，Web 为 `data:` 或 `blob:` URL）。原生裸路径是 `FileSystemXFile.path`。不再提供 `mimeType` 与 `saveTo`；`name()` 为异步且可能为 null。
+- 返回 PNG 格式的 `NaviteFile`（内置跨平台文件类型，无需依赖 `cross_file`）
+- 跨平台标识是 `uri`（原生为 `file://`，Web 为 `data:` 或 `blob:` URL）。原生本地文件路径是 `path`，同时提供 `name`、`mimeType`、`readAsBytes()`、`length()` 与 `saveTo(targetPath)`。
 
 ### 封面候选帧（无需起播）
 
@@ -732,13 +732,13 @@ final frames = await XueHuaNaviteVideoPlayer.instance.extractCoverCandidates(
 );
 
 for (final frame in frames) {
-  // frame.image      → XFile（PNG）
+  // frame.image      → NaviteFile（PNG）
   // frame.position   → 帧时间戳
   // frame.brightness → 0.0 – 1.0 平均亮度
 }
 ```
 
-跨平台标识是 `uri`（原生为 `file://`，Web 为 `data:` 或 `blob:` URL）。原生裸路径是 `FileSystemXFile.path`。
+跨平台标识是 `uri`（原生为 `file://`，Web 为 `data:` 或 `blob:` URL）。原生本地文件路径是 `frame.image.path`。
 
 ### 探测时长（无需起播）
 

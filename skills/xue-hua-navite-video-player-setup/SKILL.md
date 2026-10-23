@@ -21,7 +21,7 @@ Cast: [xue-hua-navite-video-player-cast](../xue-hua-navite-video-player-cast/SKI
 
 ## Guidelines
 
-- Add `xue_hua_navite_video_player: ^2.4.0` and run `flutter pub get`.
+- Add `xue_hua_navite_video_player: ^2.6.0` and run `flutter pub get`.
 - Call `WidgetsFlutterBinding.ensureInitialized()` before any plugin work.
 - `XueHuaNaviteVideoPlayer.instance.initialize()` is optional, idempotent, and does **not** create the native player. It only ensures the binding and sets `isInitialized`.
 - `VideoPlayerController.initialize()` creates the native session and subscribes to events. Call it once per controller lifetime, before `open*` / `play*`.

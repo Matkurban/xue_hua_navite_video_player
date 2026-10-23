@@ -21,3 +21,13 @@ Future<void> writeFileBytes(String path, List<int> bytes) async {
   await file.parent.create(recursive: true);
   await file.writeAsBytes(bytes is Uint8List ? bytes : Uint8List.fromList(bytes), flush: true);
 }
+
+/// Reads all bytes from [path].
+Future<Uint8List> readFileBytes(String path) async {
+  return File(path).readAsBytes();
+}
+
+/// Returns the byte length of the file at [path].
+Future<int> readFileLength(String path) async {
+  return File(path).length();
+}

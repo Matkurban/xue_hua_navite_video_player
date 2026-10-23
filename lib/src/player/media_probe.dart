@@ -4,8 +4,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import '../core/video_source.dart';
+import '../data/models/navite_file.dart';
 import '../data/models/video_cover_frame.dart';
-import '../utils/png_xfile.dart';
 import '../utils/temp_paths.dart';
 
 /// Probe duration / cover frames without a live playback session.
@@ -86,7 +86,7 @@ class MediaProbe {
     final brightness = (map['brightness'] as num?)?.toDouble() ?? 0.0;
     if (path == null || path.isEmpty) return null;
     return VideoCoverFrame(
-      image: pngXFileFromLocation(path),
+      image: NaviteFile.fromLocation(path),
       position: Duration(milliseconds: positionMs),
       brightness: brightness.clamp(0.0, 1.0),
     );
