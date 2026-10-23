@@ -36,30 +36,33 @@ class PlayerMenuButton extends StatelessWidget {
       borderRadius: style.menuBorderRadius,
       padding: EdgeInsets.zero,
       spacing: 0,
-      menuBuilder: (context, hideMenu) => IntrinsicWidth(
-        child: Theme(
-          data: base.copyWith(
-            brightness: Brightness.dark,
-            colorScheme: ColorScheme.dark(onSurface: foreground, primary: foreground),
-            listTileTheme: ListTileThemeData(
-              dense: true,
-              visualDensity: VisualDensity.compact,
-              textColor: foreground,
-              iconColor: foreground,
-              contentPadding: style.menuContentPadding,
-              minVerticalPadding: style.menuMinVerticalPadding,
-              horizontalTitleGap: 0,
-              minLeadingWidth: 0,
-              titleTextStyle: menuTitleStyle,
+      menuBuilder: (context, hideMenu) => Material(
+        type: MaterialType.transparency,
+        child: IntrinsicWidth(
+          child: Theme(
+            data: base.copyWith(
+              brightness: Brightness.dark,
+              colorScheme: ColorScheme.dark(onSurface: foreground, primary: foreground),
+              listTileTheme: ListTileThemeData(
+                dense: true,
+                visualDensity: VisualDensity.compact,
+                textColor: foreground,
+                iconColor: foreground,
+                contentPadding: style.menuContentPadding,
+                minVerticalPadding: style.menuMinVerticalPadding,
+                horizontalTitleGap: 0,
+                minLeadingWidth: 0,
+                titleTextStyle: menuTitleStyle,
+              ),
+              iconTheme: IconThemeData(color: foreground, size: style.menuIconSize),
+              textTheme: base.textTheme.apply(bodyColor: foreground, displayColor: foreground),
             ),
-            iconTheme: IconThemeData(color: foreground, size: style.menuIconSize),
-            textTheme: base.textTheme.apply(bodyColor: foreground, displayColor: foreground),
-          ),
-          child: DefaultTextStyle(
-            style: menuTitleStyle,
-            child: IconTheme(
-              data: IconThemeData(color: foreground, size: style.menuIconSize),
-              child: menuBuilder(context, hideMenu),
+            child: DefaultTextStyle(
+              style: menuTitleStyle,
+              child: IconTheme(
+                data: IconThemeData(color: foreground, size: style.menuIconSize),
+                child: menuBuilder(context, hideMenu),
+              ),
             ),
           ),
         ),
