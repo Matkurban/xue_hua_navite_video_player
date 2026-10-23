@@ -26,7 +26,7 @@ abstract final class PlayerIconCatalog {
   }
 
   static IconData aspectRatio({required bool isCupertino}) {
-    return isCupertino ? CupertinoIcons.arrow_up_left_arrow_down_right : Icons.aspect_ratio;
+    return isCupertino ? CupertinoIcons.viewfinder : Icons.aspect_ratio;
   }
 
   static IconData check({required bool isCupertino}) {

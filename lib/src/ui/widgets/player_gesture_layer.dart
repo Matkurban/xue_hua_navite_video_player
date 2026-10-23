@@ -237,10 +237,14 @@ class _GestureHudBadge extends StatelessWidget {
 
 /// Desktop / web key handler (active when the player Focus is focused).
 KeyEventResult handlePlayerKeyEvent(VideoPlayerController controller, KeyEvent event) {
-  if (event is! KeyDownEvent) return KeyEventResult.ignored;
+  if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+    return KeyEventResult.ignored;
+  }
   switch (event.logicalKey) {
     case LogicalKeyboardKey.space:
-      controller.playOrPause();
+      if (event is KeyDownEvent) {
+        controller.playOrPause();
+      }
       return KeyEventResult.handled;
     case LogicalKeyboardKey.arrowLeft:
       controller.seekBackward();
@@ -256,7 +260,9 @@ KeyEventResult handlePlayerKeyEvent(VideoPlayerController controller, KeyEvent e
       return KeyEventResult.handled;
     case LogicalKeyboardKey.escape:
       if (controller.isFullscreen.value) {
-        controller.exitFullscreen();
+        if (event is KeyDownEvent) {
+          controller.exitFullscreen();
+        }
         return KeyEventResult.handled;
       }
       return KeyEventResult.ignored;

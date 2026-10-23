@@ -1,19 +1,29 @@
 import 'dart:async';
 
-import 'package:material_ui/material_ui.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:signals_flutter/signals_flutter.dart';
 import 'package:xue_hua_navite_video_player/src/data/enums/aspect_ratio_mode.dart';
 import 'package:xue_hua_navite_video_player/src/data/models/navite_file.dart';
+import 'package:xue_hua_navite_video_player/src/player/brightness_controller.dart';
 import 'package:xue_hua_navite_video_player/src/player/fullscreen_coordinator.dart';
 import 'package:xue_hua_navite_video_player/src/player/player_backend.dart';
 import 'package:xue_hua_navite_video_player/src/player/player_event.dart';
 import 'package:xue_hua_navite_video_player/src/player/video_player_controller.dart';
+import 'package:xue_hua_navite_video_player/src/ui/video_player.dart';
+import 'package:xue_hua_navite_video_player/src/ui/widgets/player_bottom_scrubber.dart';
+import 'package:xue_hua_navite_video_player/src/ui/widgets/player_center_controls.dart';
 import 'package:xue_hua_navite_video_player/src/ui/widgets/player_gesture_layer.dart';
+import 'package:xue_hua_navite_video_player/src/ui/widgets/player_top_bar.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  tearDown(() {
+    debugDefaultTargetPlatformOverride = null;
+  });
 
   test('Escape exits fullscreen when already fullscreen', () async {
     final backend = _FakePlayerBackend();
@@ -57,11 +67,88 @@ void main() {
     expect(fs.exitCount, 0);
     await controller.dispose();
   });
+
+  testWidgets('Desktop keyboard control hides controls and does not show them on seek buffering', (
+    WidgetTester tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    final backend = _FakePlayerBackend(emitBufferingOnSeek: true);
+    final fs = _FakeFullscreen();
+    final controller = VideoPlayerController(
+      backend: backend,
+      fullscreen: fs,
+      brightness: _FakeBrightness(),
+    );
+    await controller.initialize();
+    await controller.playNetwork('https://example.com/video.mp4');
+    backend.emit(const PlayerEvent.duration(Duration(seconds: 60)));
+    backend.emit(const PlayerEvent.playing(true));
+    backend.emit(const PlayerEvent.position(Duration(seconds: 10)));
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 640,
+            height: 360,
+            child: VideoPlayer(
+              controller: controller,
+              initiallyVisible: true,
+              fadeDuration: Duration.zero,
+              autoHideDelay: Duration.zero,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byType(PlayerTopBar), findsOneWidget);
+    expect(find.byType(PlayerCenterControls), findsOneWidget);
+    expect(find.byType(PlayerBottomScrubber), findsOneWidget);
+
+    // Pressing ArrowRight seeks forward and hides the controls even if backend emits buffering=true.
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.arrowRight);
+    await tester.sendKeyRepeatEvent(LogicalKeyboardKey.arrowRight);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pump();
+
+    expect(backend.lastSeekMs, 30000);
+    expect(find.byType(PlayerTopBar), findsNothing);
+    expect(find.byType(PlayerCenterControls), findsNothing);
+    expect(find.byType(PlayerBottomScrubber), findsNothing);
+
+    // Pressing Space toggles play/pause while keeping controls hidden.
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.space);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.space);
+    await tester.pump();
+
+    expect(backend.pauseCount, 1);
+    expect(find.byType(PlayerTopBar), findsNothing);
+    expect(find.byType(PlayerCenterControls), findsNothing);
+    expect(find.byType(PlayerBottomScrubber), findsNothing);
+
+    await controller.dispose();
+    debugDefaultTargetPlatformOverride = null;
+  });
 }
 
 class _FakePlayerBackend implements PlayerBackend {
-  final StreamController<PlayerEvent> _controller = StreamController<PlayerEvent>.broadcast();
+  _FakePlayerBackend({this.emitBufferingOnSeek = false});
+
+  final bool emitBufferingOnSeek;
+  final StreamController<PlayerEvent> _controller = StreamController<PlayerEvent>.broadcast(
+    sync: true,
+  );
   final FlutterSignal<int?> _textureId = signal<int?>(1);
+  int? lastSeekMs;
+  int pauseCount = 0;
+
+  void emit(PlayerEvent event) {
+    if (!_controller.isClosed) {
+      _controller.add(event);
+    }
+  }
 
   @override
   FlutterSignal<int?> get textureId => _textureId;
@@ -76,13 +163,24 @@ class _FakePlayerBackend implements PlayerBackend {
   Future<void> open(String url, {String? castUrl}) async {}
 
   @override
-  Future<void> play() async {}
+  Future<void> play() async {
+    emit(const PlayerEvent.playing(true));
+  }
 
   @override
-  Future<void> pause() async {}
+  Future<void> pause() async {
+    pauseCount++;
+    emit(const PlayerEvent.playing(false));
+  }
 
   @override
-  Future<void> seek(int positionMs) async {}
+  Future<void> seek(int positionMs) async {
+    lastSeekMs = positionMs;
+    if (emitBufferingOnSeek) {
+      emit(const PlayerEvent.buffering(true));
+    }
+    emit(PlayerEvent.position(Duration(milliseconds: positionMs)));
+  }
 
   @override
   Future<void> setVolume(double volume) async {}
@@ -131,4 +229,12 @@ class _FakeFullscreen implements FullscreenCoordinator {
 
   @override
   void dispose() {}
+}
+
+class _FakeBrightness implements BrightnessController {
+  @override
+  Future<double> get current async => 1.0;
+
+  @override
+  Future<void> setBrightness(double value) async {}
 }

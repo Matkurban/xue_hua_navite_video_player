@@ -143,7 +143,7 @@ class _VideoPlayerState extends State<VideoPlayer> {
     _bufferingDisposer = effect(() {
       final buffering = widget.controller.isBuffering.value;
       if (buffering) {
-        _showControls(scheduleAutoHide: false);
+        _hideTimer?.cancel();
       } else if (widget.controller.isPlaying.value && _visible.value) {
         _scheduleAutoHide();
       }
@@ -245,6 +245,9 @@ class _VideoPlayerState extends State<VideoPlayer> {
     if (_visible.value) {
       _visible.value = false;
     }
+    if (_isDesktop && _focusNode.hasFocus && !_focusNode.hasPrimaryFocus) {
+      _focusNode.requestFocus();
+    }
   }
 
   void _toggleControls() {
@@ -338,6 +341,7 @@ class _VideoPlayerState extends State<VideoPlayer> {
               onClose: _handleClose,
               onToggleControls: _toggleControls,
               onShowControls: _showControls,
+              onHideControls: _hideControls,
               onCancelHideTimer: () => _hideTimer?.cancel(),
               onScheduleAutoHide: _scheduleAutoHide,
             ),
@@ -377,6 +381,7 @@ class _VideoPlayerState extends State<VideoPlayer> {
               onClose: _handleClose,
               onToggleControls: _toggleControls,
               onShowControls: _showControls,
+              onHideControls: _hideControls,
               onCancelHideTimer: () => _hideTimer?.cancel(),
               onScheduleAutoHide: _scheduleAutoHide,
             );

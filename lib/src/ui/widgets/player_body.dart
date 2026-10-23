@@ -41,6 +41,7 @@ class PlayerBody extends StatelessWidget {
     required this.onClose,
     required this.onToggleControls,
     required this.onShowControls,
+    required this.onHideControls,
     required this.onCancelHideTimer,
     required this.onScheduleAutoHide,
   });
@@ -71,6 +72,7 @@ class PlayerBody extends StatelessWidget {
   final VoidCallback onClose;
   final VoidCallback onToggleControls;
   final VoidCallback onShowControls;
+  final VoidCallback onHideControls;
   final VoidCallback onCancelHideTimer;
   final VoidCallback onScheduleAutoHide;
 
@@ -197,8 +199,14 @@ class PlayerBody extends StatelessWidget {
         if (isDesktop) {
           stack = Focus(
             focusNode: focusNode,
-            autofocus: isFullscreen,
-            onKeyEvent: (node, event) => handlePlayerKeyEvent(controller, event),
+            autofocus: true,
+            onKeyEvent: (node, event) {
+              final result = handlePlayerKeyEvent(controller, event);
+              if (result == KeyEventResult.handled) {
+                onHideControls();
+              }
+              return result;
+            },
             child: stack,
           );
         }

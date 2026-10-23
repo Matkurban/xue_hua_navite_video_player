@@ -102,12 +102,12 @@ class PlaybackSession {
     }
     _acquireNativeSession();
     // Listen before create() so broadcast events emitted during create are not lost.
-    await _eventSubscription?.cancel();
+    _eventSubscription?.cancel();
     _eventSubscription = _backend.events.listen(_onPlayerEvent);
     try {
       await _backend.create();
     } catch (_) {
-      await _eventSubscription?.cancel();
+      _eventSubscription?.cancel();
       _eventSubscription = null;
       _releaseNativeSession();
       rethrow;
@@ -517,10 +517,10 @@ class PlaybackSession {
     _openEpoch++;
     _readyFallbackTimer?.cancel();
     _readyFallbackTimer = null;
-    await _fullscreenExternalSub?.cancel();
+    _fullscreenExternalSub?.cancel();
     _fullscreenExternalSub = null;
     _fullscreen.dispose();
-    await _eventSubscription?.cancel();
+    _eventSubscription?.cancel();
     _eventSubscription = null;
     await _localCastServer.stop();
     await _backend.dispose();

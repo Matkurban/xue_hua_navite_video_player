@@ -5,9 +5,11 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:signals_flutter/signals_flutter.dart';
+import 'package:xue_hua_navite_video_player/src/player/brightness_controller.dart';
 import 'package:xue_hua_navite_video_player/src/player/fullscreen_coordinator.dart';
 import 'package:xue_hua_navite_video_player/src/player/player_backend.dart';
 import 'package:xue_hua_navite_video_player/src/player/player_event.dart';
+import 'package:xue_hua_navite_video_player/src/ui/style/player_icon_catalog.dart';
 import 'package:xue_hua_navite_video_player/src/ui/widgets/player_glass_surface.dart';
 import 'package:xue_hua_navite_video_player/xue_hua_navite_video_player.dart';
 
@@ -84,6 +86,7 @@ void main() {
       final controller = VideoPlayerController(
         backend: backend,
         fullscreen: _NoopFullscreen(),
+        brightness: _NoopBrightness(),
       );
       await controller.initialize();
 
@@ -116,6 +119,7 @@ void main() {
       expect(find.byIcon(CupertinoIcons.play_fill), findsNothing);
 
       // Buffering state uses CircularProgressIndicator in Material mode.
+      await controller.openNetwork('https://example.com/sample.mp4');
       backend.emit(const PlayerEvent.duration(Duration(seconds: 30)));
       backend.emit(const PlayerEvent.buffering(true));
       await tester.pump();
@@ -132,6 +136,7 @@ void main() {
       final controller = VideoPlayerController(
         backend: backend,
         fullscreen: _NoopFullscreen(),
+        brightness: _NoopBrightness(),
       );
       await controller.initialize();
 
@@ -160,7 +165,18 @@ void main() {
       expect(find.byIcon(CupertinoIcons.goforward_10), findsOneWidget);
       expect(find.byIcon(Icons.play_arrow_rounded), findsNothing);
 
+      // Aspect ratio and fullscreen buttons use distinct icons in Cupertino mode.
+      final aspectIcon = PlayerIconCatalog.aspectRatio(isCupertino: true);
+      final fullscreenIcon = PlayerIconCatalog.fullscreen(
+        isCupertino: true,
+        isFullscreen: false,
+      );
+      expect(aspectIcon, isNot(equals(fullscreenIcon)));
+      expect(find.byIcon(CupertinoIcons.viewfinder), findsOneWidget);
+      expect(find.byIcon(CupertinoIcons.fullscreen), findsOneWidget);
+
       // Buffering state uses CupertinoActivityIndicator in Cupertino mode.
+      await controller.openNetwork('https://example.com/sample.mp4');
       backend.emit(const PlayerEvent.duration(Duration(seconds: 30)));
       backend.emit(const PlayerEvent.buffering(true));
       await tester.pump();
@@ -204,7 +220,9 @@ void main() {
 }
 
 class _FakeBackend implements PlayerBackend {
-  final StreamController<PlayerEvent> _events = StreamController<PlayerEvent>.broadcast();
+  final StreamController<PlayerEvent> _events = StreamController<PlayerEvent>.broadcast(
+    sync: true,
+  );
   final FlutterSignal<int?> _textureId = signal<int?>(1);
   int? lastSeekMs;
 
@@ -260,9 +278,7 @@ class _FakeBackend implements PlayerBackend {
   Future<void> stopCasting() async {}
 
   @override
-  Future<void> dispose() async {
-    await _events.close();
-  }
+  Future<void> dispose() async {}
 
   @override
   Future<NaviteFile> takeSnapshot({String? savePath}) async {
@@ -282,4 +298,12 @@ class _NoopFullscreen implements FullscreenCoordinator {
 
   @override
   void dispose() {}
+}
+
+class _NoopBrightness implements BrightnessController {
+  @override
+  Future<double> get current async => 1.0;
+
+  @override
+  Future<void> setBrightness(double value) async {}
 }
