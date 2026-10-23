@@ -290,9 +290,13 @@ class _VideoPlayerState extends State<VideoPlayer> {
     );
 
     final baseTheme = Theme.of(context);
+    // Leave the list untyped. `<ThemeExtension<dynamic>>` normalizes to
+    // `ThemeExtension<ThemeExtension<dynamic>>` because of the
+    // `T extends ThemeExtension<T>` bound, so spreading
+    // `baseTheme.extensions.values` fails to type-check.
     final themedData = widget.theme != null
         ? baseTheme.copyWith(
-            extensions: <ThemeExtension<dynamic>>[
+            extensions: [
               ...baseTheme.extensions.values.where((ext) => ext is! VideoPlayerTheme),
               effectiveTheme,
             ],
