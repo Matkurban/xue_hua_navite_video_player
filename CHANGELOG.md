@@ -1,3 +1,7 @@
+## 2.6.2
+
+- Fix (Windows): replace invalid `CastingConnectionState::Reconnecting` with `Connecting` so MSVC builds succeed (WinRT casting enum has no `Reconnecting` member).
+
 ## 2.6.1
 
 - Fix (Windows): update the pinned shinchiro/mpv-winbuild-cmake libmpv SDK download from pruned tag `20260814` to `20261021` (`mpv-dev-x86_64` / `mpv-dev-aarch64`), restoring Windows builds that failed with HTTP 404 on `file(DOWNLOAD)`.

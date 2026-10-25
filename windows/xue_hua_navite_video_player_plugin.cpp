@@ -424,7 +424,7 @@ namespace xue_hua_navite_video_player {
 										cast_ctx_->is_casting = true;
 										SendCastState("connected", cast_ctx_->device_name);
 										break;
-									case CastingConnectionState::Reconnecting:
+									case CastingConnectionState::Connecting:
 										SendCastState("connecting", cast_ctx_->device_name);
 										break;
 									case CastingConnectionState::Disconnecting:
