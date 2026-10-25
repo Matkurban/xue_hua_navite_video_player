@@ -1,3 +1,7 @@
+## 2.6.3
+
+- Fix (Windows): define `_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS` so MSVC 14.5x / VS 18 can compile C++/WinRT casting code (STL1011 experimental coroutine hard-error).
+
 ## 2.6.2
 
 - Fix (Windows): replace invalid `CastingConnectionState::Reconnecting` with `Connecting` so MSVC builds succeed (WinRT casting enum has no `Reconnecting` member).

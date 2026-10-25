@@ -52,6 +52,9 @@ target_compile_definitions(${PLUGIN_NAME} PRIVATE
   FLUTTER_PLUGIN_IMPL
   NOMINMAX
   WIN32_LEAN_AND_MEAN
+  # MSVC 14.5x / VS 18 hard-errors on <experimental/coroutine> (STL1011).
+  # C++/WinRT (Windows.Media.Casting) still pulls that header unless silenced.
+  _SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS
 )
 
 # libmpv SDK location. Expected layout:
