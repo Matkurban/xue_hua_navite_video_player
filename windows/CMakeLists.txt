@@ -106,18 +106,19 @@ if(NOT DEFINED MPV_DIR)
 endif()
 set(MPV_DIR "${MPV_DIR}" CACHE PATH "Path to the libmpv SDK")
 
-# Pinned shinchiro/mpv-winbuild-cmake latest (20260814). Asset names include
+# Pinned shinchiro/mpv-winbuild-cmake latest (20261021). Asset names include
 # the date and git hash, so there is no stable latest/download/ URL.
+# Upstream keeps ~30 releases; bump URL/SHA when this tag 404s.
 if(_FCVP_MPV_ARCH STREQUAL "aarch64")
   set(_FCVP_MPV_DEFAULT_URL
-    "https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/20260814/mpv-dev-aarch64-20260814-git-7b8915bc1d.7z")
+    "https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/20261021/mpv-dev-aarch64-20261021-git-e471496c56.7z")
   set(_FCVP_MPV_DEFAULT_SHA256
-    "112fe269538cc8331bc7ca2773c1d787f8bde99db520e6e447f1e4692ef80f98")
+    "015f133399b3525021b6d937cf54ace2761d4f70224d5e62f5df24191b28f398")
 else()
   set(_FCVP_MPV_DEFAULT_URL
-    "https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/20260814/mpv-dev-x86_64-20260814-git-7b8915bc1d.7z")
+    "https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/20261021/mpv-dev-x86_64-20261021-git-e471496c56.7z")
   set(_FCVP_MPV_DEFAULT_SHA256
-    "0af22b28e920620036d3ae08fd9283156dc9af0420bf4df84b0e02282094599c")
+    "efc719eff3dc5954b4a5efc800632808bcec01cc9034940dd14e5eb7fe9ea633")
 endif()
 # Do not persist defaults in CACHE — a failed first configure would otherwise
 # lock the old URL after the pin is bumped. Honor -D / cache only when set.

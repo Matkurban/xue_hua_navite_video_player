@@ -1,3 +1,7 @@
+## 2.6.1
+
+- Fix (Windows): update the pinned shinchiro/mpv-winbuild-cmake libmpv SDK download from pruned tag `20260814` to `20261021` (`mpv-dev-x86_64` / `mpv-dev-aarch64`), restoring Windows builds that failed with HTTP 404 on `file(DOWNLOAD)`.
+
 ## 2.6.0
 
 - **Remove `cross_file` Dependency & Introduce `NaviteFile`**:
