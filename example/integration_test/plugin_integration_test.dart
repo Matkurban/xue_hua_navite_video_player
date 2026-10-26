@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:xue_hua_navite_video_player/xue_hua_navite_video_player.dart';
@@ -31,27 +31,34 @@ Future<void> _sleep(WidgetTester tester, Duration d) async {
 }
 
 Future<String> _localVideoPath() async {
-  const String preset = '/workspace/test.mp4';
-  if (File(preset).existsSync()) return preset;
-  final String out = '${Directory.systemTemp.path}/xh_it_test.mp4';
-  if (!File(out).existsSync()) {
-    final ProcessResult r = await Process.run('ffmpeg', <String>[
-      '-loglevel',
-      'error',
-      '-y',
-      '-f',
-      'lavfi',
-      '-i',
-      'testsrc=size=320x240:rate=30',
-      '-t',
-      '10',
-      '-c:v',
-      'libx264',
-      '-pix_fmt',
-      'yuv420p',
-      out,
-    ]);
-    if (r.exitCode != 0) throw StateError('ffmpeg failed: ${r.stderr}');
+  final List<String> presets = <String>[
+    '/workspace/test.mp4',
+    if (Platform.isWindows)
+      r'E:\XueHuaPackages\xue_hua_navite_video_player\test.mp4',
+    '${Directory.systemTemp.path}${Platform.pathSeparator}xh_it_test.mp4',
+  ];
+  for (final String preset in presets) {
+    if (File(preset).existsSync()) return preset;
+  }
+  final String out = presets.last;
+  final ProcessResult r = await Process.run('ffmpeg', <String>[
+    '-loglevel',
+    'error',
+    '-y',
+    '-f',
+    'lavfi',
+    '-i',
+    'testsrc=size=320x240:rate=30',
+    '-t',
+    '10',
+    '-c:v',
+    'libx264',
+    '-pix_fmt',
+    'yuv420p',
+    out,
+  ]);
+  if (r.exitCode != 0) {
+    throw StateError('ffmpeg failed (code ${r.exitCode}): ${r.stderr}');
   }
   return out;
 }
