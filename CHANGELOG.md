@@ -1,3 +1,7 @@
+## 2.6.7
+
+- Tests / example: track `example/assets/test.mp4` (was accidentally gitignored by a broad `test.mp4` rule) so iOS/macOS local-file integration tests can materialize a fixture without ffmpeg.
+
 ## 2.6.6
 
 - Fix (macOS): disable App Sandbox in the example Runner entitlements so `playFile` can open developer/local absolute paths during desktop use and integration tests.

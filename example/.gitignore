@@ -51,7 +51,8 @@ pubspec.lock
 .config/dart_skills/
 .cursor/skills/
 .claude/skills/
-test.mp4
+# Host-generated fixtures (keep example/assets/test.mp4 tracked)
+/test.mp4
 win_shots/
 mac_shots/
 
