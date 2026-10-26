@@ -1,3 +1,11 @@
+## 2.6.6
+
+- Fix (macOS): disable App Sandbox in the example Runner entitlements so `playFile` can open developer/local absolute paths during desktop use and integration tests.
+- Fix (macOS / iOS): call `startAccessingSecurityScopedResource` for `file://` URLs (and stop on cleanup), with a clearer macOS permission error when the path is unreadable under sandbox.
+- Tests / example: ship `example/assets/test.mp4` and materialize it into the app temp directory for local-file IT (works on iOS where `Process.run`/`ffmpeg` is unavailable, and avoids host paths AVPlayer cannot open).
+- Example: set `version: 1.0.0+1` so iOS builds no longer warn about missing `CFBundleShortVersionString` / `CFBundleVersion`.
+- macOS screenshots for UI IT land under `mac_shots/` (gitignored).
+
 ## 2.6.5
 
 - Tests / example: replace deprecated `package:flutter/material.dart` imports in integration tests with `material_ui` so `flutter analyze` is clean on Flutter 3.50+.

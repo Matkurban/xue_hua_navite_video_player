@@ -35,4 +35,5 @@ migrate_working_dir/
 # Local IT fixtures / desktop screenshots
 /test.mp4
 /win_shots/
+/mac_shots/
 /xvfb_shots/

@@ -530,9 +530,44 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler {
         openInternal(url: url, keepCastPlayer: keepCastPlayer)
     }
 
+
+    private var securityScopedURLs = Set<URL>()
+
+    private static func mediaURL(from raw: String) -> URL? {
+        if let url = URL(string: raw), url.scheme != nil {
+            return url
+        }
+        return URL(fileURLWithPath: raw)
+    }
+
+    private func stopSecurityScopedAccess() {
+        for url in securityScopedURLs {
+            url.stopAccessingSecurityScopedResource()
+        }
+        securityScopedURLs.removeAll()
+    }
+
     private func openInternal(url: String, keepCastPlayer: Bool) {
-        guard let mediaUrl = URL(string: url) else {
+        guard let mediaUrl = Self.mediaURL(from: url) else {
             sendEvent(event: "error", value: "Invalid URL: \(url)")
+            return
+        }
+
+        // Security-scoped bookmarks (e.g. file picker) need an explicit access
+        // pair; harmless no-op for ordinary file:// / http(s) URLs.
+        let accessing = mediaUrl.isFileURL && mediaUrl.startAccessingSecurityScopedResource()
+        if accessing {
+            securityScopedURLs.insert(mediaUrl)
+        }
+
+        if mediaUrl.isFileURL, !FileManager.default.isReadableFile(atPath: mediaUrl.path) {
+            sendEvent(
+                event: "error",
+                value:
+                    "The file couldn’t be opened because you don’t have permission to view it. "
+                    + "On macOS App Sandbox, open files via a user-selected bookmark "
+                    + "or place them in the app container (e.g. temporary directory)."
+            )
             return
         }
 
@@ -870,6 +905,7 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler {
     }
 
     private func cleanupPlayer() {
+        stopSecurityScopedAccess()
         if let observer = timeObserver {
             player?.removeTimeObserver(observer)
             timeObserver = nil

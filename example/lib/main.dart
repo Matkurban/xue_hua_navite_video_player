@@ -90,14 +90,17 @@ const List<_DemoItem> _networkDemoPlaylist = <_DemoItem>[
   ),
 ];
 
-/// Prefer a short local fixture when present (Linux/Windows CI) so UI EOS tests are fast.
+/// Prefer a short local fixture when present (Linux/macOS/Windows CI) so UI EOS tests are fast.
 List<_DemoItem> get _demoPlaylist {
   final localCandidates = <String>[
+    if (Platform.isMacOS || Platform.isIOS)
+      '${Directory.systemTemp.path}${Platform.pathSeparator}xh_it_test.mp4',
     '/workspace/test.mp4',
+    r'/Users/admin/XueHuaPackages/xue_hua_navite_video_player/test.mp4',
+    r'E:\XueHuaPackages\xue_hua_navite_video_player\test.mp4',
     '${Directory.systemTemp.path}${Platform.pathSeparator}xh_it_test.mp4',
     'test.mp4',
-    if (Platform.isWindows)
-      r'E:\XueHuaPackages\xue_hua_navite_video_player\test.mp4',
+    '../test.mp4',
   ];
   for (final path in localCandidates) {
     if (File(path).existsSync()) {

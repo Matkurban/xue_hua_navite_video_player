@@ -385,6 +385,22 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler {
         return 0
     }
 
+    private var securityScopedURLs = Set<URL>()
+
+    private static func mediaURL(from raw: String) -> URL? {
+        if let url = URL(string: raw), url.scheme != nil {
+            return url
+        }
+        return URL(fileURLWithPath: raw)
+    }
+
+    private func stopSecurityScopedAccess() {
+        for url in securityScopedURLs {
+            url.stopAccessingSecurityScopedResource()
+        }
+        securityScopedURLs.removeAll()
+    }
+
     func open(url: String, castUrl: String? = nil) {
         let keepCastPlayer = (player?.isExternalPlaybackActive == true)
         if keepCastPlayer {
@@ -396,9 +412,14 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler {
         currentUrl = url
         currentCastUrl = castUrl
 
-        guard let mediaUrl = URL(string: url) else {
+        guard let mediaUrl = Self.mediaURL(from: url) else {
             sendEvent(event: "error", value: "Invalid URL: \(url)")
             return
+        }
+
+        let accessing = mediaUrl.isFileURL && mediaUrl.startAccessingSecurityScopedResource()
+        if accessing {
+            securityScopedURLs.insert(mediaUrl)
         }
 
         let asset = AVURLAsset(url: mediaUrl)
@@ -775,6 +796,7 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler {
     }
 
     private func cleanupPlayer() {
+        stopSecurityScopedAccess()
         if let observer = timeObserver {
             player?.removeTimeObserver(observer)
             timeObserver = nil

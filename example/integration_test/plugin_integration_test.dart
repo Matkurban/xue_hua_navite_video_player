@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
@@ -31,34 +32,21 @@ Future<void> _sleep(WidgetTester tester, Duration d) async {
 }
 
 Future<String> _localVideoPath() async {
-  final List<String> presets = <String>[
-    '/workspace/test.mp4',
-    if (Platform.isWindows)
-      r'E:\XueHuaPackages\xue_hua_navite_video_player\test.mp4',
-    '${Directory.systemTemp.path}${Platform.pathSeparator}xh_it_test.mp4',
-  ];
-  for (final String preset in presets) {
-    if (File(preset).existsSync()) return preset;
+  // Prefer extracting the bundled asset into the app container temp directory.
+  // That works under macOS App Sandbox and on iOS (where Process.run/ffmpeg is
+  // unavailable). Absolute host paths may exist but AVPlayer often cannot open them.
+  final String out =
+      '${Directory.systemTemp.path}${Platform.pathSeparator}xh_it_test.mp4';
+  final File outFile = File(out);
+  if (!outFile.existsSync()) {
+    final ByteData data = await rootBundle.load('assets/test.mp4');
+    await outFile.writeAsBytes(
+      data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
+      flush: true,
+    );
   }
-  final String out = presets.last;
-  final ProcessResult r = await Process.run('ffmpeg', <String>[
-    '-loglevel',
-    'error',
-    '-y',
-    '-f',
-    'lavfi',
-    '-i',
-    'testsrc=size=320x240:rate=30',
-    '-t',
-    '10',
-    '-c:v',
-    'libx264',
-    '-pix_fmt',
-    'yuv420p',
-    out,
-  ]);
-  if (r.exitCode != 0) {
-    throw StateError('ffmpeg failed (code ${r.exitCode}): ${r.stderr}');
+  if (!outFile.existsSync()) {
+    throw StateError('failed to materialize local IT fixture at $out');
   }
   return out;
 }

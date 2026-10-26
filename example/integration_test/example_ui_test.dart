@@ -7,21 +7,17 @@ import 'package:material_ui/material_ui.dart';
 import 'package:xue_hua_navite_video_player_example/main.dart' as app;
 
 String _fixtureVideoPath() {
-  final candidates = <String>[
-    '/workspace/test.mp4',
-    if (Platform.isWindows)
-      r'E:\XueHuaPackages\xue_hua_navite_video_player\test.mp4',
-    '${Directory.systemTemp.path}${Platform.pathSeparator}xh_it_test.mp4',
-  ];
-  for (final path in candidates) {
-    if (File(path).existsSync()) return path;
-  }
-  return candidates.last;
+  // Always materialize under systemTemp so AVPlayer can read the file inside
+  // the app container (macOS sandbox / iOS) and so iOS does not need ffmpeg.
+  return '${Directory.systemTemp.path}${Platform.pathSeparator}xh_it_test.mp4';
 }
 
 String _shotsDir() {
   if (Platform.isWindows) {
     return r'E:\XueHuaPackages\xue_hua_navite_video_player\win_shots';
+  }
+  if (Platform.isMacOS) {
+    return r'/Users/admin/XueHuaPackages/xue_hua_navite_video_player/mac_shots';
   }
   return '/workspace/xvfb_shots';
 }
@@ -65,6 +61,10 @@ Future<void> _shot(String name) async {
           "\$g.CopyFromScreen(\$b.Location,[System.Drawing.Point]::Empty,\$b.Size); "
           "\$bmp.Save('$out'); \$g.Dispose(); \$bmp.Dispose();",
     ]);
+    return;
+  }
+  if (Platform.isMacOS) {
+    await Process.run('screencapture', <String>['-x', out]);
     return;
   }
   final display = Platform.environment['DISPLAY'] ?? ':99';
@@ -120,25 +120,11 @@ Future<void> _scrubToFraction(WidgetTester tester, double fraction) async {
 Future<void> _ensureFixture() async {
   final path = _fixtureVideoPath();
   if (File(path).existsSync()) return;
-  final r = await Process.run('ffmpeg', <String>[
-    '-loglevel',
-    'error',
-    '-y',
-    '-f',
-    'lavfi',
-    '-i',
-    'testsrc=size=320x240:rate=30',
-    '-t',
-    '10',
-    '-c:v',
-    'libx264',
-    '-pix_fmt',
-    'yuv420p',
-    path,
-  ]);
-  if (r.exitCode != 0) {
-    throw StateError('ffmpeg failed (code ${r.exitCode}): ${r.stderr}');
-  }
+  final ByteData data = await rootBundle.load('assets/test.mp4');
+  await File(path).writeAsBytes(
+    data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
+    flush: true,
+  );
 }
 
 void main() {
