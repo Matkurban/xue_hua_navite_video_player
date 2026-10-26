@@ -51,3 +51,5 @@ pubspec.lock
 .config/dart_skills/
 .cursor/skills/
 .claude/skills/
+test.mp4
+win_shots/

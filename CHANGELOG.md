@@ -1,3 +1,9 @@
+## 2.6.5
+
+- Tests / example: replace deprecated `package:flutter/material.dart` imports in integration tests with `material_ui` so `flutter analyze` is clean on Flutter 3.50+.
+- Tests / example: resolve local `test.mp4` fixture and screenshot directories on Windows as well as Linux; example playlist auto-detects the Windows plugin-tree fixture for fast EOS UI coverage.
+- Verified on Windows desktop: `flutter analyze` clean, unit tests, `plugin_integration_test`, and `example_ui_test` (list → open, play/pause, keyboard, scrub → completed/replay, open another).
+
 ## 2.6.4
 
 - Example: support local file playlist entries (`playFile` vs `playNetwork`) and auto-prepend `/workspace/test.mp4` when present for Linux/CI UI EOS coverage.

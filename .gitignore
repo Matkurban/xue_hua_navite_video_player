@@ -31,3 +31,8 @@ migrate_working_dir/
 .flutter-plugins-dependencies
 /build/
 /coverage/
+
+# Local IT fixtures / desktop screenshots
+/test.mp4
+/win_shots/
+/xvfb_shots/
