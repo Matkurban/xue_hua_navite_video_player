@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
@@ -6,6 +8,13 @@ import 'package:xue_hua_navite_video_player/xue_hua_navite_video_player.dart';
 import 'package:xue_hua_navite_video_player_example/app_theme.dart';
 
 Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await XueHuaNaviteVideoPlayer.instance.initialize();
+  runApp(const ExampleApp());
+}
+
+/// Boots the example app for integration / driver tests.
+Future<void> startExampleApp() async {
   WidgetsFlutterBinding.ensureInitialized();
   await XueHuaNaviteVideoPlayer.instance.initialize();
   runApp(const ExampleApp());
@@ -30,7 +39,9 @@ class ExampleApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return SignalBuilder(
       builder: (context) {
-        final playerTheme = _resolveExamplePlayerTheme(_playerStyleSignal.value);
+        final playerTheme = _resolveExamplePlayerTheme(
+          _playerStyleSignal.value,
+        );
         return MaterialApp(
           title: 'Video Player',
           debugShowCheckedModeBanner: false,
@@ -55,7 +66,7 @@ class _DemoItem {
   const _DemoItem(this.title, this.url);
 }
 
-const List<_DemoItem> _demoPlaylist = <_DemoItem>[
+const List<_DemoItem> _networkDemoPlaylist = <_DemoItem>[
   _DemoItem(
     'Pexels · 4K Landscape',
     'https://videos.pexels.com/video-files/29603233/12740435_3840_2160_30fps.mp4',
@@ -79,12 +90,32 @@ const List<_DemoItem> _demoPlaylist = <_DemoItem>[
   ),
 ];
 
+/// Prefer a short local fixture when present (Linux box / CI) so UI EOS tests are fast.
+List<_DemoItem> get _demoPlaylist {
+  const localCandidates = <String>['/workspace/test.mp4', 'test.mp4'];
+  for (final path in localCandidates) {
+    if (File(path).existsSync()) {
+      return <_DemoItem>[
+        _DemoItem('Local · test.mp4', path),
+        ..._networkDemoPlaylist,
+      ];
+    }
+  }
+  return List<_DemoItem>.from(_networkDemoPlaylist);
+}
+
+bool _isLocalSource(String url) {
+  return url.startsWith('file:') ||
+      (!url.contains('://') && !url.startsWith('http'));
+}
+
 class HomePage extends StatelessWidget {
   const HomePage({super.key});
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      key: const ValueKey<String>('home_page'),
       appBar: AppBar(
         title: const Text('Video Player'),
         bottom: const PreferredSize(
@@ -102,6 +133,7 @@ class HomePage extends StatelessWidget {
         itemBuilder: (context, index) {
           final item = _demoPlaylist[index];
           return ListTile(
+            key: ValueKey<String>('demo_item_$index'),
             leading: CircleAvatar(child: Text('${index + 1}')),
             title: Text(item.title),
             subtitle: Text(
@@ -186,7 +218,11 @@ class _PlayerPageState extends State<PlayerPage> {
 
   Future<void> _openCurrent() async {
     final item = _demoPlaylist[_index];
-    await _controller.playNetwork(item.url);
+    if (_isLocalSource(item.url)) {
+      await _controller.playFile(item.url);
+    } else {
+      await _controller.playNetwork(item.url);
+    }
   }
 
   Future<void> _playAt(int index) async {
@@ -330,6 +366,7 @@ class _PlayerPageState extends State<PlayerPage> {
     final current = _demoPlaylist[_index];
 
     return Scaffold(
+      key: const ValueKey<String>('player_page'),
       backgroundColor: Colors.black,
       body: VideoPlayer(
         controller: _controller,
@@ -337,11 +374,13 @@ class _PlayerPageState extends State<PlayerPage> {
         onClose: () => Navigator.of(context).maybePop(),
         title: Text(
           current.title,
+          key: const ValueKey<String>('player_title'),
           style: const TextStyle(color: Colors.white),
           overflow: TextOverflow.ellipsis,
         ),
         actions: <Widget>[
           IconButton(
+            key: const ValueKey<String>('player_more_button'),
             icon: const Icon(Icons.more_horiz),
             color: Colors.white,
             onPressed: _showMoreSheet,
@@ -478,7 +517,10 @@ class _CoversDialog extends StatelessWidget {
                       SizedBox(
                         width: 100,
                         height: 56,
-                        child: _NaviteFileImage(file: f.image, fit: BoxFit.cover),
+                        child: _NaviteFileImage(
+                          file: f.image,
+                          fit: BoxFit.cover,
+                        ),
                       ),
                       const SizedBox(width: 10),
                       Expanded(

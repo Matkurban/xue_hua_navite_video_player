@@ -123,6 +123,7 @@ class _PlayerBottomScrubberState extends State<PlayerBottomScrubber> {
               Text(_formatDuration(previewDuration), style: style.timeTextStyle),
               Expanded(
                 child: PlayerScrubberSlider(
+                  key: const ValueKey<String>('video_player_scrubber'),
                   value: effectiveValue,
                   activeColor: style.scrubberActiveColor,
                   bufferedColor: style.scrubberBufferedColor,

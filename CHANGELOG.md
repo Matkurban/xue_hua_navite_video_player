@@ -1,3 +1,10 @@
+## 2.6.4
+
+- Example: support local file playlist entries (`playFile` vs `playNetwork`) and auto-prepend `/workspace/test.mp4` when present for Linux/CI UI EOS coverage.
+- Example + plugin UI: add stable `ValueKey`s for home/player pages, demo items, play/pause, replay, and scrubber so `integration_test` can drive real UI flows under Xvfb.
+- Add `example/integration_test/example_ui_test.dart` covering list → open, play/pause, keyboard shortcuts, scrub near end → completed/replay, and opening another item.
+- Tests: clear `HttpOverrides` for `LocalCastHttpServer` range serving; extra `pump` for cast-button SignalBuilder rebuild in widget tests.
+
 ## 2.6.3
 
 - Fix (Windows): define `_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS` so MSVC 14.5x / VS 18 can compile C++/WinRT casting code (STL1011 experimental coroutine hard-error).

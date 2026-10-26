@@ -117,6 +117,7 @@ class _CenterPrimaryControlButton extends StatelessWidget {
 
     if (state == PlayState.completed) {
       return PlayerIconButton(
+        key: const ValueKey<String>('video_player_replay_button'),
         circularGlassInCupertino: isCupertino,
         backgroundColor: style.centerButtonBackgroundColor,
         color: style.foregroundColor,
@@ -133,6 +134,7 @@ class _CenterPrimaryControlButton extends StatelessWidget {
 
     final isPlaying = state == PlayState.playing;
     return PlayerIconButton(
+      key: const ValueKey<String>('video_player_play_pause_button'),
       circularGlassInCupertino: isCupertino,
       backgroundColor: style.centerButtonBackgroundColor,
       color: style.foregroundColor,

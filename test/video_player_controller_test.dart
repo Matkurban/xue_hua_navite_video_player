@@ -407,17 +407,13 @@ void main() {
       await controller.showCastPicker();
       expect(backend.showCastPickerCount, 1);
 
-      backend.emit(
-        const PlayerEvent.castState(CastState.connecting, deviceName: '客厅 Apple TV'),
-      );
+      backend.emit(const PlayerEvent.castState(CastState.connecting, deviceName: '客厅 Apple TV'));
       await Future<void>.delayed(Duration.zero);
       expect(controller.castState.value, CastState.connecting);
       expect(controller.isCasting.value, isTrue);
       expect(controller.castDeviceName.value, '客厅 Apple TV');
 
-      backend.emit(
-        const PlayerEvent.castState(CastState.connected, deviceName: '客厅 Apple TV'),
-      );
+      backend.emit(const PlayerEvent.castState(CastState.connected, deviceName: '客厅 Apple TV'));
       await Future<void>.delayed(Duration.zero);
       expect(controller.castState.value, CastState.connected);
       expect(controller.isCasting.value, isTrue);
@@ -449,10 +445,7 @@ void main() {
         overrideHostIp: '127.0.0.1',
       );
       final backend = _FakePlayerBackend();
-      final controller = VideoPlayerController(
-        backend: backend,
-        localCastServer: castServer,
-      );
+      final controller = VideoPlayerController(backend: backend, localCastServer: castServer);
 
       await controller.initialize();
       await controller.openFile(mediaFile.path);
@@ -461,6 +454,10 @@ void main() {
       expect(castUrl, isNotNull);
       expect(castUrl, startsWith('http://127.0.0.1:'));
 
+      // TestWidgetsFlutterBinding installs an HttpOverrides that returns 400 for
+      // every request. Clear it so we hit the real LocalCastHttpServer.
+      final HttpOverrides? previousOverrides = HttpOverrides.current;
+      HttpOverrides.global = null;
       final client = HttpClient();
       try {
         // 1. Full GET request
@@ -481,6 +478,7 @@ void main() {
         expect(rangeBody, bytes.sublist(10, 26));
       } finally {
         client.close(force: true);
+        HttpOverrides.global = previousOverrides;
       }
 
       await controller.dispose();
@@ -590,10 +588,7 @@ void main() {
             body: SizedBox(
               width: 640,
               height: 360,
-              child: VideoPlayer(
-                controller: controller,
-                autoHideDelay: Duration.zero,
-              ),
+              child: VideoPlayer(controller: controller, autoHideDelay: Duration.zero),
             ),
           ),
         ),
@@ -605,6 +600,8 @@ void main() {
 
       // Platform reports cast available (notConnected) -> cast button appears.
       backend.emit(const PlayerEvent.castState(CastState.notConnected));
+      // SignalBuilder rebuilds on the next frame after the castState signal flips.
+      await tester.pump();
       await tester.pump();
       final castBtn = find.byKey(const ValueKey<String>('video_player_cast_button'));
       expect(castBtn, findsOneWidget);
@@ -614,9 +611,7 @@ void main() {
       expect(backend.showCastPickerCount, 1);
 
       // Platform transitions to connected -> casting overlay & quick actions appear.
-      backend.emit(
-        const PlayerEvent.castState(CastState.connected, deviceName: '客厅电视'),
-      );
+      backend.emit(const PlayerEvent.castState(CastState.connected, deviceName: '客厅电视'));
       await tester.pump();
 
       expect(find.text('正在投屏至「客厅电视」'), findsOneWidget);
