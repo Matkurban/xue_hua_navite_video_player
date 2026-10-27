@@ -1,3 +1,10 @@
+## 2.6.10
+
+- Fix: Live Photo fullscreen black screen — do not wrap `CorePlayer` / PlatformView in `Opacity` / `AnimatedOpacity` / `AnimatedScale` / `ClipRRect`.
+- Fix: share EventChannel listen / refcount across `ChannelPlayerBackend` instances (avoids "No active stream to cancel").
+- Example: ship self-contained GCamera Motion Photo fixtures; live-photo page layout ~7:3 left/right; `flutter drive` coverage for the live-photo flow.
+- Verified: Linux desktop drive/build, web build/run; Windows/macOS/Android/iOS previously green on 2.6.9 line.
+
 ## 2.6.9
 
 - Feature: Live Photo player / gallery support (probe, extract, still + motion playback).
