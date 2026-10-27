@@ -1,3 +1,11 @@
+## 2.6.9
+
+- Feature: Live Photo player / gallery support (probe, extract, still + motion playback).
+- Fix: ignore stale native position events after seek so skip forward/back honors `SkipSecondType`.
+- iOS: remove deprecated `UIApplication.keyWindow` usage for warning-free Xcode builds.
+- Tests / example: expand `plugin_integration_test` coverage (volume/mute/speed/brightness/loop/skip/aspect/fullscreen/snapshot/asset/VideoSource/probes/Live Photo/cast); add `example/test_driver/integration_test.dart`; iOS UI IT screenshots use system temp / `takeScreenshot`.
+- Verified on iOS simulators ios17/18/26/27: `flutter analyze` clean (package + example), zero Xcode compile warnings, `plugin_integration_test` and `example_ui_test`.
+
 ## 2.6.8
 
 - Fix: release the process-wide native `PlaybackSession` slot synchronously at the start of `dispose()` so a newly pushed player page can initialize while the previous async teardown still awaits backend cleanup (Widget.dispose cannot await). Fixes Android races when closing then opening another playlist item.
