@@ -1,11 +1,14 @@
 import 'package:flutter/services.dart';
 import 'package:signals_flutter/signals_flutter.dart';
 
+import '../core/live_photo_source.dart';
 import '../core/video_source.dart';
 import '../data/enums/aspect_ratio_mode.dart';
 import '../data/enums/cast_state.dart';
 import '../data/enums/play_state.dart';
 import '../data/enums/skip_second_type.dart';
+import '../data/models/live_photo_bundle.dart';
+import '../data/models/live_photo_metadata.dart';
 import '../data/models/navite_file.dart';
 import 'brightness_controller.dart';
 import 'fullscreen_coordinator.dart';
@@ -50,10 +53,23 @@ class VideoPlayerController {
   FlutterComputed<double> get progressPercent => _session.progressPercent;
 
   FlutterSignal<bool> get muted => _session.muted;
+  FlutterSignal<bool> get isLooping => _session.isLooping;
   FlutterSignal<SkipSecondType> get skipSecondType => _session.skipSecondType;
   FlutterSignal<AspectRatioMode> get aspectRatioMode => _session.aspectRatioMode;
   FlutterSignal<bool> get isFullscreen => _session.isFullscreen;
   FlutterSignal<double> get brightness => _session.brightness;
+
+  /// Resolved Live Photo / Motion Photo bundle for the currently loaded media, if any.
+  FlutterSignal<LivePhotoBundle?> get livePhotoBundle => _session.livePhotoBundle;
+
+  /// True when the currently loaded media is a Live Photo / Motion Photo.
+  FlutterComputed<bool> get isLivePhoto => _session.isLivePhoto;
+
+  /// Parsed metadata for the currently loaded Live Photo / Motion Photo, if any.
+  FlutterComputed<LivePhotoMetadata?> get livePhotoMetadata => _session.livePhotoMetadata;
+
+  /// Extracted or paired still cover image file for the active Live Photo, if any.
+  FlutterComputed<NaviteFile?> get livePhotoStillImage => _session.livePhotoStillImage;
 
   /// Current wireless casting state.
   FlutterSignal<CastState> get castState => _session.castState;
@@ -85,6 +101,14 @@ class VideoPlayerController {
   Future<void> openAsset(String assetPath, {AssetBundle? bundle}) =>
       _session.openAsset(assetPath, bundle: bundle);
 
+  /// Opens and starts playing a [LivePhotoSource] (paired image+video or single-file Motion Photo).
+  Future<void> playLivePhoto(LivePhotoSource source, {bool? loop}) =>
+      _session.playLivePhoto(source, loop: loop);
+
+  /// Opens a [LivePhotoSource] without starting playback immediately.
+  Future<void> openLivePhoto(LivePhotoSource source, {bool? loop}) =>
+      _session.openLivePhoto(source, loop: loop);
+
   Future<void> playSource(VideoSource source) => _session.playSource(source);
 
   Future<void> openSource(VideoSource source) => _session.openSource(source);
@@ -102,6 +126,12 @@ class VideoPlayerController {
   Future<void> setMuted(bool value) => _session.setMuted(value);
 
   Future<void> toggleMuted() => _session.toggleMuted();
+
+  /// Enables or disables automatic replay at end-of-stream.
+  void setLooping(bool looping) => _session.setLooping(looping);
+
+  /// Toggles [isLooping].
+  void toggleLooping() => _session.toggleLooping();
 
   void setSkipSecondType(SkipSecondType type) => _session.setSkipSecondType(type);
 

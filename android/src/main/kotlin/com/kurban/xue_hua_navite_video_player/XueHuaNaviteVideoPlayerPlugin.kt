@@ -492,6 +492,9 @@ class XueHuaNaviteVideoPlayerPlugin :
 
     private fun handlePlay(result: Result) {
         val player = requirePlayer(result) ?: return
+        if (player.playbackState == Player.STATE_ENDED) {
+            player.seekTo(0)
+        }
         player.play()
         result.success(null)
     }

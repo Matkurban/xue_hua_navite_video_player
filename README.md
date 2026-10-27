@@ -736,6 +736,38 @@ SignalBuilder(
 
 ---
 
+## Live Photo & Motion Photo
+
+Play and extract **Apple Paired Live Photos** (`.HEIC`/`.JPG` + `.MOV`/`.MP4`, or macOS `.pvt` bundles) and **Single-File Motion Photos** (Google Camera `GCamera:MicroVideoOffset`, Android Motion Photo 1.0 `Container:Directory`, Samsung `MotionPhoto_Data`, and generic embedded MP4 trailers) across all 6 platforms:
+
+```dart
+// 1. Dedicated LivePhotoPlayer widget (supports longPress, tap, autoPlayOnce, loop)
+LivePhotoPlayer(
+  source: LivePhotoSource.file(imagePath: '/path/to/MVIMG_2026.jpg'),
+  playMode: LivePhotoPlayMode.longPress,
+  badgePosition: LivePhotoBadgePosition.topLeft,
+  badgeLabel: 'LIVE',
+  aspectRatio: 4 / 3,
+  borderRadius: BorderRadius.circular(12),
+);
+
+// 2. Play or loop a Live Photo via VideoPlayerController
+await controller.playLivePhoto(
+  LivePhotoSource.paired(
+    image: VideoSource.network('https://example.com/photo.jpg'),
+    video: VideoSource.network('https://example.com/photo.mov'),
+  ),
+  loop: true,
+);
+
+// 3. Probe and extract a single-file Motion Photo without starting playback
+final LivePhotoBundle? bundle = await XueHuaNaviteVideoPlayer.instance.extractLivePhoto(
+  VideoSource.file('/path/to/MVIMG_2026.jpg'),
+);
+```
+
+---
+
 ## Example
 
 See [`example/`](example/) for a full demo: playlist, themed `VideoPlayer`, fullscreen, snapshots, cover extraction, and state chips.

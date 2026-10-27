@@ -5,6 +5,7 @@ import '../../data/enums/aspect_ratio_mode.dart';
 import '../../data/enums/cast_state.dart';
 import '../style/player_icon_catalog.dart';
 import '../video_player_slot_context.dart';
+import 'live_photo_badge.dart';
 import 'player_glass_surface.dart';
 import 'player_icon_button.dart';
 import 'player_loading_indicator.dart';
@@ -46,8 +47,22 @@ class PlayerTopBar extends StatelessWidget {
         final castState = controller.castState.value;
         final castSupported = controller.isCastSupported.value;
         final isFullscreen = controller.isFullscreen.value;
+        final isLivePhoto = controller.isLivePhoto.value;
+        final isPlaying = controller.isPlaying.value;
 
         final trailing = <Widget>[
+          if (isLivePhoto)
+            Padding(
+              padding: const EdgeInsets.only(right: 4),
+              child: LivePhotoBadge(
+                compact: true,
+                isPlaying: isPlaying,
+                onTap: () {
+                  controller.playOrPause();
+                  onShowControls();
+                },
+              ),
+            ),
           ...actions,
           ...topBarActions,
           if (showCastButton && castSupported)

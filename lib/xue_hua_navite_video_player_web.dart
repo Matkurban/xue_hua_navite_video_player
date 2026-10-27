@@ -56,12 +56,32 @@ class XueHuaNaviteVideoPlayerWeb {
         _open(args['url'] as String);
         return null;
       case 'play':
-        _videoElement?.play().toDart.catchError((Object error) {
-          _sendEvent('playing', false);
-          _sendEvent('buffering', false);
-          _sendEvent('error', 'Autoplay blocked: $error');
-          return null;
-        });
+        final video = _videoElement;
+        if (video != null) {
+          if (video.ended) {
+            video.currentTime = 0;
+          }
+          video.play().toDart.catchError((Object error) {
+            // If unmuted autoplay (e.g. LivePhoto hover / autoPlayOnce / loop)
+            // is blocked by browser policy, automatically mute and retry so
+            // Live Photos and inline previews still play smoothly on Web.
+            final errStr = error.toString();
+            if (!video.muted &&
+                (errStr.contains('NotAllowedError') || errStr.contains('interact'))) {
+              video.muted = true;
+              return video.play().toDart.catchError((Object retryErr) {
+                _sendEvent('playing', false);
+                _sendEvent('buffering', false);
+                _sendEvent('error', 'Autoplay blocked: $retryErr');
+                return null;
+              });
+            }
+            _sendEvent('playing', false);
+            _sendEvent('buffering', false);
+            _sendEvent('error', 'Autoplay blocked: $error');
+            return null;
+          });
+        }
         return null;
       case 'pause':
         _videoElement?.pause();
@@ -75,8 +95,12 @@ class XueHuaNaviteVideoPlayerWeb {
         return null;
       case 'setVolume':
         final args = Map<String, dynamic>.from(call.arguments as Map);
-        final vol = (args['volume'] as num).toDouble();
-        if (_videoElement != null) _videoElement!.volume = vol;
+        final vol = (args['volume'] as num).toDouble().clamp(0.0, 1.0);
+        if (_videoElement != null) {
+          _videoElement!.volume = vol;
+          // Sync the DOM `muted` property so muted playback satisfies browser autoplay policies.
+          _videoElement!.muted = vol <= 0.0;
+        }
         return null;
       case 'setSpeed':
         final args = Map<String, dynamic>.from(call.arguments as Map);
@@ -129,6 +153,9 @@ class XueHuaNaviteVideoPlayerWeb {
     // always returns a live element across dispose → create cycles.
     _videoElement ??= html.HTMLVideoElement()
       ..crossOrigin = 'anonymous'
+      ..playsInline = true
+      ..setAttribute('playsinline', 'true')
+      ..setAttribute('webkit-playsinline', 'true')
       ..style.width = '100%'
       ..style.height = '100%'
       ..style.setProperty('object-fit', 'contain')
@@ -251,8 +278,17 @@ class XueHuaNaviteVideoPlayerWeb {
   }
 
   void _open(String url) {
-    _videoElement?.src = url;
-    _videoElement?.load();
+    final video = _videoElement;
+    if (video == null) return;
+    // Blob URLs and data: URLs do not need anonymous CORS mode, whereas remote
+    // http(s) URLs keep crossOrigin='anonymous' for canvas snapshots.
+    if (url.startsWith('blob:') || url.startsWith('data:')) {
+      video.removeAttribute('crossorigin');
+    } else {
+      video.crossOrigin = 'anonymous';
+    }
+    video.src = url;
+    video.load();
     _sendEvent('playing', false);
     _sendEvent('buffering', true);
   }

@@ -1,7 +1,9 @@
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:signals_flutter/signals_flutter.dart';
 import 'package:xue_hua_navite_video_player/xue_hua_navite_video_player.dart';
@@ -66,6 +68,17 @@ class _DemoItem {
   const _DemoItem(this.title, this.url);
 }
 
+const List<String> _bundledLivePhotoAssets = <String>[
+  'assets/live_photo/IMG_0262_4CDAA1F2.HEIC',
+  'assets/live_photo/IMG_0264_0E7941B7.HEIC',
+  'assets/live_photo/IMG_0266_02198E26.HEIC',
+  'assets/live_photo/IMG_0267_9B7F181C.HEIC',
+  'assets/live_photo/IMG_0268_33A277C0.HEIC',
+  'assets/live_photo/IMG_0278_E357CFC0.HEIC',
+  'assets/live_photo/IMG_0037.HEIC',
+  'assets/live_photo/IMG_0038.HEIC',
+];
+
 const List<_DemoItem> _networkDemoPlaylist = <_DemoItem>[
   _DemoItem(
     'Pexels · 4K Landscape',
@@ -127,6 +140,20 @@ class HomePage extends StatelessWidget {
       key: const ValueKey<String>('home_page'),
       appBar: AppBar(
         title: const Text('Video Player'),
+        actions: <Widget>[
+          IconButton(
+            key: const ValueKey<String>('live_photo_demo_button'),
+            tooltip: 'Live Photo / 动态照片',
+            icon: const Icon(Icons.motion_photos_on_rounded),
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const LivePhotoDemoPage(),
+                ),
+              );
+            },
+          ),
+        ],
         bottom: const PreferredSize(
           preferredSize: Size.fromHeight(48),
           child: Padding(
@@ -137,9 +164,28 @@ class HomePage extends StatelessWidget {
       ),
       body: ListView.separated(
         padding: const EdgeInsets.symmetric(vertical: 8),
-        itemCount: _demoPlaylist.length,
+        itemCount: _demoPlaylist.length + 1,
         separatorBuilder: (_, _) => const Divider(height: 1),
         itemBuilder: (context, index) {
+          if (index == _demoPlaylist.length) {
+            return ListTile(
+              key: const ValueKey<String>('demo_live_photo_entry'),
+              leading: const CircleAvatar(
+                child: Icon(Icons.motion_photos_on_rounded, size: 20),
+              ),
+              title: const Text('Live Photos · 动态照片画廊 (6 张 HEIC)'),
+              subtitle: const Text('assets/live_photo/*.HEIC'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const LivePhotoDemoPage(),
+                  ),
+                );
+              },
+            );
+          }
+
           final item = _demoPlaylist[index];
           return ListTile(
             key: ValueKey<String>('demo_item_$index'),
@@ -196,6 +242,242 @@ class _DesignStyleSelector extends StatelessWidget {
           },
         );
       },
+    );
+  }
+}
+
+class _ResolvedGalleryLivePhoto {
+  final String title;
+  final String assetPath;
+  final LivePhotoSource source;
+  final String subtitle;
+
+  const _ResolvedGalleryLivePhoto({
+    required this.title,
+    required this.assetPath,
+    required this.source,
+    required this.subtitle,
+  });
+}
+
+class LivePhotoDemoPage extends StatefulWidget {
+  const LivePhotoDemoPage({super.key});
+
+  @override
+  State<LivePhotoDemoPage> createState() => _LivePhotoDemoPageState();
+}
+
+class _LivePhotoDemoPageState extends State<LivePhotoDemoPage> {
+  LivePhotoPlayMode _playMode = LivePhotoPlayMode.longPress;
+  int _selectedIndex = 0;
+  List<_ResolvedGalleryLivePhoto> _items = const <_ResolvedGalleryLivePhoto>[];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadBundledLivePhotos();
+  }
+
+  Future<void> _loadBundledLivePhotos() async {
+    final resolved = <_ResolvedGalleryLivePhoto>[];
+
+    for (final assetPath in _bundledLivePhotoAssets) {
+      final fileName = assetPath.split('/').last;
+      // 1. Check if the .HEIC asset has an embedded video stream or a sibling .MOV/.MP4 asset.
+      final probed = await XueHuaNaviteVideoPlayer.instance.extractLivePhoto(
+        VideoSource.asset(assetPath),
+      );
+      if (probed != null) {
+        resolved.add(
+          _ResolvedGalleryLivePhoto(
+            title: fileName,
+            assetPath: assetPath,
+            source: LivePhotoSource.asset(imageAsset: assetPath),
+            subtitle: '${probed.metadata.format.name} ·内嵌或同名配对视频',
+          ),
+        );
+      } else {
+        // 2. If only the .HEIC still image was copied into assets/live_photo/
+        // (e.g. vivo/iOS paired export where the companion .MOV was not copied),
+        // pair the real .HEIC cover asset with assets/test.mp4 so it can be
+        // previewed and played immediately in the example!
+        resolved.add(
+          _ResolvedGalleryLivePhoto(
+            title: fileName,
+            assetPath: assetPath,
+            source: LivePhotoSource.asset(
+              imageAsset: assetPath,
+              videoAsset: 'assets/test.mp4',
+            ),
+            subtitle: 'HEIC 实况封面 + 配对视频流',
+          ),
+        );
+      }
+    }
+
+    // Also include a synthesized single-file XMP Motion Photo at the end for comparison.
+    try {
+      final recorder = ui.PictureRecorder();
+      final canvas = Canvas(recorder);
+      const size = Size(640, 360);
+      final paint = Paint()
+        ..shader = const LinearGradient(
+          colors: <Color>[
+            Color(0xFF0F2027),
+            Color(0xFF203A43),
+            Color(0xFF2C5364),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ).createShader(Offset.zero & size);
+      canvas.drawRect(Offset.zero & size, paint);
+      final picture = recorder.endRecording();
+      final img = await picture.toImage(
+        size.width.toInt(),
+        size.height.toInt(),
+      );
+      final byteData = await img.toByteData(format: ui.ImageByteFormat.png);
+      final coverBytes = byteData!.buffer.asUint8List();
+
+      final videoAsset = await rootBundle.load('assets/test.mp4');
+      final videoBytes = videoAsset.buffer.asUint8List(
+        videoAsset.offsetInBytes,
+        videoAsset.lengthInBytes,
+      );
+      final motionBytes = LivePhotoParser.createMotionPhotoBytes(
+        imageBytes: coverBytes,
+        videoBytes: videoBytes,
+        presentationTimestamp: const Duration(milliseconds: 500),
+      );
+      resolved.add(
+        _ResolvedGalleryLivePhoto(
+          title: 'Synthesized · XMP MotionPhoto.jpg',
+          assetPath: 'memory://demo_motion_photo.jpg',
+          source: LivePhotoSource.bytes(
+            motionBytes,
+            name: 'demo_motion_photo.jpg',
+          ),
+          subtitle:
+              'GCamera:MicroVideoOffset 单文件内嵌 MP4 (${motionBytes.length}B)',
+        ),
+      );
+    } catch (_) {}
+
+    if (!mounted) return;
+    setState(() {
+      _items = resolved;
+      _loading = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final current = _items.isNotEmpty ? _items[_selectedIndex] : null;
+
+    return Scaffold(
+      key: const ValueKey<String>('live_photo_demo_page'),
+      appBar: AppBar(title: const Text('Live Photo · 动态照片')),
+      body: _loading || current == null
+          ? const Center(child: CircularProgressIndicator())
+          : ListView(
+              padding: const EdgeInsets.all(16),
+              children: <Widget>[
+                const Center(child: _DesignStyleSelector()),
+                const SizedBox(height: 12),
+                Center(
+                  child: CupertinoSlidingSegmentedControl<LivePhotoPlayMode>(
+                    groupValue: _playMode,
+                    children: const <LivePhotoPlayMode, Widget>{
+                      LivePhotoPlayMode.longPress: Padding(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 6,
+                        ),
+                        child: Text('长按'),
+                      ),
+                      LivePhotoPlayMode.hover: Padding(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 6,
+                        ),
+                        child: Text('悬停'),
+                      ),
+                      LivePhotoPlayMode.tap: Padding(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 6,
+                        ),
+                        child: Text('点击'),
+                      ),
+                      LivePhotoPlayMode.autoPlayOnce: Padding(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 6,
+                        ),
+                        child: Text('一次'),
+                      ),
+                      LivePhotoPlayMode.loop: Padding(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 6,
+                        ),
+                        child: Text('循环'),
+                      ),
+                    },
+                    onValueChanged: (mode) {
+                      if (mode != null) {
+                        setState(() => _playMode = mode);
+                      }
+                    },
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  current.title,
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(top: 4, bottom: 10),
+                  child: Text(
+                    current.subtitle,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ),
+                LivePhotoPlayer(
+                  key: ValueKey<String>('demo_live_photo_${current.assetPath}'),
+                  source: current.source,
+                  playMode: _playMode,
+                  aspectRatio: 3 / 4,
+                  fit: BoxFit.cover,
+                  borderRadius: BorderRadius.circular(16),
+                  badgeLabel: '实况',
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  '选择动态照片 (${_items.length})',
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+                const SizedBox(height: 8),
+                for (var i = 0; i < _items.length; i++)
+                  Card(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    child: ListTile(
+                      key: ValueKey<String>('live_photo_item_$i'),
+                      selected: i == _selectedIndex,
+                      leading: CircleAvatar(child: Text('${i + 1}')),
+                      title: Text(_items[i].title),
+                      subtitle: Text(_items[i].subtitle),
+                      trailing: i == _selectedIndex
+                          ? const Icon(Icons.check_circle_rounded)
+                          : const Icon(Icons.play_circle_outline_rounded),
+                      onTap: () {
+                        setState(() => _selectedIndex = i);
+                      },
+                    ),
+                  ),
+              ],
+            ),
     );
   }
 }

@@ -250,6 +250,10 @@ namespace xue_hua_navite_video_player {
 
 	void MpvPlayer::Play() {
 		if (!mpv_) return;
+		int eof = 0;
+		if (mpv_get_property(mpv_, "eof-reached", MPV_FORMAT_FLAG, &eof) >= 0 && eof != 0) {
+			Seek(0);
+		}
 		int flag = 0;
 		mpv_set_property(mpv_, "pause", MPV_FORMAT_FLAG, &flag);
 	}

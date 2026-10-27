@@ -5,6 +5,9 @@ import '../data/enums/aspect_ratio_mode.dart';
 import '../data/enums/cast_state.dart';
 import '../data/enums/play_state.dart';
 import '../data/enums/skip_second_type.dart';
+import '../data/models/live_photo_bundle.dart';
+import '../data/models/live_photo_metadata.dart';
+import '../data/models/navite_file.dart';
 
 /// Holds all reactive [FlutterSignal] and [FlutterComputed] properties for a
 /// [PlaybackSession].
@@ -21,12 +24,31 @@ class PlaybackSessionState {
   final FlutterSignal<Size> videoSize = signal<Size>(Size.zero);
   final FlutterSignal<int> rotationDegrees = signal<int>(0);
   final FlutterSignal<bool> muted = signal(false);
+  final FlutterSignal< bool> isLooping = signal(false);
   final FlutterSignal<SkipSecondType> skipSecondType = signal(SkipSecondType.second10);
   final FlutterSignal<AspectRatioMode> aspectRatioMode = signal(AspectRatioMode.fit);
   final FlutterSignal<bool> isFullscreen = signal(false);
   final FlutterSignal<double> brightness = signal(1.0);
   final FlutterSignal<CastState> castState = signal(CastState.unavailable);
   final FlutterSignal<String?> castDeviceName = signal<String?>(null);
+
+  /// Resolved Live Photo / Motion Photo bundle for the currently loaded media, if any.
+  final FlutterSignal<LivePhotoBundle?> livePhotoBundle = signal<LivePhotoBundle?>(null);
+
+  /// Whether the currently loaded media is a Live Photo / Motion Photo.
+  late final FlutterComputed<bool> isLivePhoto = computed(() {
+    return livePhotoBundle.value != null;
+  });
+
+  /// Parsed metadata for the currently loaded Live Photo / Motion Photo, if any.
+  late final FlutterComputed<LivePhotoMetadata?> livePhotoMetadata = computed(() {
+    return livePhotoBundle.value?.metadata;
+  });
+
+  /// Extracted or paired still cover image file for the active Live Photo, if any.
+  late final FlutterComputed<NaviteFile?> livePhotoStillImage = computed(() {
+    return livePhotoBundle.value?.imageFile;
+  });
 
   late final FlutterComputed<double> videoAspectRatio = computed(() {
     final size = videoSize.value;
@@ -67,7 +89,7 @@ class PlaybackSessionState {
   });
 
   /// Resets media-specific playback signals while preserving session settings
-  /// (`volume`, `speed`, `muted`, `aspectRatioMode`, `castState`, `castDeviceName`).
+  /// (`volume`, `speed`, `muted`, `isLooping`, `aspectRatioMode`, `castState`, `castDeviceName`).
   void resetMediaSignals() {
     batch(() {
       playState.value = PlayState.idle;
@@ -79,6 +101,7 @@ class PlaybackSessionState {
       mimeType.value = null;
       videoSize.value = Size.zero;
       rotationDegrees.value = 0;
+      livePhotoBundle.value = null;
     });
   }
 }

@@ -808,6 +808,42 @@ SignalBuilder(
 
 ---
 
+## 动态照片（Live Photo / Motion Photo）
+
+支持全平台解析、提取与播放 **Apple 配对实况照片（Live Photo）** 与 **Android / Google / Xiaomi / OPPO / Samsung 单文件动态照片（Motion Photo）**：
+
+- **双文件配对格式（`LivePhotoSource.paired` / `.network` / `.file` / `.asset`）**：显式传入静态封面图与短视频源；或仅传入本地图片路径（自动发现同目录同名 `.MOV`/`.MP4` 及 macOS `.pvt` 包）。
+- **单文件内嵌格式（`LivePhotoSource.single` / `.bytes`）**：内置纯 Dart 二进制与 XMP 解析器 `LivePhotoParser`，支持 Google Camera MicroVideo XMP（`GCamera:MicroVideoOffset`）、Android Motion Photo 1.0（`Container:Directory` / `Item:Semantic="MotionPhoto"` + `Item:Length`）、Samsung Motion Photo（`MotionPhoto_Data` 标记块）与通用尾部内嵌 ISO BMFF（`ftyp`）MP4/MOV 视频流，并支持 `LivePhotoParser.createMotionPhotoBytes` 合成标准单文件动态照片。
+- **专用交互组件 `LivePhotoPlayer`**：静态封面图常驻底层，触发播放时平滑交叉淡入视频帧并附带 iOS 相册风格微缩放动效（`1.0 -> 1.035`），支持 `LivePhotoPlayMode.longPress`（长按播放，松手恢复）、`tap`（点击播放一次）、`autoPlayOnce`（自动播放一次）与 `loop`（无缝循环）。
+
+```dart
+// 1. 使用专用 LivePhotoPlayer 组件（在列表/网格中按需自动协调全局单会话）
+LivePhotoPlayer(
+  source: LivePhotoSource.file(imagePath: '/path/to/MVIMG_2026.jpg'),
+  playMode: LivePhotoPlayMode.longPress,
+  badgePosition: LivePhotoBadgePosition.topLeft,
+  badgeLabel: '实况',
+  aspectRatio: 4 / 3,
+  borderRadius: BorderRadius.circular(12),
+);
+
+// 2. 通过 VideoPlayerController 直接播放动态照片或开启循环
+await controller.playLivePhoto(
+  LivePhotoSource.paired(
+    image: VideoSource.network('https://example.com/photo.jpg'),
+    video: VideoSource.network('https://example.com/photo.mov'),
+  ),
+  loop: true,
+);
+
+// 3. 不起播探测与拆分单文件动态照片（获取纯净封面图 NaviteFile、视频源与偏移元数据）
+final LivePhotoBundle? bundle = await XueHuaNaviteVideoPlayer.instance.extractLivePhoto(
+  VideoSource.file('/path/to/MVIMG_2026.jpg'),
+);
+```
+
+---
+
 ## 示例应用
 
 在线演示：<https://matkurban.github.io/xue_hua_navite_video_player/>

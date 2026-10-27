@@ -4,20 +4,24 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import '../utils/asset_extractor.dart';
+import '../utils/live_photo_extractor.dart';
+import 'live_photo_source.dart';
 
-/// 描述一个视频 / 音频的来源。
+/// 描述一个视频 / 音频 / 动态照片的来源。
 ///
-/// * [NetworkVideoSource] ─ 网络地址（`http(s)://...`），由原生播放器直连。
-/// * [FileVideoSource]    ─ 本地绝对路径或 `file://` URI。
-/// * [AssetVideoSource]   ─ Flutter assets。原生平台抽取到临时目录后以 `file://`
+/// * [NetworkVideoSource]   ─ 网络地址（`http(s)://...`），由原生播放器直连。
+/// * [FileVideoSource]      ─ 本地绝对路径或 `file://` URI。
+/// * [AssetVideoSource]     ─ Flutter assets。原生平台抽取到临时目录后以 `file://`
 ///   交给播放器；Web / WASM 直接使用 Flutter 托管的 `assets/` URL。
+/// * [LivePhotoVideoSource] ─ 动态照片（Live Photo / Motion Photo），解析出内嵌或配对的视频流供播放器消费。
 ///
 /// A sealed description of a playable media source.
 ///
-/// * [NetworkVideoSource] – HTTP(S) URL, opened directly by the native player.
-/// * [FileVideoSource]    – Local absolute path or `file://` URI.
-/// * [AssetVideoSource]   – Flutter asset. Native platforms extract it to a
+/// * [NetworkVideoSource]   – HTTP(S) URL, opened directly by the native player.
+/// * [FileVideoSource]      – Local absolute path or `file://` URI.
+/// * [AssetVideoSource]     – Flutter asset. Native platforms extract it to a
 ///   temp file; Web / WASM uses the Flutter-hosted `assets/` URL.
+/// * [LivePhotoVideoSource] – Live Photo / Motion Photo source resolved to its motion video stream.
 @immutable
 sealed class VideoSource {
   const VideoSource();
@@ -26,7 +30,7 @@ sealed class VideoSource {
   /// Stable identity used for mime sniffing.
   String get identity;
 
-  /// 是否为网络来源。只有 [NetworkVideoSource] 为 true。
+  /// 是否为网络来源。只有 [NetworkVideoSource]（以及配对网络视频的 [LivePhotoVideoSource]）为 true。
   /// Whether this source is a network URL.
   bool get isNetwork => false;
 
@@ -35,6 +39,7 @@ sealed class VideoSource {
   /// * 网络：原样返回
   /// * 文件：规范化为 `file:///absolute/path`
   /// * 资源：原生抽取到临时目录并返回 `file://` URI；Web 返回 `assets/` URL
+  /// * 动态照片：解析或拆分出视频流并返回对应的原生可播放 URL
   ///
   /// Resolve this source into a URL the native player can consume directly.
   Future<String> resolveToNativeUrl();
@@ -50,6 +55,10 @@ sealed class VideoSource {
   /// 快速构造一个资源来源。
   /// Shortcut for a Flutter asset.
   const factory VideoSource.asset(String assetPath, {AssetBundle? bundle}) = AssetVideoSource;
+
+  /// 快速构造一个动态照片（Live Photo / Motion Photo）来源。
+  /// Shortcut for a Live Photo / Motion Photo source.
+  const factory VideoSource.livePhoto(LivePhotoSource livePhoto) = LivePhotoVideoSource;
 }
 
 /// 网络来源，由原生播放器直连。
@@ -145,4 +154,35 @@ class AssetVideoSource extends VideoSource {
 
   @override
   int get hashCode => Object.hash(assetPath, bundle);
+}
+
+/// 动态照片（Live Photo / Motion Photo）视频来源。
+///
+/// Live Photo / Motion Photo media source that resolves to its motion video stream.
+class LivePhotoVideoSource extends VideoSource {
+  /// 动态照片描述。
+  /// Underlying [LivePhotoSource] descriptor.
+  final LivePhotoSource livePhoto;
+
+  const LivePhotoVideoSource(this.livePhoto);
+
+  @override
+  String get identity => livePhoto.identity;
+
+  @override
+  bool get isNetwork => livePhoto.isNetwork;
+
+  @override
+  Future<String> resolveToNativeUrl() async {
+    final bundle = await LivePhotoExtractor.resolve(livePhoto);
+    return bundle.nativeVideoUrl;
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is LivePhotoVideoSource && other.livePhoto == livePhoto;
+
+  @override
+  int get hashCode => livePhoto.hashCode;
 }

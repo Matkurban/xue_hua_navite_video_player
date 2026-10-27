@@ -5,10 +5,12 @@ import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:signals_flutter/signals_flutter.dart';
 
+import '../data/enums/aspect_ratio_mode.dart';
 import '../data/enums/play_state.dart';
 import '../player/video_player_controller.dart';
 import 'platform_view_types.dart';
 import 'style/video_player_theme.dart';
+import 'widgets/live_photo_still_view.dart';
 
 /// 视频渲染组件，只负责显示视频画面和基本状态（加载/缓冲/错误）。
 ///
@@ -35,6 +37,8 @@ class CorePlayer extends SignalWidget {
   Widget build(BuildContext context) {
     final FlutterSignal<PlayState> state = controller.playState;
     final buffering = controller.isBuffering;
+    final liveBundle = controller.livePhotoBundle.value;
+    final aspectMode = controller.aspectRatioMode.value;
     final bg = backgroundColor ?? VideoPlayerTheme.of(context).backgroundColor;
 
     // Keep aspect tracking in this SignalWidget so size/rotation updates rebuild.
@@ -52,6 +56,18 @@ class CorePlayer extends SignalWidget {
     }
 
     final showLoading = state.value == PlayState.loading || buffering.value;
+    final showLiveStillCover = liveBundle != null &&
+        (state.value == PlayState.idle ||
+            state.value == PlayState.loading ||
+            state.value == PlayState.stopped ||
+            state.value == PlayState.completed ||
+            (state.value == PlayState.paused && controller.position.value == Duration.zero));
+
+    final coverFit = switch (aspectMode) {
+      AspectRatioMode.fill => BoxFit.cover,
+      AspectRatioMode.stretch => BoxFit.fill,
+      AspectRatioMode.fit => BoxFit.contain,
+    };
 
     return ColoredBox(
       color: bg,
@@ -60,6 +76,19 @@ class CorePlayer extends SignalWidget {
         alignment: Alignment.center,
         children: <Widget>[
           Positioned.fill(child: _MediaSurface(controller: controller)),
+          if (liveBundle != null)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: AnimatedOpacity(
+                  opacity: showLiveStillCover ? 1.0 : 0.0,
+                  duration: const Duration(milliseconds: 200),
+                  child: LivePhotoStillView(
+                    bundle: liveBundle,
+                    fit: coverFit,
+                  ),
+                ),
+              ),
+            ),
           if (showLoading) loadingBuilder?.call(context) ?? const SizedBox.shrink(),
         ],
       ),

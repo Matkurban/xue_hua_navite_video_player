@@ -1,13 +1,17 @@
 import 'package:material_ui/material_ui.dart';
 
+import 'core/live_photo_source.dart';
 import 'core/video_source.dart';
+import 'data/models/live_photo_bundle.dart';
 import 'data/models/video_cover_frame.dart';
 import 'player/media_probe.dart';
+import 'utils/live_photo_extractor.dart';
 
-/// 插件主入口：封面/时长探测等工具能力，以及可选的幂等 [initialize]。
+/// 插件主入口：封面/时长探测、动态照片（Live Photo / Motion Photo）探测与提取等工具能力，
+/// 以及可选的幂等 [initialize]。
 ///
-/// Probe work is owned by [MediaProbe]; this type keeps the historical
-/// singleton call sites.
+/// Probe work is owned by [MediaProbe] and [LivePhotoExtractor]; this type
+/// keeps the historical singleton call sites.
 class XueHuaNaviteVideoPlayer {
   XueHuaNaviteVideoPlayer._();
 
@@ -61,6 +65,36 @@ class XueHuaNaviteVideoPlayer {
     Duration timeout = const Duration(seconds: 15),
   }) {
     return _probe.probeDuration(source, timeout: timeout);
+  }
+
+  /// 将任意 [LivePhotoSource] 解析为包含静态封面图、可播放视频源及元数据的 [LivePhotoBundle]。
+  ///
+  /// Resolves a [LivePhotoSource] into a [LivePhotoBundle] without starting a playback session.
+  Future<LivePhotoBundle> resolveLivePhoto(LivePhotoSource source) {
+    return LivePhotoExtractor.resolve(source);
+  }
+
+  /// 在不创建播放器会话的前提下，尝试从 [source]（如单文件 Motion Photo `.jpg`/`.heic`、
+  /// 本地同名配对图片/视频或 `.pvt` 包）中提取 [LivePhotoBundle]。
+  /// 若 [source] 不是有效的动态照片，返回 `null`。
+  ///
+  /// Probes and extracts a [LivePhotoBundle] from [source], or returns `null`
+  /// if [source] is not a Motion Photo or paired Live Photo.
+  Future<LivePhotoBundle?> extractLivePhoto(
+    VideoSource source, {
+    Duration? presentationTimestamp,
+  }) {
+    return LivePhotoExtractor.tryExtractFromVideoSource(
+      source,
+      presentationTimestampOverride: presentationTimestamp,
+    );
+  }
+
+  /// 检测 [source] 是否为动态照片（单文件 Motion Photo 或本地配对 Live Photo）。
+  ///
+  /// Returns `true` if [source] is a valid Motion Photo or paired Live Photo.
+  Future<bool> isLivePhoto(VideoSource source) {
+    return LivePhotoExtractor.isLivePhoto(source);
   }
 
   /// 释放初始化状态。

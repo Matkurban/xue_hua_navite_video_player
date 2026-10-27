@@ -37,8 +37,8 @@ class NaviteFile {
     required this.uri,
     required this.name,
     this.mimeType = 'image/png',
-    this._bytes,
-  });
+    Uint8List? bytes,
+  }) : _bytes = bytes;
 
   /// 从本地文件路径、`file://` URI 或 Web `data:` / `blob:` URL 构造 [NaviteFile]。
   ///
@@ -90,10 +90,11 @@ class NaviteFile {
     final resolvedPath = path ?? dataUri;
     final resolvedUri =
         (path != null &&
-            !path.startsWith('data:') &&
-            !path.startsWith('blob:') &&
-            !path.startsWith('http://') &&
-            !path.startsWith('https://'))
+            (path.startsWith('blob:') ||
+                path.startsWith('http://') ||
+                path.startsWith('https://')))
+        ? path
+        : (path != null && !path.startsWith('data:'))
         ? (path.startsWith('file://') ? path : Uri.file(path).toString())
         : dataUri;
     return NaviteFile(

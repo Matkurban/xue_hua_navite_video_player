@@ -4,12 +4,16 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:signals_flutter/signals_flutter.dart';
 
+import '../core/live_photo_source.dart';
 import '../core/video_source.dart';
 import '../data/enums/aspect_ratio_mode.dart';
 import '../data/enums/cast_state.dart';
 import '../data/enums/play_state.dart';
 import '../data/enums/skip_second_type.dart';
+import '../data/models/live_photo_bundle.dart';
+import '../data/models/live_photo_metadata.dart';
 import '../data/models/navite_file.dart';
+import '../utils/live_photo_extractor.dart';
 import '../utils/mime_detector.dart';
 import 'brightness_controller.dart';
 import 'channel_player_backend.dart';
@@ -27,6 +31,9 @@ import 'player_event.dart';
 /// Process-wide: one active native session (see [PlayerBackend]).
 class PlaybackSession {
   static PlaybackSession? _activeNativeSession;
+
+  /// Whether a native [ChannelPlayerBackend] session is currently active.
+  static bool get hasActiveNativeSession => _activeNativeSession != null;
 
   final PlayerBackend _backend;
   final FullscreenCoordinator _fullscreen;
@@ -67,13 +74,18 @@ class PlaybackSession {
   FlutterSignal<Size> get videoSize => _state.videoSize;
   FlutterSignal<int> get rotationDegrees => _state.rotationDegrees;
   FlutterSignal<bool> get muted => _state.muted;
+  FlutterSignal<bool> get isLooping => _state.isLooping;
   FlutterSignal<SkipSecondType> get skipSecondType => _state.skipSecondType;
   FlutterSignal<AspectRatioMode> get aspectRatioMode => _state.aspectRatioMode;
   FlutterSignal<bool> get isFullscreen => _state.isFullscreen;
   FlutterSignal<double> get brightness => _state.brightness;
   FlutterSignal<CastState> get castState => _state.castState;
   FlutterSignal<String?> get castDeviceName => _state.castDeviceName;
+  FlutterSignal<LivePhotoBundle?> get livePhotoBundle => _state.livePhotoBundle;
 
+  FlutterComputed<bool> get isLivePhoto => _state.isLivePhoto;
+  FlutterComputed<LivePhotoMetadata?> get livePhotoMetadata => _state.livePhotoMetadata;
+  FlutterComputed<NaviteFile?> get livePhotoStillImage => _state.livePhotoStillImage;
   FlutterComputed<double> get videoAspectRatio => _state.videoAspectRatio;
   FlutterComputed<bool> get isVideo => _state.isVideo;
   FlutterComputed<bool> get isAudio => _state.isAudio;
@@ -182,13 +194,26 @@ class PlaybackSession {
         playState.value = PlayState.error;
       case PlayerCompletedEvent():
         if (_hasPlayedSinceOpen && playState.value != PlayState.error) {
-          playState.value = PlayState.completed;
+          if (isLooping.value) {
+            position.value = Duration.zero;
+            playState.value = PlayState.playing;
+            unawaited(_restartForLoop(_openEpoch));
+          } else {
+            playState.value = PlayState.completed;
+          }
         }
       case PlayerVideoSizeEvent(:final size, :final rotationDegrees):
         _handleVideoSizeEvent(size, rotationDegrees);
       case PlayerCastStateEvent():
         break;
     }
+  }
+
+  Future<void> _restartForLoop(int epoch) async {
+    if (_disposed || epoch != _openEpoch) return;
+    await _backend.seek(0);
+    if (_disposed || epoch != _openEpoch || !isLooping.value) return;
+    await _backend.play();
   }
 
   void _handlePlayingEvent(bool playing) {
@@ -212,6 +237,14 @@ class PlaybackSession {
     }
     if (playState.value == PlayState.stopped || playState.value == PlayState.completed) {
       return;
+    }
+    if (isLooping.value && playState.value == PlayState.playing && _hasPlayedSinceOpen) {
+      final total = duration.value;
+      final pos = position.value;
+      if (total > Duration.zero && (total - pos).inMilliseconds <= 150) {
+        // Ignore transient playing=false emitted right before PlayerCompletedEvent during loop.
+        return;
+      }
     }
     if ((_backendBuffering || isBuffering.value) && playState.value == PlayState.playing) {
       return;
@@ -271,6 +304,20 @@ class PlaybackSession {
   Future<void> openAsset(String assetPath, {AssetBundle? bundle}) =>
       openSource(VideoSource.asset(assetPath, bundle: bundle), autoPlay: false);
 
+  Future<void> playLivePhoto(LivePhotoSource source, {bool? loop}) async {
+    if (loop != null) {
+      isLooping.value = loop;
+    }
+    await openSource(VideoSource.livePhoto(source), autoPlay: true);
+  }
+
+  Future<void> openLivePhoto(LivePhotoSource source, {bool? loop}) async {
+    if (loop != null) {
+      isLooping.value = loop;
+    }
+    await openSource(VideoSource.livePhoto(source), autoPlay: false);
+  }
+
   Future<void> playSource(VideoSource source) => openSource(source, autoPlay: true);
 
   Future<void> openSource(VideoSource source, {bool autoPlay = false}) async {
@@ -285,10 +332,41 @@ class PlaybackSession {
       mimeType.value = MimeDetector.detect(identity);
       playState.value = PlayState.loading;
 
-      final mediaUrl = await source.resolveToNativeUrl();
+      LivePhotoBundle? resolvedBundle;
+      String mediaUrl;
+      VideoSource effectiveCastSource = source;
+
+      if (source is LivePhotoVideoSource) {
+        resolvedBundle = await LivePhotoExtractor.resolve(source.livePhoto);
+        if (_disposed || epoch != _openEpoch) return;
+        livePhotoBundle.value = resolvedBundle;
+        effectiveCastSource = resolvedBundle.videoSource;
+        mediaUrl = resolvedBundle.nativeVideoUrl;
+        final detectedVideoMime = MimeDetector.detect(mediaUrl);
+        mimeType.value = detectedVideoMime == 'application/octet-stream'
+            ? 'video/mp4'
+            : detectedVideoMime;
+      } else if (MimeDetector.isCandidateLivePhotoContainer(identity)) {
+        // Automatically detect if a .jpg/.jpeg/.heic/.pvt source is a Motion Photo / Live Photo.
+        resolvedBundle = await LivePhotoExtractor.tryExtractFromVideoSource(source);
+        if (_disposed || epoch != _openEpoch) return;
+        if (resolvedBundle != null) {
+          livePhotoBundle.value = resolvedBundle;
+          effectiveCastSource = resolvedBundle.videoSource;
+          mediaUrl = resolvedBundle.nativeVideoUrl;
+          final detectedVideoMime = MimeDetector.detect(mediaUrl);
+          mimeType.value = detectedVideoMime == 'application/octet-stream'
+              ? 'video/mp4'
+              : detectedVideoMime;
+        } else {
+          mediaUrl = await source.resolveToNativeUrl();
+        }
+      } else {
+        mediaUrl = await source.resolveToNativeUrl();
+      }
       if (_disposed || epoch != _openEpoch) return;
 
-      final castUrl = await _resolveCastUrl(source, mediaUrl);
+      final castUrl = await _resolveCastUrl(effectiveCastSource, mediaUrl);
       if (_disposed || epoch != _openEpoch) return;
 
       await _backend.open(mediaUrl, castUrl: castUrl);
@@ -398,6 +476,13 @@ class PlaybackSession {
   }
 
   Future<void> toggleMuted() => setMuted(!muted.value);
+
+  void setLooping(bool looping) {
+    if (_disposed) return;
+    isLooping.value = looping;
+  }
+
+  void toggleLooping() => setLooping(!isLooping.value);
 
   void setSkipSecondType(SkipSecondType type) {
     skipSecondType.value = type;

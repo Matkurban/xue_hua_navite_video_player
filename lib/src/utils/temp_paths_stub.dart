@@ -3,6 +3,9 @@ import 'dart:typed_data';
 /// Web / WASM stub: covers are not written to a filesystem.
 Future<String> pluginCoverDir() async => '';
 
+/// Web / WASM stub: live photos are kept in memory / data URLs.
+Future<String> pluginLivePhotoDir() async => '';
+
 /// Web / WASM stub: snapshots are kept in memory, not as files.
 Future<String> pluginSnapshotPath(String name) async => name;
 

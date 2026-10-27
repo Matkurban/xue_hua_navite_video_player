@@ -9,6 +9,16 @@ Future<String> pluginCoverDir() async {
   return '${base.path}/xue_hua_navite_video_player/covers';
 }
 
+/// Default directory for extracted Live Photo / Motion Photo assets.
+Future<String> pluginLivePhotoDir() async {
+  final base = await getTemporaryDirectory();
+  final dir = Directory('${base.path}/xue_hua_navite_video_player/live_photos');
+  if (!await dir.exists()) {
+    await dir.create(recursive: true);
+  }
+  return dir.path;
+}
+
 /// Default path for a snapshot PNG named [name].
 Future<String> pluginSnapshotPath(String name) async {
   final dir = await getTemporaryDirectory();
