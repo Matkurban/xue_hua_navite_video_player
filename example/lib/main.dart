@@ -21,6 +21,41 @@ Future<void> startExampleApp() async {
   runApp(const ExampleApp());
 }
 
+/// Boots only [LivePhotoDemoPage] so flutter drive stays on one screen.
+Future<void> startLivePhotoDemoApp() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await XueHuaNaviteVideoPlayer.instance.initialize();
+  runApp(const LivePhotoDemoApp());
+}
+
+/// Minimal app shell whose home is the live-photo demo (driver / IT).
+class LivePhotoDemoApp extends StatelessWidget {
+  const LivePhotoDemoApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return SignalBuilder(
+      builder: (context) {
+        final playerTheme = _resolveExamplePlayerTheme(
+          _playerStyleSignal.value,
+        );
+        return MaterialApp(
+          title: 'Live Photo Demo',
+          debugShowCheckedModeBanner: false,
+          themeMode: ThemeMode.system,
+          theme: AppTheme.light.copyWith(
+            extensions: <ThemeExtension<dynamic>>[playerTheme],
+          ),
+          darkTheme: AppTheme.dark.copyWith(
+            extensions: <ThemeExtension<dynamic>>[playerTheme],
+          ),
+          home: const LivePhotoDemoPage(),
+        );
+      },
+    );
+  }
+}
+
 final FlutterSignal<VideoPlayerDesignStyle> _playerStyleSignal = signal(
   VideoPlayerDesignStyle.adaptive,
 );
@@ -427,22 +462,27 @@ class _LivePhotoDemoPageState extends State<LivePhotoDemoPage> {
               groupValue: _playMode,
               children: const <LivePhotoPlayMode, Widget>{
                 LivePhotoPlayMode.longPress: Padding(
+                  key: ValueKey<String>('live_photo_mode_long_press'),
                   padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                   child: Text('长按'),
                 ),
                 LivePhotoPlayMode.hover: Padding(
+                  key: ValueKey<String>('live_photo_mode_hover'),
                   padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                   child: Text('悬停'),
                 ),
                 LivePhotoPlayMode.tap: Padding(
+                  key: ValueKey<String>('live_photo_mode_tap'),
                   padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                   child: Text('点击'),
                 ),
                 LivePhotoPlayMode.autoPlayOnce: Padding(
+                  key: ValueKey<String>('live_photo_mode_once'),
                   padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                   child: Text('一次'),
                 ),
                 LivePhotoPlayMode.loop: Padding(
+                  key: ValueKey<String>('live_photo_mode_loop'),
                   padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                   child: Text('循环'),
                 ),
@@ -543,6 +583,7 @@ class LivePhotoFullscreenPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      key: const ValueKey<String>('live_photo_fullscreen_page'),
       backgroundColor: Colors.black,
       appBar: AppBar(
         backgroundColor: Colors.black,
