@@ -31,12 +31,6 @@ flutter:
   uses-material-design: true
   assets:
     - assets/test.mp4
-    - assets/live_photo/
-    - assets/live_photo/IMG_0037.HEIC
-    - assets/live_photo/IMG_0038.HEIC
-    - assets/live_photo/IMG_0262_4CDAA1F2.HEIC
-    - assets/live_photo/IMG_0264_0E7941B7.HEIC
-    - assets/live_photo/IMG_0266_02198E26.HEIC
-    - assets/live_photo/IMG_0267_9B7F181C.HEIC
-    - assets/live_photo/IMG_0268_33A277C0.HEIC
-    - assets/live_photo/IMG_0278_E357CFC0.HEIC
+    - assets/live_photo/motion_city_walk.jpg
+    - assets/live_photo/motion_park_pan.jpg
+    - assets/live_photo/motion_street_clip.jpg

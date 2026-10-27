@@ -142,10 +142,15 @@ class LivePhotoExtractor {
     }
   }
 
-  /// Build a playable-still bundle when motion bytes / companion video are absent.
+  /// Build a still-only Live Photo bundle when motion bytes / companion video are absent.
+  ///
+  /// Apple `MiPr` / vivo-trailer HEIC files are tagged [LivePhotoFormat.appleLivePhoto]
+  /// so callers can distinguish "needs sibling .MOV" from plain images. The phone
+  /// gallery pairs motion by the vivo content id; that video is **not** in-file.
   static Future<LivePhotoBundle> _stillContainerBundle(
     VideoSource source, {
     Duration? presentationTimestampOverride,
+    Uint8List? probeBytes,
   }) async {
     NaviteFile? imageFile;
     try {
@@ -159,16 +164,52 @@ class LivePhotoExtractor {
     } catch (_) {
       nativeVideoUrl = source.identity;
     }
+
+    Uint8List? bytes = probeBytes;
+    if (bytes == null) {
+      try {
+        bytes = await _readSourceBytes(source);
+      } catch (_) {
+        bytes = null;
+      }
+    }
+
+    final isAppleOrVivo =
+        bytes != null && LivePhotoParser.isLivePhotoStillContainerBytes(bytes);
+    final vivoId =
+        bytes != null ? LivePhotoParser.extractVivoLivePhotoContentId(bytes) : null;
+
     return LivePhotoBundle(
       imageFile: imageFile,
       imageSource: source,
       videoSource: source,
       nativeVideoUrl: nativeVideoUrl,
       metadata: LivePhotoMetadata(
-        format: LivePhotoFormat.unknown,
+        format: isAppleOrVivo ? LivePhotoFormat.appleLivePhoto : LivePhotoFormat.unknown,
         presentationTimestamp: presentationTimestampOverride,
+        contentIdentifier: vivoId,
       ),
     );
+  }
+
+  static Future<Uint8List?> _readSourceBytes(VideoSource source) async {
+    switch (source) {
+      case FileVideoSource(:final path):
+        final normalized = path.startsWith('file://') ? Uri.parse(path).toFilePath() : path;
+        final file = File(normalized);
+        if (!await file.exists()) return null;
+        return file.readAsBytes();
+      case AssetVideoSource(:final assetPath, :final bundle):
+        final data = await (bundle ?? rootBundle).load(assetPath);
+        return data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+      case NetworkVideoSource(:final url):
+        return _downloadNetworkBytes(url);
+      case LivePhotoVideoSource(:final livePhoto):
+        final bundle = await resolve(livePhoto);
+        final img = bundle.imageFile;
+        if (img == null) return null;
+        return img.readAsBytes();
+    }
   }
 
   static Future<LivePhotoBundle?> _extractFromVideoSource(
@@ -199,9 +240,10 @@ class LivePhotoExtractor {
         // 2. Check if the file itself is a single-file Motion Photo.
         final lower = normalizedPath.toLowerCase();
         final isVideoExt = _companionVideoExts.any((ext) => lower.endsWith(ext.toLowerCase()));
+        Uint8List? stillProbeBytes;
         if (!isVideoExt) {
-          final bytes = await file.readAsBytes();
-          final parsed = LivePhotoParser.parseBytes(bytes);
+          stillProbeBytes = await file.readAsBytes();
+          final parsed = LivePhotoParser.parseBytes(stillProbeBytes);
           if (parsed != null) {
             final stat = await file.stat();
             return _materializeParsedBytes(
@@ -213,11 +255,23 @@ class LivePhotoExtractor {
         }
 
         // 3. Auto-discover sibling companion file in the same directory (.MOV/.MP4 <-> .HEIC/.JPG).
-        return _discoverSiblingPairedFile(
+        final paired = await _discoverSiblingPairedFile(
           file,
           isPrimaryVideo: isVideoExt,
           presentationTimestampOverride: presentationTimestampOverride,
         );
+        if (paired != null) return paired;
+
+        // 4. Apple MiPr / vivo still (motion lives in gallery / sibling .MOV, not in-file).
+        if (stillProbeBytes != null &&
+            LivePhotoParser.isLivePhotoStillContainerBytes(stillProbeBytes)) {
+          return _stillContainerBundle(
+            source,
+            presentationTimestampOverride: presentationTimestampOverride,
+            probeBytes: stillProbeBytes,
+          );
+        }
+        return null;
 
       case AssetVideoSource(:final assetPath, :final bundle):
         final effectiveBundle = bundle ?? rootBundle;
@@ -231,10 +285,15 @@ class LivePhotoExtractor {
             presentationTimestampOverride: presentationTimestampOverride,
           );
         }
-        // Fallback: check if a sibling .mov or .mp4 asset exists in the bundle.
+        // Fallback: check if a sibling .mov or .mp4 asset exists in the bundle
+        // (exact basename + common case variants).
         final baseNoExt = _stripExtension(assetPath);
-        for (final ext in _companionVideoExts) {
-          final candidateVideoAsset = '$baseNoExt$ext';
+        final assetCandidates = <String>{
+          for (final ext in _companionVideoExts) '$baseNoExt$ext',
+          for (final ext in _companionVideoExts) '${baseNoExt.toLowerCase()}$ext',
+          for (final ext in _companionVideoExts) '${baseNoExt.toUpperCase()}$ext',
+        };
+        for (final candidateVideoAsset in assetCandidates) {
           if (candidateVideoAsset == assetPath) continue;
           try {
             await effectiveBundle.load(candidateVideoAsset);
@@ -253,6 +312,13 @@ class LivePhotoExtractor {
               ),
             );
           } catch (_) {}
+        }
+        if (LivePhotoParser.isLivePhotoStillContainerBytes(bytes)) {
+          return _stillContainerBundle(
+            source,
+            presentationTimestampOverride: presentationTimestampOverride,
+            probeBytes: bytes,
+          );
         }
         return null;
 
@@ -307,45 +373,82 @@ class LivePhotoExtractor {
     Duration? presentationTimestampOverride,
   }) async {
     final baseNoExt = _stripExtension(primaryFile.path);
-    if (isPrimaryVideo) {
-      for (final ext in _companionImageExts) {
-        final candidate = File('$baseNoExt$ext');
+    final wantedExts = isPrimaryVideo ? _companionImageExts : _companionVideoExts;
+
+    // 1) Fast path: same basename + known extension variants.
+    for (final ext in wantedExts) {
+      for (final candidatePath in <String>[
+        '$baseNoExt$ext',
+        '${baseNoExt.toLowerCase()}$ext',
+        '${baseNoExt.toUpperCase()}$ext',
+      ]) {
+        final candidate = File(candidatePath);
+        if (candidate.path == primaryFile.path) continue;
         if (await candidate.exists()) {
-          final imgSource = VideoSource.file(candidate.path);
-          final vidSource = VideoSource.file(primaryFile.path);
-          return LivePhotoBundle(
-            imageFile: NaviteFile.fromLocation(candidate.path),
-            imageSource: imgSource,
-            videoSource: vidSource,
-            nativeVideoUrl: Uri.file(primaryFile.path).toString(),
-            metadata: LivePhotoMetadata(
-              format: LivePhotoFormat.paired,
-              presentationTimestamp: presentationTimestampOverride,
-            ),
+          return _pairedBundleFromFiles(
+            imageFile: isPrimaryVideo ? candidate : primaryFile,
+            videoFile: isPrimaryVideo ? primaryFile : candidate,
+            presentationTimestampOverride: presentationTimestampOverride,
           );
         }
       }
-      return null;
-    } else {
-      for (final ext in _companionVideoExts) {
-        final candidate = File('$baseNoExt$ext');
-        if (await candidate.exists()) {
-          final imgSource = VideoSource.file(primaryFile.path);
-          final vidSource = VideoSource.file(candidate.path);
-          return LivePhotoBundle(
-            imageFile: NaviteFile.fromLocation(primaryFile.path),
-            imageSource: imgSource,
-            videoSource: vidSource,
-            nativeVideoUrl: Uri.file(candidate.path).toString(),
-            metadata: LivePhotoMetadata(
-              format: LivePhotoFormat.paired,
-              presentationTimestamp: presentationTimestampOverride,
-            ),
-          );
-        }
-      }
-      return null;
     }
+
+    // 2) Directory scan: case-insensitive basename match (Finder / Windows exports).
+    final dir = primaryFile.parent;
+    if (!await dir.exists()) return null;
+    final primaryBase = _fileBasenameNoExt(primaryFile.path).toLowerCase();
+    final wantedLower = {
+      for (final e in wantedExts) e.toLowerCase(),
+    };
+    await for (final entity in dir.list(followLinks: false)) {
+      if (entity is! File) continue;
+      if (entity.path == primaryFile.path) continue;
+      final name = entity.uri.pathSegments.isEmpty
+          ? entity.path
+          : entity.uri.pathSegments.last;
+      final lowerName = name.toLowerCase();
+      final dot = lowerName.lastIndexOf('.');
+      if (dot <= 0) continue;
+      final ext = lowerName.substring(dot);
+      if (!wantedLower.contains(ext)) continue;
+      final base = lowerName.substring(0, dot);
+      if (base != primaryBase) continue;
+      return _pairedBundleFromFiles(
+        imageFile: isPrimaryVideo ? entity : primaryFile,
+        videoFile: isPrimaryVideo ? primaryFile : entity,
+        presentationTimestampOverride: presentationTimestampOverride,
+      );
+    }
+    return null;
+  }
+
+  static LivePhotoBundle _pairedBundleFromFiles({
+    required File imageFile,
+    required File videoFile,
+    Duration? presentationTimestampOverride,
+  }) {
+    final imgSource = VideoSource.file(imageFile.path);
+    final vidSource = VideoSource.file(videoFile.path);
+    return LivePhotoBundle(
+      imageFile: NaviteFile.fromLocation(imageFile.path),
+      imageSource: imgSource,
+      videoSource: vidSource,
+      nativeVideoUrl: Uri.file(videoFile.path).toString(),
+      metadata: LivePhotoMetadata(
+        format: LivePhotoFormat.paired,
+        presentationTimestamp: presentationTimestampOverride,
+      ),
+    );
+  }
+
+  static String _fileBasenameNoExt(String path) {
+    final normalized = path.replaceAll('\\', '/');
+    final slash = normalized.lastIndexOf('/');
+    final name = slash == -1 ? normalized : normalized.substring(slash + 1);
+    final dot = name.lastIndexOf('.');
+    if (dot > 0) return name.substring(0, dot);
+    return name;
   }
 
   static Future<LivePhotoBundle> _materializeParsedBytes({

@@ -68,14 +68,9 @@ class _DemoItem {
 }
 
 const List<String> _bundledLivePhotoAssets = <String>[
-  'assets/live_photo/IMG_0037.HEIC',
-  'assets/live_photo/IMG_0038.HEIC',
-  'assets/live_photo/IMG_0262_4CDAA1F2.HEIC',
-  'assets/live_photo/IMG_0264_0E7941B7.HEIC',
-  'assets/live_photo/IMG_0266_02198E26.HEIC',
-  'assets/live_photo/IMG_0267_9B7F181C.HEIC',
-  'assets/live_photo/IMG_0268_33A277C0.HEIC',
-  'assets/live_photo/IMG_0278_E357CFC0.HEIC',
+  'assets/live_photo/motion_city_walk.jpg',
+  'assets/live_photo/motion_park_pan.jpg',
+  'assets/live_photo/motion_street_clip.jpg',
 ];
 
 const List<_DemoItem> _networkDemoPlaylist = <_DemoItem>[
@@ -179,8 +174,8 @@ class HomePage extends StatelessWidget {
               leading: const CircleAvatar(
                 child: Icon(Icons.motion_photos_on_rounded, size: 20),
               ),
-              title: const Text('Live Photos · 动态照片画廊 (HEIC)'),
-              subtitle: const Text('assets/live_photo/*.HEIC（真实样例）'),
+              title: const Text('Live Photos · 动态照片画廊'),
+              subtitle: const Text('GCamera Motion Photo JPEG（含可播视频轨）'),
               trailing: const Icon(Icons.chevron_right),
               onTap: () {
                 Navigator.of(context).push(
@@ -294,8 +289,8 @@ class _LivePhotoDemoPageState extends State<LivePhotoDemoPage> {
         VideoSource.asset(assetPath),
       );
       final metaInfo = probed != null
-          ? '${probed.metadata.format.name} · offset: ${probed.metadata.videoOffset}B · len: ${probed.metadata.videoLength}B'
-          : 'HEIC Live Photo';
+          ? '${probed.metadata.format.name} · video ${probed.metadata.videoLength ?? 0}B'
+          : '未识别到内嵌视频轨';
       resolved.add(
         _ResolvedGalleryLivePhoto(
           title: fileName,
@@ -457,6 +452,20 @@ class _LivePhotoDemoPageState extends State<LivePhotoDemoPage> {
                   setState(() => _playMode = mode);
                 }
               },
+            ),
+          ),
+          const SizedBox(height: 12),
+          Material(
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(8),
+            child: const Padding(
+              padding: EdgeInsets.all(10),
+              child: Text(
+                '样例为单文件 Motion Photo（JPEG+内嵌 MP4）。'
+                '长按/悬停/点击「实况」可播动效；全屏走同一播放器。'
+                '若使用 Apple Live Photo，请把同名 .MOV 放在图片同目录以自动配对。',
+                style: TextStyle(fontSize: 12, height: 1.35),
+              ),
             ),
           ),
           const SizedBox(height: 12),

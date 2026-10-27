@@ -168,13 +168,24 @@ class _LivePhotoPlayerState extends State<LivePhotoPlayer> {
 
   VideoPlayerController? get _activeController => widget.controller ?? _internalController;
 
-  /// Still-image Live Photo containers (Apple MiPr HEIC / vivo-tagged HEIC without
-  /// an extractable motion stream) resolve with [LivePhotoFormat.unknown]. Opening
-  /// them as a native "video" paints a black PlatformView once the still fades —
-  /// keep the Flutter still opaque and skip the native surface for these.
+  /// Still-only Live Photo containers (Apple `MiPr` / vivo trailer HEIC, or unknown)
+  /// have no playable motion URL. Opening the HEIC itself as a native "video" paints
+  /// a black PlatformView once the still fades — keep the Flutter still opaque and
+  /// skip the native surface. Real paired / embedded motion uses CorePlayer instead.
   bool get _isStillContainer {
     final bundle = _bundle;
-    return bundle != null && bundle.metadata.format == LivePhotoFormat.unknown;
+    if (bundle == null) return false;
+    final format = bundle.metadata.format;
+    if (format == LivePhotoFormat.appleLivePhoto || format == LivePhotoFormat.unknown) {
+      return true;
+    }
+    // Defensive: if video URL still points at an image container, do not mount video.
+    final url = bundle.nativeVideoUrl.toLowerCase();
+    return url.endsWith('.heic') ||
+        url.endsWith('.heif') ||
+        url.endsWith('.jpg') ||
+        url.endsWith('.jpeg') ||
+        url.endsWith('.png');
   }
 
   static bool get _isDesktopOrWeb {

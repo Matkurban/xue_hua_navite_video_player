@@ -103,6 +103,31 @@ void main() {
       expect(parsed.metadata.isSingleFile, isTrue);
     });
 
+
+    test('detects Apple MiPr still and vivo livephoto trailer without embedded video', () {
+      // Minimal HEIC-like ftyp with MiPr brand.
+      final miPr = Uint8List.fromList(<int>[
+        0x00, 0x00, 0x00, 0x18,
+        0x66, 0x74, 0x79, 0x70, // ftyp
+        0x68, 0x65, 0x69, 0x63, // heic
+        0x00, 0x00, 0x00, 0x00,
+        0x4D, 0x69, 0x50, 0x72, // MiPr
+        0x6D, 0x69, 0x66, 0x31, // mif1
+      ]);
+      expect(LivePhotoParser.isAppleLivePhotoStillBytes(miPr), isTrue);
+      expect(LivePhotoParser.isLivePhotoStillContainerBytes(miPr), isTrue);
+      expect(LivePhotoParser.parseBytes(miPr), isNull);
+
+      final vivo = Uint8List.fromList(<int>[
+        ...miPr,
+        ...utf8.encode('vivo{"com.vivo.gallery.livePhoto.iosVersion":1,'),
+        ...utf8.encode('"com.android.camera.livephoto":"abc123ID000","version":2016}'),
+      ]);
+      expect(LivePhotoParser.isVivoLivePhotoMarkerBytes(vivo), isTrue);
+      expect(LivePhotoParser.extractVivoLivePhotoContentId(vivo), 'abc123ID000');
+      expect(LivePhotoParser.parseBytes(vivo), isNull);
+    });
+
     test('parses Android Motion Photo 1.0 Container:Item XMP format', () {
       final jpeg = _buildMinimalJpegBytes();
       final mp4 = _buildMinimalMp4Bytes(majorBrand: 'mp42');
@@ -226,6 +251,21 @@ void main() {
       expect(bundle.nativeVideoUrl, Uri.file(movFile.path).toString());
     });
 
+
+    test('auto-discovers case-insensitive sibling .mov companion', () async {
+      final imgFile = File('${tempDir.path}/PhotoLive.JPG');
+      final movFile = File('${tempDir.path}/photolive.mov');
+      await imgFile.writeAsBytes(_kSamplePngBytes, flush: true);
+      await movFile.writeAsBytes(_buildMinimalMp4Bytes(majorBrand: 'qt  '), flush: true);
+
+      final bundle = await XueHuaNaviteVideoPlayer.instance.extractLivePhoto(
+        VideoSource.file(imgFile.path),
+      );
+      expect(bundle, isNotNull);
+      expect(bundle!.metadata.format, LivePhotoFormat.paired);
+      expect(bundle.nativeVideoUrl.toLowerCase(), contains('.mov'));
+    });
+
     test('extracts paired Live Photo from macOS .pvt bundle directory', () async {
       final pvtDir = Directory('${tempDir.path}/IMG_9999.pvt');
       await pvtDir.create(recursive: true);
@@ -319,47 +359,34 @@ void main() {
 
   
 
-  test('bare Apple Live Photo HEIC resolves as still-container (no FormatException)', () async {
-    final fixture = File('example/assets/live_photo/IMG_0037.HEIC');
-    expect(fixture.existsSync(), isTrue);
-    final bundle = await XueHuaNaviteVideoPlayer.instance.resolveLivePhoto(
-      LivePhotoSource.file(imagePath: fixture.path),
-    );
-    expect(bundle.metadata.format, LivePhotoFormat.unknown);
-    expect(bundle.nativeVideoUrl, isNotEmpty);
-    expect(bundle.imageSource, isNotNull);
-  });
-
-  test('example HEIC assets are accepted as LivePhotoSource.asset', () async {
+  test('example Motion Photo JPEGs parse with embedded video tracks', () async {
     for (final name in <String>[
-      'IMG_0037.HEIC',
-      'IMG_0038.HEIC',
-      'IMG_0262_4CDAA1F2.HEIC',
+      'motion_city_walk.jpg',
+      'motion_park_pan.jpg',
+      'motion_street_clip.jpg',
     ]) {
-      final source = LivePhotoSource.asset(imageAsset: 'assets/live_photo/$name');
-      // Asset load needs Flutter binding + rootBundle; skip if asset missing in unit test.
-      // File path resolve is the authoritative no-FormatException check above.
-      expect(source.identity, contains(name));
+      final fixture = File('example/assets/live_photo/$name');
+      expect(fixture.existsSync(), isTrue, reason: '$name must exist');
+      final bytes = Uint8List.fromList(fixture.readAsBytesSync());
+      final parsed = LivePhotoParser.parseBytes(bytes);
+      expect(parsed, isNotNull, reason: '$name must embed motion video');
+      expect(parsed!.videoBytes.length, greaterThan(1000));
+      expect(
+        parsed.metadata.format == LivePhotoFormat.gcameraMicroVideo ||
+            parsed.metadata.format == LivePhotoFormat.androidMotionPhoto ||
+            parsed.metadata.format == LivePhotoFormat.embeddedMp4,
+        isTrue,
+      );
+
+      final bundle = await XueHuaNaviteVideoPlayer.instance.extractLivePhoto(
+        VideoSource.file(fixture.path),
+      );
+      expect(bundle, isNotNull);
+      expect(bundle!.nativeVideoUrl, contains('-motion.'));
+      expect(bundle.metadata.videoLength, greaterThan(1000));
     }
   });
 
-  test('Apple Live Photo HEIC stills (MiPr) parse as stills without embedded MP4', () async {
-    final fixture = File('example/assets/live_photo/IMG_0262_4CDAA1F2.HEIC');
-    expect(fixture.existsSync(), isTrue, reason: 'real HEIC fixture must exist');
-    final bytes = Uint8List.fromList(fixture.readAsBytesSync());
-    expect(LivePhotoParser.isAppleLivePhotoStillBytes(bytes), isTrue);
-    expect(LivePhotoParser.isVivoLivePhotoMarkerBytes(bytes), isTrue);
-    expect(LivePhotoParser.parseBytes(bytes), isNull);
-  });
-
-  test('IMG_0037.HEIC is Apple Live Photo still without vivo trailer', () async {
-    final fixture = File('example/assets/live_photo/IMG_0037.HEIC');
-    expect(fixture.existsSync(), isTrue);
-    final bytes = Uint8List.fromList(fixture.readAsBytesSync());
-    expect(LivePhotoParser.isAppleLivePhotoStillBytes(bytes), isTrue);
-    expect(LivePhotoParser.isVivoLivePhotoMarkerBytes(bytes), isFalse);
-    expect(LivePhotoParser.parseBytes(bytes), isNull);
-  });
 
   group('LivePhotoPlayer & LivePhotoBadge Widgets', () {
     testWidgets('LivePhotoPlayer supports tap and badge trigger, mute toggle, and completion reset', (

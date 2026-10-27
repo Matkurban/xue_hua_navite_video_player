@@ -469,32 +469,31 @@ void main() {
     }
   });
 
-  testWidgets('Live Photo probe and optional playback from asset HEIC', (
+  testWidgets('Live Photo probe and playback from Motion Photo asset', (
     WidgetTester tester,
   ) async {
     await XueHuaNaviteVideoPlayer.instance.initialize();
-    const VideoSource heic = VideoSource.asset(
-      'assets/live_photo/IMG_0037.HEIC',
+    const VideoSource motion = VideoSource.asset(
+      'assets/live_photo/motion_city_walk.jpg',
     );
 
     final bool? isLive = await tester.runAsync<bool>(
-      () => XueHuaNaviteVideoPlayer.instance.isLivePhoto(heic),
+      () => XueHuaNaviteVideoPlayer.instance.isLivePhoto(motion),
     );
-    // HEIC Live Photo parsing is platform-dependent; skip soft-fail if unsupported.
-    if (isLive != true) {
-      return;
-    }
+    expect(isLive, isTrue);
 
     final LivePhotoBundle? bundle = await tester.runAsync<LivePhotoBundle?>(
-      () => XueHuaNaviteVideoPlayer.instance.extractLivePhoto(heic),
+      () => XueHuaNaviteVideoPlayer.instance.extractLivePhoto(motion),
     );
     expect(bundle, isNotNull);
     expect(bundle!.nativeVideoUrl, isNotEmpty);
+    expect(bundle.metadata.videoLength, isNotNull);
+    expect(bundle.metadata.videoLength!, greaterThan(1000));
 
     final VideoPlayerController c = await _mount(tester);
     await tester.runAsync(
       () => c.playLivePhoto(
-        LivePhotoSource.asset(imageAsset: 'assets/live_photo/IMG_0037.HEIC'),
+        LivePhotoSource.asset(imageAsset: 'assets/live_photo/motion_city_walk.jpg'),
       ),
     );
     expect(

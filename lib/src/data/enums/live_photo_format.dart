@@ -27,6 +27,14 @@ enum LivePhotoFormat {
   /// Generic single-file image with an appended ISO BMFF (`ftyp`) MP4/MOV video stream.
   embeddedMp4,
 
+  /// Apple Live Photo 静帧容器（HEIC `MiPr`）或 vivo 导出的 Live Photo 静帧。
+  ///
+  /// 文件本身通常不含可抽取的 motion 视频轨（配对 `.MOV` 可能缺失）；插件会尝试
+  /// 从静帧合成短视频，或走 Flutter Ken Burns 动效，避免把 HEIC 当视频硬开导致黑屏。
+  ///
+  /// Apple Live Photo still container (`MiPr`) / vivo-exported Live Photo still.
+  appleLivePhoto,
+
   /// 未知或非动态照片。
   ///
   /// Unknown or not a Live Photo / Motion Photo.
@@ -41,7 +49,9 @@ enum LivePhotoFormat {
     LivePhotoFormat.androidMotionPhoto ||
     LivePhotoFormat.samsungMotionPhoto ||
     LivePhotoFormat.embeddedMp4 => true,
-    LivePhotoFormat.paired || LivePhotoFormat.unknown => false,
+    LivePhotoFormat.paired ||
+    LivePhotoFormat.appleLivePhoto ||
+    LivePhotoFormat.unknown => false,
   };
 
   /// Parses [LivePhotoFormat] from a serialized wire string.
@@ -52,6 +62,7 @@ enum LivePhotoFormat {
       'androidMotionPhoto' => LivePhotoFormat.androidMotionPhoto,
       'samsungMotionPhoto' => LivePhotoFormat.samsungMotionPhoto,
       'embeddedMp4' => LivePhotoFormat.embeddedMp4,
+      'appleLivePhoto' => LivePhotoFormat.appleLivePhoto,
       _ => LivePhotoFormat.unknown,
     };
   }

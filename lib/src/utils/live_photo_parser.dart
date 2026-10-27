@@ -110,6 +110,30 @@ abstract final class LivePhotoParser {
         _indexOfSequence(bytes, ascii.encode('com.vivo.gallery.livePhoto')) != -1;
   }
 
+  /// Returns `true` when [bytes] is an Apple / vivo Live Photo *still container*
+  /// (MiPr brand and/or vivo livephoto trailer) even if no motion bytes are present.
+  static bool isLivePhotoStillContainerBytes(Uint8List bytes) {
+    return isAppleLivePhotoStillBytes(bytes) || isVivoLivePhotoMarkerBytes(bytes);
+  }
+
+  /// Extracts vivo / Android `com.android.camera.livephoto` pairing id from a trailer, if any.
+  ///
+  /// This id is used by the phone gallery to locate the companion motion clip; it is
+  /// **not** embedded video. Returns `null` when the marker is absent.
+  static String? extractVivoLivePhotoContentId(Uint8List bytes) {
+    if (bytes.length < 32) return null;
+    final text = latin1.decode(
+      bytes.length > 4096 ? bytes.sublist(bytes.length - 4096) : bytes,
+      allowInvalid: true,
+    );
+    final match = RegExp(
+      r'com\.android\.camera\.livephoto"\s*:\s*"([^"]+)"',
+    ).firstMatch(text);
+    if (match != null) return match.group(1);
+    final album = RegExp(r'cameralbum!\x00\x00\x00/([^\x00\xff]+)').firstMatch(text);
+    return album?.group(1);
+  }
+
   /// 快速检测字节流是否包含单文件动态照片（Motion Photo）。
   ///
   /// Returns `true` if [bytes] contains an embedded Motion Photo video stream.
