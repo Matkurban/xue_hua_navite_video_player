@@ -349,9 +349,7 @@ class _LivePhotoDemoPageState extends State<LivePhotoDemoPage> {
 
     return Scaffold(
       key: const ValueKey<String>('live_photo_demo_page'),
-      appBar: AppBar(
-        title: const Text('Live Photo · 动态照片'),
-      ),
+      appBar: AppBar(title: const Text('Live Photo · 动态照片')),
       body: _loading || current == null
           ? const Center(child: CircularProgressIndicator())
           : LayoutBuilder(
@@ -393,8 +391,9 @@ class _LivePhotoDemoPageState extends State<LivePhotoDemoPage> {
           builder: (context, constraints) {
             final width = constraints.maxWidth;
             final height = constraints.maxHeight;
-            final aspectRatio =
-                (width > 0 && height > 0) ? width / height : 3 / 4;
+            final aspectRatio = (width > 0 && height > 0)
+                ? width / height
+                : 3 / 4;
             return Stack(
               fit: StackFit.expand,
               children: <Widget>[
@@ -600,7 +599,9 @@ class LivePhotoFullscreenPage extends StatelessWidget {
       body: SafeArea(
         child: Center(
           child: LivePhotoPlayer(
-            key: ValueKey<String>('demo_live_photo_fullscreen_${source.identity}'),
+            key: ValueKey<String>(
+              'demo_live_photo_fullscreen_${source.identity}',
+            ),
             source: source,
             playMode: playMode == LivePhotoPlayMode.longPress
                 ? LivePhotoPlayMode.tap

@@ -126,9 +126,7 @@ abstract final class LivePhotoParser {
       bytes.length > 4096 ? bytes.sublist(bytes.length - 4096) : bytes,
       allowInvalid: true,
     );
-    final match = RegExp(
-      r'com\.android\.camera\.livephoto"\s*:\s*"([^"]+)"',
-    ).firstMatch(text);
+    final match = RegExp(r'com\.android\.camera\.livephoto"\s*:\s*"([^"]+)"').firstMatch(text);
     if (match != null) return match.group(1);
     final album = RegExp(r'cameralbum!\x00\x00\x00/([^\x00\xff]+)').firstMatch(text);
     return album?.group(1);
@@ -179,9 +177,7 @@ abstract final class LivePhotoParser {
 
       // 2. Try Android / Google Motion Photo 1.0 (Container:Directory / Item:Length)
       final motionPhotoLength = _parseMotionPhotoContainerLength(xmpText);
-      if (motionPhotoLength != null &&
-          motionPhotoLength > 16 &&
-          motionPhotoLength < bytes.length) {
+      if (motionPhotoLength != null && motionPhotoLength > 16 && motionPhotoLength < bytes.length) {
         final rawStart = bytes.length - motionPhotoLength;
         final resolvedStart = _refineVideoStartOffset(bytes, rawStart);
         if (resolvedStart != null && resolvedStart > 0 && resolvedStart < bytes.length - 16) {
@@ -200,7 +196,8 @@ abstract final class LivePhotoParser {
     final samsungIndex = _indexOfSequence(bytes, _samsungMarker, start: 2);
     if (samsungIndex != -1) {
       final afterMarker = samsungIndex + _samsungMarker.length;
-      final resolvedStart = _refineVideoStartOffset(bytes, afterMarker) ??
+      final resolvedStart =
+          _refineVideoStartOffset(bytes, afterMarker) ??
           (afterMarker < bytes.length - 16 && _isLikelyMp4At(bytes, afterMarker)
               ? afterMarker
               : null);
@@ -375,9 +372,8 @@ abstract final class LivePhotoParser {
 
   static int? _parseMicroVideoOffset(String xmp) {
     // Attribute form: GCamera:MicroVideoOffset="12345" or MicroVideoOffset="12345"
-    final attrMatch = RegExp(
-      r'(?:GCamera:)?MicroVideoOffset\s*=\s*["\x27](\d+)["\x27]',
-    ).firstMatch(xmp);
+    final attrMatch = RegExp(r'(?:GCamera:)?MicroVideoOffset\s*=\s*["\x27](\d+)["\x27]')
+        .firstMatch(xmp);
     if (attrMatch != null) {
       return int.tryParse(attrMatch.group(1)!);
     }
@@ -393,10 +389,7 @@ abstract final class LivePhotoParser {
 
   static int? _parseMotionPhotoContainerLength(String xmp) {
     // Match Container:Item tags that describe MotionPhoto or video/mp4 or video/quicktime
-    final itemRegex = RegExp(
-      r'<(?:Container:)?Item\b[^>]*>',
-       dotAll: true,
-    );
+    final itemRegex = RegExp(r'<(?:Container:)?Item\b[^>]*>', dotAll: true);
     for (final match in itemRegex.allMatches(xmp)) {
       final tag = match.group(0)!;
       final isMotionItem =
@@ -531,10 +524,7 @@ abstract final class LivePhotoParser {
   }
 
   static String _detectImageMime(Uint8List bytes) {
-    if (bytes.length >= 3 &&
-        bytes[0] == 0xFF &&
-        bytes[1] == 0xD8 &&
-        bytes[2] == 0xFF) {
+    if (bytes.length >= 3 && bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF) {
       return 'image/jpeg';
     }
     if (bytes.length >= 8 &&

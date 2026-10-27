@@ -56,7 +56,8 @@ class CorePlayer extends SignalWidget {
     }
 
     final showLoading = state.value == PlayState.loading || buffering.value;
-    final showLiveStillCover = liveBundle != null &&
+    final showLiveStillCover =
+        liveBundle != null &&
         (state.value == PlayState.idle ||
             state.value == PlayState.loading ||
             state.value == PlayState.stopped ||
@@ -82,10 +83,7 @@ class CorePlayer extends SignalWidget {
                 child: AnimatedOpacity(
                   opacity: showLiveStillCover ? 1.0 : 0.0,
                   duration: const Duration(milliseconds: 200),
-                  child: LivePhotoStillView(
-                    bundle: liveBundle,
-                    fit: coverFit,
-                  ),
+                  child: LivePhotoStillView(bundle: liveBundle, fit: coverFit),
                 ),
               ),
             ),

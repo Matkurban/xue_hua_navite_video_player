@@ -110,10 +110,7 @@ class LivePhotoBadge extends StatelessWidget {
               )
             : Container(
                 padding: pillPadding,
-                decoration: const BoxDecoration(
-                  color: Color(0x991C1C1E),
-                  borderRadius: pillRadius,
-                ),
+                decoration: const BoxDecoration(color: Color(0x991C1C1E), borderRadius: pillRadius),
                 child: badgeContent,
               ),
       ),
@@ -143,10 +140,7 @@ class LivePhotoBadge extends StatelessWidget {
               )
             : Container(
                 padding: const EdgeInsets.all(5),
-                decoration: const BoxDecoration(
-                  color: Color(0x991C1C1E),
-                  borderRadius: pillRadius,
-                ),
+                decoration: const BoxDecoration(color: Color(0x991C1C1E), borderRadius: pillRadius),
                 child: Icon(
                   PlayerIconCatalog.volume(isCupertino: false, muted: isMuted),
                   size: compact ? 13 : 15,
@@ -158,11 +152,7 @@ class LivePhotoBadge extends StatelessWidget {
 
     return Row(
       mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        badgePill,
-        const SizedBox(width: 6),
-        muteButton,
-      ],
+      children: <Widget>[badgePill, const SizedBox(width: 6), muteButton],
     );
   }
 }
@@ -184,20 +174,14 @@ class _LivePhotoConcentricIcon extends StatelessWidget {
       width: size,
       height: size,
       child: CustomPaint(
-        painter: _LivePhotoRingsPainter(
-          color: color,
-          isPlaying: isPlaying,
-        ),
+        painter: _LivePhotoRingsPainter(color: color, isPlaying: isPlaying),
       ),
     );
   }
 }
 
 class _LivePhotoRingsPainter extends CustomPainter {
-  const _LivePhotoRingsPainter({
-    required this.color,
-    required this.isPlaying,
-  });
+  const _LivePhotoRingsPainter({required this.color, required this.isPlaying});
 
   final Color color;
   final bool isPlaying;

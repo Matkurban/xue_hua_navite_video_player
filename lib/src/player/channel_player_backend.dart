@@ -17,20 +17,17 @@ import 'player_event_decoder.dart';
 /// recreate/dispose cycle) must share that single subscription instead of each
 /// [ChannelPlayerBackend] calling [EventChannel.receiveBroadcastStream].
 class _SharedNativeEventHub {
-  static const EventChannel _eventChannel =
-      EventChannel('xue_hua_navite_video_player/player/events');
+  static const EventChannel _eventChannel = EventChannel(
+    'xue_hua_navite_video_player/player/events',
+  );
 
-  static final StreamController<dynamic> _raw =
-      StreamController<dynamic>.broadcast();
+  static final StreamController<dynamic> _raw = StreamController<dynamic>.broadcast();
   static StreamSubscription<dynamic>? _sub;
   static int _refs = 0;
 
   static Stream<dynamic> retain() {
     if (_refs == 0) {
-      _sub = _eventChannel.receiveBroadcastStream().listen(
-        _raw.add,
-        onError: _raw.addError,
-      );
+      _sub = _eventChannel.receiveBroadcastStream().listen(_raw.add, onError: _raw.addError);
     }
     _refs += 1;
     return _raw.stream;
@@ -60,7 +57,6 @@ class _SharedNativeEventHub {
       // Ignore cancel races on shared channel teardown.
     }
   }
-
 }
 
 /// [PlayerBackend] adapter over MethodChannel / EventChannel.

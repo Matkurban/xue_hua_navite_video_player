@@ -24,7 +24,7 @@ class PlaybackSessionState {
   final FlutterSignal<Size> videoSize = signal<Size>(Size.zero);
   final FlutterSignal<int> rotationDegrees = signal<int>(0);
   final FlutterSignal<bool> muted = signal(false);
-  final FlutterSignal< bool> isLooping = signal(false);
+  final FlutterSignal<bool> isLooping = signal(false);
   final FlutterSignal<SkipSecondType> skipSecondType = signal(SkipSecondType.second10);
   final FlutterSignal<AspectRatioMode> aspectRatioMode = signal(AspectRatioMode.fit);
   final FlutterSignal<bool> isFullscreen = signal(false);

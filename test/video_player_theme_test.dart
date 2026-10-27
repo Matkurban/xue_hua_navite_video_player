@@ -93,18 +93,13 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           theme: ThemeData(
-            extensions: const <ThemeExtension<dynamic>>[
-              VideoPlayerTheme.material(),
-            ],
+            extensions: const <ThemeExtension<dynamic>>[VideoPlayerTheme.material()],
           ),
           home: Scaffold(
             body: SizedBox(
               width: 640,
               height: 360,
-              child: VideoPlayer(
-                controller: controller,
-                autoHideDelay: Duration.zero,
-              ),
+              child: VideoPlayer(controller: controller, autoHideDelay: Duration.zero),
             ),
           ),
         ),
@@ -167,10 +162,7 @@ void main() {
 
       // Aspect ratio and fullscreen buttons use distinct icons in Cupertino mode.
       final aspectIcon = PlayerIconCatalog.aspectRatio(isCupertino: true);
-      final fullscreenIcon = PlayerIconCatalog.fullscreen(
-        isCupertino: true,
-        isFullscreen: false,
-      );
+      final fullscreenIcon = PlayerIconCatalog.fullscreen(isCupertino: true, isFullscreen: false);
       expect(aspectIcon, isNot(equals(fullscreenIcon)));
       expect(find.byIcon(CupertinoIcons.viewfinder), findsOneWidget);
       expect(find.byIcon(CupertinoIcons.fullscreen), findsOneWidget);
@@ -188,10 +180,7 @@ void main() {
 
     test('seek while completed transitions state to paused so subsequent play resumes at seeked position', () async {
       final backend = _FakeBackend();
-      final controller = VideoPlayerController(
-        backend: backend,
-        fullscreen: _NoopFullscreen(),
-      );
+      final controller = VideoPlayerController(backend: backend, fullscreen: _NoopFullscreen());
       await controller.initialize();
       await controller.playNetwork('https://example.com/sample.mp4');
 
@@ -220,9 +209,7 @@ void main() {
 }
 
 class _FakeBackend implements PlayerBackend {
-  final StreamController<PlayerEvent> _events = StreamController<PlayerEvent>.broadcast(
-    sync: true,
-  );
+  final StreamController<PlayerEvent> _events = StreamController<PlayerEvent>.broadcast(sync: true);
   final FlutterSignal<int?> _textureId = signal<int?>(1);
   int? lastSeekMs;
 

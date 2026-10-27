@@ -20,11 +20,7 @@ class LivePhotoExtractor {
   /// 将任意 [LivePhotoSource] 解析为可供播放与展示的 [LivePhotoBundle]。
   static Future<LivePhotoBundle> resolve(LivePhotoSource source) async {
     switch (source) {
-      case PairedLivePhotoSource(
-        :final image,
-        :final video,
-        :final presentationTimestamp,
-      ):
+      case PairedLivePhotoSource(:final image, :final video, :final presentationTimestamp):
         final nativeVideoUrl = await video.resolveToNativeUrl();
         final imageUrl = await image.resolveToNativeUrl();
         return LivePhotoBundle(
@@ -38,11 +34,7 @@ class LivePhotoExtractor {
           ),
         );
 
-      case BytesLivePhotoSource(
-        :final bytes,
-        :final name,
-        :final presentationTimestamp,
-      ):
+      case BytesLivePhotoSource(:final bytes, :final name, :final presentationTimestamp):
         final parsed = LivePhotoParser.parseBytes(bytes);
         if (parsed == null) {
           throw FormatException(
@@ -57,13 +49,9 @@ class LivePhotoExtractor {
           presentationTimestampOverride: presentationTimestamp,
         );
         if (bundle != null) return bundle;
-        return _stillContainerBundle(
-          source,
-          presentationTimestampOverride: presentationTimestamp,
-        );
+        return _stillContainerBundle(source, presentationTimestampOverride: presentationTimestamp);
     }
   }
-
 
   static Future<LivePhotoBundle> _stillContainerBundle(
     VideoSource source, {

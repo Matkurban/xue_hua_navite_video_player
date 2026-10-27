@@ -49,9 +49,7 @@ enum LivePhotoFormat {
     LivePhotoFormat.androidMotionPhoto ||
     LivePhotoFormat.samsungMotionPhoto ||
     LivePhotoFormat.embeddedMp4 => true,
-    LivePhotoFormat.paired ||
-    LivePhotoFormat.appleLivePhoto ||
-    LivePhotoFormat.unknown => false,
+    LivePhotoFormat.paired || LivePhotoFormat.appleLivePhoto || LivePhotoFormat.unknown => false,
   };
 
   /// Parses [LivePhotoFormat] from a serialized wire string.

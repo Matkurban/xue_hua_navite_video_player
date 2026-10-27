@@ -43,10 +43,8 @@ sealed class LivePhotoSource {
   /// 单源动态照片（自动解析单文件 Motion Photo 内嵌视频流，或在本地目录自动查找同名 `.MOV`/`.MP4` 与 `.pvt` 包）。
   ///
   /// Single-source Motion Photo or auto-paired local Live Photo.
-  const factory LivePhotoSource.single(
-    VideoSource source, {
-    Duration? presentationTimestamp,
-  }) = SingleFileLivePhotoSource;
+  const factory LivePhotoSource.single(VideoSource source, {Duration? presentationTimestamp}) =
+      SingleFileLivePhotoSource;
 
   /// 内存字节动态照片（从单文件 Motion Photo 字节流直接解析）。
   ///
@@ -169,10 +167,7 @@ class SingleFileLivePhotoSource extends LivePhotoSource {
   /// 原始单文件（或主文件）来源。
   final VideoSource source;
 
-  const SingleFileLivePhotoSource(
-    this.source, {
-    super.presentationTimestamp,
-  });
+  const SingleFileLivePhotoSource(this.source, {super.presentationTimestamp});
 
   @override
   String get identity => 'livephoto://single?source=${source.identity}';

@@ -57,13 +57,8 @@ class LivePhotoMetadata {
           other.contentIdentifier == contentIdentifier;
 
   @override
-  int get hashCode => Object.hash(
-    format,
-    videoOffset,
-    videoLength,
-    presentationTimestamp,
-    contentIdentifier,
-  );
+  int get hashCode =>
+      Object.hash(format, videoOffset, videoLength, presentationTimestamp, contentIdentifier);
 
   @override
   String toString() =>

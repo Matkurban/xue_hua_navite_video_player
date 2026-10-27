@@ -57,7 +57,6 @@ Uint8List _buildMinimalMp4Bytes({String? contentIdentifier, String majorBrand = 
   return Uint8List.fromList(<int>[...ftyp, ...moov]);
 }
 
-
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -77,32 +76,34 @@ void main() {
   });
 
   group('LivePhotoParser', () {
-    test('createMotionPhotoBytes synthesizes valid XMP Motion Photo and round-trips via parseBytes', () {
-      final jpeg = _buildMinimalJpegBytes();
-      const uuid = '12345678-ABCD-4321-BCDE-112233445566';
-      final mp4 = _buildMinimalMp4Bytes(contentIdentifier: uuid);
-      const ts = Duration(milliseconds: 850);
+    test(
+      'createMotionPhotoBytes synthesizes valid XMP Motion Photo and round-trips via parseBytes',
+      () {
+        final jpeg = _buildMinimalJpegBytes();
+        const uuid = '12345678-ABCD-4321-BCDE-112233445566';
+        final mp4 = _buildMinimalMp4Bytes(contentIdentifier: uuid);
+        const ts = Duration(milliseconds: 850);
 
-      final motionPhotoBytes = LivePhotoParser.createMotionPhotoBytes(
-        imageBytes: jpeg,
-        videoBytes: mp4,
-        presentationTimestamp: ts,
-      );
+        final motionPhotoBytes = LivePhotoParser.createMotionPhotoBytes(
+          imageBytes: jpeg,
+          videoBytes: mp4,
+          presentationTimestamp: ts,
+        );
 
-      expect(LivePhotoParser.isMotionPhotoBytes(motionPhotoBytes), isTrue);
+        expect(LivePhotoParser.isMotionPhotoBytes(motionPhotoBytes), isTrue);
 
-      final parsed = LivePhotoParser.parseBytes(motionPhotoBytes);
-      expect(parsed, isNotNull);
-      expect(parsed!.imageMimeType, 'image/jpeg');
-      expect(parsed.videoMimeType, 'video/mp4');
-      expect(parsed.videoBytes, equals(mp4));
-      expect(parsed.metadata.format, LivePhotoFormat.gcameraMicroVideo);
-      expect(parsed.metadata.videoLength, mp4.length);
-      expect(parsed.metadata.presentationTimestamp, ts);
-      expect(parsed.metadata.contentIdentifier, uuid);
-      expect(parsed.metadata.isSingleFile, isTrue);
-    });
-
+        final parsed = LivePhotoParser.parseBytes(motionPhotoBytes);
+        expect(parsed, isNotNull);
+        expect(parsed!.imageMimeType, 'image/jpeg');
+        expect(parsed.videoMimeType, 'video/mp4');
+        expect(parsed.videoBytes, equals(mp4));
+        expect(parsed.metadata.format, LivePhotoFormat.gcameraMicroVideo);
+        expect(parsed.metadata.videoLength, mp4.length);
+        expect(parsed.metadata.presentationTimestamp, ts);
+        expect(parsed.metadata.contentIdentifier, uuid);
+        expect(parsed.metadata.isSingleFile, isTrue);
+      },
+    );
 
     test('detects Apple MiPr still and vivo livephoto trailer without embedded video', () {
       // Minimal HEIC-like ftyp with MiPr brand.
@@ -144,11 +145,7 @@ void main() {
           '</rdf:Description>'
           '</rdf:RDF></x:xmpmeta>';
 
-      final combined = Uint8List.fromList(<int>[
-        ...jpeg,
-        ...utf8.encode(xmp),
-        ...mp4,
-      ]);
+      final combined = Uint8List.fromList(<int>[...jpeg, ...utf8.encode(xmp), ...mp4]);
 
       final parsed = LivePhotoParser.parseBytes(combined);
       expect(parsed, isNotNull);
@@ -162,11 +159,7 @@ void main() {
       final mp4 = _buildMinimalMp4Bytes(majorBrand: 'qt  ');
       final marker = ascii.encode('MotionPhoto_Data');
 
-      final combined = Uint8List.fromList(<int>[
-        ...jpeg,
-        ...marker,
-        ...mp4,
-      ]);
+      final combined = Uint8List.fromList(<int>[...jpeg, ...marker, ...mp4]);
 
       final parsed = LivePhotoParser.parseBytes(combined);
       expect(parsed, isNotNull);
@@ -250,7 +243,6 @@ void main() {
       expect(bundle.imageFile?.path, imgFile.path);
       expect(bundle.nativeVideoUrl, Uri.file(movFile.path).toString());
     });
-
 
     test('auto-discovers case-insensitive sibling .mov companion', () async {
       final imgFile = File('${tempDir.path}/PhotoLive.JPG');
@@ -357,8 +349,6 @@ void main() {
     });
   });
 
-  
-
   test('example Motion Photo JPEGs parse with embedded video tracks', () async {
     for (final name in <String>[
       'motion_city_walk.jpg',
@@ -387,118 +377,118 @@ void main() {
     }
   });
 
-
   group('LivePhotoPlayer & LivePhotoBadge Widgets', () {
-    testWidgets('LivePhotoPlayer supports tap and badge trigger, mute toggle, and completion reset', (
-      WidgetTester tester,
-    ) async {
-      final source = LivePhotoSource.paired(
-        image: VideoSource.network('https://example.com/still.jpg'),
-        video: VideoSource.network('https://example.com/motion.mov'),
-      );
+    testWidgets(
+      'LivePhotoPlayer supports tap and badge trigger, mute toggle, and completion reset',
+      (WidgetTester tester) async {
+        final source = LivePhotoSource.paired(
+          image: VideoSource.network('https://example.com/still.jpg'),
+          video: VideoSource.network('https://example.com/motion.mov'),
+        );
 
-      final backend = _FakePlayerBackend();
-      final controller = VideoPlayerController(
-        backend: backend,
-        fullscreen: _FakeFullscreen(),
-        brightness: _FakeBrightness(),
-      );
-      await controller.initialize();
-      debugDefaultTargetPlatformOverride = TargetPlatform.linux;
+        final backend = _FakePlayerBackend();
+        final controller = VideoPlayerController(
+          backend: backend,
+          fullscreen: _FakeFullscreen(),
+          brightness: _FakeBrightness(),
+        );
+        await controller.initialize();
+        debugDefaultTargetPlatformOverride = TargetPlatform.linux;
 
-      var startCount = 0;
-      var completeCount = 0;
+        var startCount = 0;
+        var completeCount = 0;
 
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: SizedBox(
-              width: 320,
-              height: 240,
-              child: LivePhotoPlayer(
-                source: source,
-                controller: controller,
-                playMode: LivePhotoPlayMode.tap,
-                enableHapticFeedback: false,
-                onPlaybackStart: () => startCount++,
-                onPlaybackComplete: () => completeCount++,
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: SizedBox(
+                width: 320,
+                height: 240,
+                child: LivePhotoPlayer(
+                  source: source,
+                  controller: controller,
+                  playMode: LivePhotoPlayMode.tap,
+                  enableHapticFeedback: false,
+                  onPlaybackStart: () => startCount++,
+                  onPlaybackComplete: () => completeCount++,
+                ),
               ),
             ),
           ),
-        ),
-      );
-      await tester.pump();
-      await tester.runAsync(() async {
-        await Future<void>.delayed(const Duration(milliseconds: 30));
-      });
-      await tester.pump();
-
-      final badgeFinder = find.byKey(const ValueKey<String>('live_photo_badge'));
-      final muteFinder = find.byKey(const ValueKey<String>('live_photo_mute_button'));
-      expect(badgeFinder, findsOneWidget);
-      expect(muteFinder, findsOneWidget);
-      expect(find.text('LIVE'), findsOneWidget);
-
-      await tester.tap(muteFinder);
-      await tester.pump();
-      expect(controller.muted.value, isTrue);
-
-      await tester.tap(badgeFinder);
-      await tester.pump();
-      for (var i = 0; i < 40; i++) {
-        if (backend.lastOpenedUrl != null) break;
+        );
+        await tester.pump();
         await tester.runAsync(() async {
-          await Future<void>.delayed(const Duration(milliseconds: 20));
+          await Future<void>.delayed(const Duration(milliseconds: 30));
         });
         await tester.pump();
-      }
-      expect(backend.lastOpenedUrl, 'https://example.com/motion.mov');
 
-      if (controller.playState.value != PlayState.playing) {
-        backend.emit(const PlayerEvent.duration(Duration(milliseconds: 1500)));
-        backend.emit(const PlayerEvent.playing(true));
-      }
-      await tester.pump();
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 250));
+        final badgeFinder = find.byKey(const ValueKey<String>('live_photo_badge'));
+        final muteFinder = find.byKey(const ValueKey<String>('live_photo_mute_button'));
+        expect(badgeFinder, findsOneWidget);
+        expect(muteFinder, findsOneWidget);
+        expect(find.text('LIVE'), findsOneWidget);
 
-      expect(startCount, greaterThanOrEqualTo(1));
-      final stillOpacity = tester.widget<AnimatedOpacity>(
-        find.byKey(const ValueKey<String>('live_photo_still_opacity')),
-      );
-      expect(stillOpacity.opacity, 0.0);
-      expect(find.byKey(const ValueKey<String>('live_photo_video_surface')), findsOneWidget);
+        await tester.tap(muteFinder);
+        await tester.pump();
+        expect(controller.muted.value, isTrue);
 
-      final corePlayer = find.byType(CorePlayer);
-      expect(corePlayer, findsWidgets);
-      expect(
-        find.ancestor(of: corePlayer.first, matching: find.byType(AnimatedOpacity)),
-        findsNothing,
-      );
-      expect(
-        find.ancestor(of: corePlayer.first, matching: find.byType(AnimatedScale)),
-        findsNothing,
-      );
+        await tester.tap(badgeFinder);
+        await tester.pump();
+        for (var i = 0; i < 40; i++) {
+          if (backend.lastOpenedUrl != null) break;
+          await tester.runAsync(() async {
+            await Future<void>.delayed(const Duration(milliseconds: 20));
+          });
+          await tester.pump();
+        }
+        expect(backend.lastOpenedUrl, 'https://example.com/motion.mov');
 
-      backend.emit(const PlayerEvent.completed());
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 250));
+        if (controller.playState.value != PlayState.playing) {
+          backend.emit(const PlayerEvent.duration(Duration(milliseconds: 1500)));
+          backend.emit(const PlayerEvent.playing(true));
+        }
+        await tester.pump();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 250));
 
-      expect(completeCount, greaterThanOrEqualTo(1));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 300));
-      final stillAfterComplete = tester.widget<AnimatedOpacity>(
-        find.byKey(const ValueKey<String>('live_photo_still_opacity')),
-      );
-      expect(stillAfterComplete.opacity, 1.0);
+        expect(startCount, greaterThanOrEqualTo(1));
+        final stillOpacity = tester.widget<AnimatedOpacity>(
+          find.byKey(const ValueKey<String>('live_photo_still_opacity')),
+        );
+        expect(stillOpacity.opacity, 0.0);
+        expect(find.byKey(const ValueKey<String>('live_photo_video_surface')), findsOneWidget);
 
-      debugDefaultTargetPlatformOverride = null;
-      await controller.dispose();
-    });
+        final corePlayer = find.byType(CorePlayer);
+        expect(corePlayer, findsWidgets);
+        expect(
+          find.ancestor(of: corePlayer.first, matching: find.byType(AnimatedOpacity)),
+          findsNothing,
+        );
+        expect(
+          find.ancestor(of: corePlayer.first, matching: find.byType(AnimatedScale)),
+          findsNothing,
+        );
 
-    testWidgets(
-      'LivePhotoPlayer keeps CorePlayer free of ClipRRect when borderRadius is set',
-      (WidgetTester tester) async {
+        backend.emit(const PlayerEvent.completed());
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 250));
+
+        expect(completeCount, greaterThanOrEqualTo(1));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+        final stillAfterComplete = tester.widget<AnimatedOpacity>(
+          find.byKey(const ValueKey<String>('live_photo_still_opacity')),
+        );
+        expect(stillAfterComplete.opacity, 1.0);
+
+        debugDefaultTargetPlatformOverride = null;
+        await controller.dispose();
+      },
+    );
+
+    testWidgets('LivePhotoPlayer keeps CorePlayer free of ClipRRect when borderRadius is set', (
+      WidgetTester tester,
+    ) async {
       final source = LivePhotoSource.paired(
         image: VideoSource.network('https://example.com/still.jpg'),
         video: VideoSource.network('https://example.com/motion.mov'),
@@ -554,10 +544,7 @@ void main() {
 
       final corePlayer = find.byType(CorePlayer);
       expect(corePlayer, findsWidgets);
-      expect(
-        find.ancestor(of: corePlayer.first, matching: find.byType(ClipRRect)),
-        findsNothing,
-      );
+      expect(find.ancestor(of: corePlayer.first, matching: find.byType(ClipRRect)), findsNothing);
       expect(find.byKey(const ValueKey<String>('live_photo_video_surface')), findsOneWidget);
 
       debugDefaultTargetPlatformOverride = null;
@@ -589,10 +576,7 @@ void main() {
             body: SizedBox(
               width: 640,
               height: 360,
-              child: VideoPlayer(
-                controller: controller,
-                autoHideDelay: Duration.zero,
-              ),
+              child: VideoPlayer(controller: controller, autoHideDelay: Duration.zero),
             ),
           ),
         ),
@@ -607,9 +591,7 @@ void main() {
       await controller.dispose();
     });
   });
-
 }
-
 
 class _FakePlayerBackend implements PlayerBackend {
   final _controller = StreamController<PlayerEvent>.broadcast();

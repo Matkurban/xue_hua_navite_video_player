@@ -22,8 +22,7 @@ import 'live_photo_parser.dart';
 class LivePhotoExtractor {
   LivePhotoExtractor._();
 
-  static final Map<String, Future<LivePhotoBundle>> _inflight =
-      <String, Future<LivePhotoBundle>>{};
+  static final Map<String, Future<LivePhotoBundle>> _inflight = <String, Future<LivePhotoBundle>>{};
   static final Map<String, LivePhotoBundle> _blobCache = <String, LivePhotoBundle>{};
 
   static const List<String> _companionVideoExts = <String>[
@@ -76,11 +75,7 @@ class LivePhotoExtractor {
 
   static Future<LivePhotoBundle> _doResolve(LivePhotoSource source) async {
     switch (source) {
-      case PairedLivePhotoSource(
-        :final image,
-        :final video,
-        :final presentationTimestamp,
-      ):
+      case PairedLivePhotoSource(:final image, :final video, :final presentationTimestamp):
         final nativeVideoUrl = await video.resolveToNativeUrl();
         final imageUrl = await image.resolveToNativeUrl();
         return LivePhotoBundle(
@@ -94,11 +89,7 @@ class LivePhotoExtractor {
           ),
         );
 
-      case BytesLivePhotoSource(
-        :final bytes,
-        :final name,
-        :final presentationTimestamp,
-      ):
+      case BytesLivePhotoSource(:final bytes, :final name, :final presentationTimestamp):
         final parsed = LivePhotoParser.parseBytes(bytes);
         if (parsed == null) {
           throw FormatException(
@@ -118,13 +109,9 @@ class LivePhotoExtractor {
           presentationTimestampOverride: presentationTimestamp,
         );
         if (bundle != null) return bundle;
-        return _stillContainerBundle(
-          source,
-          presentationTimestampOverride: presentationTimestamp,
-        );
+        return _stillContainerBundle(source, presentationTimestampOverride: presentationTimestamp);
     }
   }
-
 
   static Future<LivePhotoBundle> _stillContainerBundle(
     VideoSource source, {

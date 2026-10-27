@@ -22,8 +22,7 @@ import 'temp_paths.dart';
 class LivePhotoExtractor {
   LivePhotoExtractor._();
 
-  static final Map<String, Future<LivePhotoBundle>> _inflight =
-      <String, Future<LivePhotoBundle>>{};
+  static final Map<String, Future<LivePhotoBundle>> _inflight = <String, Future<LivePhotoBundle>>{};
 
   static const List<String> _companionVideoExts = <String>[
     '.MOV',
@@ -90,11 +89,7 @@ class LivePhotoExtractor {
 
   static Future<LivePhotoBundle> _doResolve(LivePhotoSource source) async {
     switch (source) {
-      case PairedLivePhotoSource(
-        :final image,
-        :final video,
-        :final presentationTimestamp,
-      ):
+      case PairedLivePhotoSource(:final image, :final video, :final presentationTimestamp):
         final nativeVideoUrl = await video.resolveToNativeUrl();
         final imageFile = await _resolveCoverNaviteFile(image);
         return LivePhotoBundle(
@@ -108,11 +103,7 @@ class LivePhotoExtractor {
           ),
         );
 
-      case BytesLivePhotoSource(
-        :final bytes,
-        :final name,
-        :final presentationTimestamp,
-      ):
+      case BytesLivePhotoSource(:final bytes, :final name, :final presentationTimestamp):
         final parsed = LivePhotoParser.parseBytes(bytes);
         if (parsed == null) {
           throw FormatException(
@@ -135,10 +126,7 @@ class LivePhotoExtractor {
         // valid inputs even without embedded motion / sibling .MOV. Return a
         // still-container bundle so LivePhotoPlayer can enter the play flow
         // (it keeps the Flutter still opaque for format.unknown).
-        return _stillContainerBundle(
-          source,
-          presentationTimestampOverride: presentationTimestamp,
-        );
+        return _stillContainerBundle(source, presentationTimestampOverride: presentationTimestamp);
     }
   }
 
@@ -174,10 +162,8 @@ class LivePhotoExtractor {
       }
     }
 
-    final isAppleOrVivo =
-        bytes != null && LivePhotoParser.isLivePhotoStillContainerBytes(bytes);
-    final vivoId =
-        bytes != null ? LivePhotoParser.extractVivoLivePhotoContentId(bytes) : null;
+    final isAppleOrVivo = bytes != null && LivePhotoParser.isLivePhotoStillContainerBytes(bytes);
+    final vivoId = bytes != null ? LivePhotoParser.extractVivoLivePhotoContentId(bytes) : null;
 
     return LivePhotoBundle(
       imageFile: imageFile,
@@ -221,9 +207,7 @@ class LivePhotoExtractor {
         return resolve(livePhoto);
 
       case FileVideoSource(:final path):
-        final normalizedPath = path.startsWith('file://')
-            ? Uri.parse(path).toFilePath()
-            : path;
+        final normalizedPath = path.startsWith('file://') ? Uri.parse(path).toFilePath() : path;
 
         // 1. Check if it is a macOS `.pvt` Live Photo package directory.
         final dir = Directory(normalizedPath);
@@ -398,15 +382,11 @@ class LivePhotoExtractor {
     final dir = primaryFile.parent;
     if (!await dir.exists()) return null;
     final primaryBase = _fileBasenameNoExt(primaryFile.path).toLowerCase();
-    final wantedLower = {
-      for (final e in wantedExts) e.toLowerCase(),
-    };
+    final wantedLower = {for (final e in wantedExts) e.toLowerCase()};
     await for (final entity in dir.list(followLinks: false)) {
       if (entity is! File) continue;
       if (entity.path == primaryFile.path) continue;
-      final name = entity.uri.pathSegments.isEmpty
-          ? entity.path
-          : entity.uri.pathSegments.last;
+      final name = entity.uri.pathSegments.isEmpty ? entity.path : entity.uri.pathSegments.last;
       final lowerName = name.toLowerCase();
       final dot = lowerName.lastIndexOf('.');
       if (dot <= 0) continue;

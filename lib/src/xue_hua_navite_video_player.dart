@@ -80,10 +80,7 @@ class XueHuaNaviteVideoPlayer {
   ///
   /// Probes and extracts a [LivePhotoBundle] from [source], or returns `null`
   /// if [source] is not a Motion Photo or paired Live Photo.
-  Future<LivePhotoBundle?> extractLivePhoto(
-    VideoSource source, {
-    Duration? presentationTimestamp,
-  }) {
+  Future<LivePhotoBundle?> extractLivePhoto(VideoSource source, {Duration? presentationTimestamp}) {
     return LivePhotoExtractor.tryExtractFromVideoSource(
       source,
       presentationTimestampOverride: presentationTimestamp,

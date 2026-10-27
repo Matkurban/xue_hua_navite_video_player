@@ -106,7 +106,10 @@ void main() {
     await _sleep(tester, const Duration(milliseconds: 300));
 
     for (var i = 0; i < 3; i++) {
-      await _tapVisible(tester, find.byKey(ValueKey<String>('live_photo_item_$i')));
+      await _tapVisible(
+        tester,
+        find.byKey(ValueKey<String>('live_photo_item_$i')),
+      );
       await _sleep(tester, const Duration(milliseconds: 600));
 
       expect(

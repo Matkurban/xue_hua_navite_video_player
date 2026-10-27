@@ -199,7 +199,9 @@ void main() {
     expect(c.currentUrl.value, isNotNull);
   });
 
-  testWidgets('volume, mute, unmute and toggleMuted', (WidgetTester tester) async {
+  testWidgets('volume, mute, unmute and toggleMuted', (
+    WidgetTester tester,
+  ) async {
     final String path = await tester.runAsync(_localVideoPath) as String;
     final VideoPlayerController c = await _mount(tester);
     await tester.runAsync(() => c.playFile(path));
@@ -244,7 +246,9 @@ void main() {
     await tester.runAsync(() => c.setBrightness(before.clamp(0.0, 1.0)));
   });
 
-  testWidgets('looping flag toggles without error', (WidgetTester tester) async {
+  testWidgets('looping flag toggles without error', (
+    WidgetTester tester,
+  ) async {
     final String path = await tester.runAsync(_localVideoPath) as String;
     final VideoPlayerController c = await _mount(tester);
     await tester.runAsync(() => c.playFile(path));
@@ -411,7 +415,8 @@ void main() {
         timeout: const Duration(seconds: 30),
       ),
       isTrue,
-      reason: 'asset play state=${c.playState.value} err=${c.errorMessage.value}',
+      reason:
+          'asset play state=${c.playState.value} err=${c.errorMessage.value}',
     );
     expect(
       await _waitFor(tester, () => c.duration.value > Duration.zero),
@@ -432,7 +437,8 @@ void main() {
         timeout: const Duration(seconds: 30),
       ),
       isTrue,
-      reason: 'openSource state=${c.playState.value} err=${c.errorMessage.value}',
+      reason:
+          'openSource state=${c.playState.value} err=${c.errorMessage.value}',
     );
     await tester.runAsync(c.play);
     expect(
@@ -454,12 +460,13 @@ void main() {
     expect(dur, isNotNull);
     expect(dur!.inSeconds, inInclusiveRange(9, 11));
 
-    final List<VideoCoverFrame>? covers = await tester.runAsync<List<VideoCoverFrame>>(
-      () => XueHuaNaviteVideoPlayer.instance.extractCoverCandidates(
-        source,
-        count: 2,
-      ),
-    );
+    final List<VideoCoverFrame>? covers = await tester
+        .runAsync<List<VideoCoverFrame>>(
+          () => XueHuaNaviteVideoPlayer.instance.extractCoverCandidates(
+            source,
+            count: 2,
+          ),
+        );
     expect(covers, isNotNull);
     // Some hosts may return empty if native cover extract is limited; allow
     // empty but when present frames must be valid.
@@ -493,7 +500,9 @@ void main() {
     final VideoPlayerController c = await _mount(tester);
     await tester.runAsync(
       () => c.playLivePhoto(
-        LivePhotoSource.asset(imageAsset: 'assets/live_photo/motion_city_walk.jpg'),
+        LivePhotoSource.asset(
+          imageAsset: 'assets/live_photo/motion_city_walk.jpg',
+        ),
       ),
     );
     expect(

@@ -55,13 +55,7 @@ class LivePhotoBundle {
           other.metadata == metadata;
 
   @override
-  int get hashCode => Object.hash(
-    imageFile,
-    imageSource,
-    videoSource,
-    nativeVideoUrl,
-    metadata,
-  );
+  int get hashCode => Object.hash(imageFile, imageSource, videoSource, nativeVideoUrl, metadata);
 
   @override
   String toString() =>

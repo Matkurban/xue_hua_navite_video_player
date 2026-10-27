@@ -260,11 +260,11 @@ class _LivePhotoPlayerState extends State<LivePhotoPlayer> {
       // built-in Skia/Impeller image codec does not decode .heic / .avif still
       // covers directly. Extract a PNG cover frame from the motion video stream
       // so the still cover displays on all 6 platforms!
-      final isApplePlatform = !kIsWeb &&
+      final isApplePlatform =
+          !kIsWeb &&
           (defaultTargetPlatform == TargetPlatform.iOS ||
               defaultTargetPlatform == TargetPlatform.macOS);
-      if (!isApplePlatform &&
-          _isUnsupportedNonAppleImageMime(bundle.imageFile?.mimeType)) {
+      if (!isApplePlatform && _isUnsupportedNonAppleImageMime(bundle.imageFile?.mimeType)) {
         final covers = await XueHuaNaviteVideoPlayer.instance.extractCoverCandidates(
           bundle.videoSource,
           count: 1,
@@ -504,10 +504,7 @@ class _LivePhotoPlayerState extends State<LivePhotoPlayer> {
         if (!mounted || !_wantsPlayback) return;
         await ctrl.play();
       } else {
-        await ctrl.playLivePhoto(
-          widget.source,
-          loop: widget.playMode == LivePhotoPlayMode.loop,
-        );
+        await ctrl.playLivePhoto(widget.source, loop: widget.playMode == LivePhotoPlayMode.loop);
       }
     } catch (e) {
       if (!mounted) return;
@@ -564,7 +561,6 @@ class _LivePhotoPlayerState extends State<LivePhotoPlayer> {
     _startPlayback();
   }
 
-
   static AspectRatioMode _mapBoxFitToAspectRatioMode(BoxFit fit) {
     return switch (fit) {
       BoxFit.cover => AspectRatioMode.fill,
@@ -596,28 +592,25 @@ class _LivePhotoPlayerState extends State<LivePhotoPlayer> {
       placeholderBuilder: widget.placeholderBuilder,
     );
     if (widget.borderRadius != null) {
-      stillCover = ClipRRect(
-        borderRadius: widget.borderRadius!,
-        child: stillCover,
-      );
+      stillCover = ClipRRect(borderRadius: widget.borderRadius!, child: stillCover);
     }
 
     Widget content;
     final errorBanner = _resolveError == null
         ? null
         : (widget.errorBuilder != null
-            ? widget.errorBuilder!(context, _resolveError)
-            : ColoredBox(
-                color: Colors.black54,
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Text(
-                    _resolveError!,
-                    style: TextStyle(color: effectiveTheme.foregroundColor, fontSize: 12),
-                    textAlign: TextAlign.center,
+              ? widget.errorBuilder!(context, _resolveError)
+              : ColoredBox(
+                  color: Colors.black54,
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Text(
+                      _resolveError!,
+                      style: TextStyle(color: effectiveTheme.foregroundColor, fontSize: 12),
+                      textAlign: TextAlign.center,
+                    ),
                   ),
-                ),
-              ));
+                ));
 
     if (_resolveError != null && _bundle == null && ctrl == null) {
       // Keep the still fallback (Apple HEIC) under the error — never an empty black stage.
@@ -632,10 +625,7 @@ class _LivePhotoPlayerState extends State<LivePhotoPlayer> {
         ),
       );
       if (widget.borderRadius != null) {
-        content = ClipRRect(
-          borderRadius: widget.borderRadius!,
-          child: content,
-        );
+        content = ClipRRect(borderRadius: widget.borderRadius!, child: content);
       }
     } else {
       content = ColoredBox(
@@ -683,7 +673,8 @@ class _LivePhotoPlayerState extends State<LivePhotoPlayer> {
             Positioned.fill(
               child: MouseRegion(
                 key: const ValueKey<String>('live_photo_mouse_region'),
-                cursor: widget.playMode == LivePhotoPlayMode.tap ||
+                cursor:
+                    widget.playMode == LivePhotoPlayMode.tap ||
                         widget.playMode == LivePhotoPlayMode.hover
                     ? SystemMouseCursors.click
                     : MouseCursor.defer,
@@ -752,10 +743,7 @@ class _LivePhotoPlayerState extends State<LivePhotoPlayer> {
                   child: Align(
                     alignment: Alignment.bottomCenter,
                     child: SafeArea(
-                      child: Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: errorBanner,
-                      ),
+                      child: Padding(padding: const EdgeInsets.all(12), child: errorBanner),
                     ),
                   ),
                 ),
@@ -770,10 +758,7 @@ class _LivePhotoPlayerState extends State<LivePhotoPlayer> {
       // use a real ClipRRect safely.
       if (widget.borderRadius != null) {
         if (ctrl == null) {
-          content = ClipRRect(
-            borderRadius: widget.borderRadius!,
-            child: content,
-          );
+          content = ClipRRect(borderRadius: widget.borderRadius!, child: content);
         } else {
           content = Stack(
             fit: StackFit.expand,
@@ -796,10 +781,7 @@ class _LivePhotoPlayerState extends State<LivePhotoPlayer> {
     }
 
     if (widget.aspectRatio != null) {
-      content = AspectRatio(
-        aspectRatio: widget.aspectRatio!,
-        child: content,
-      );
+      content = AspectRatio(aspectRatio: widget.aspectRatio!, child: content);
     }
 
     if (widget.theme != null) {
@@ -819,14 +801,10 @@ class _LivePhotoPlayerState extends State<LivePhotoPlayer> {
   }
 }
 
-
 /// Paints the four corners outside a rounded rect so platform-view video can
 /// keep an apparent border radius without a clipping ancestor.
 class _RoundedRectCornerMaskPainter extends CustomPainter {
-  const _RoundedRectCornerMaskPainter({
-    required this.borderRadius,
-    required this.color,
-  });
+  const _RoundedRectCornerMaskPainter({required this.borderRadius, required this.color});
 
   final BorderRadius borderRadius;
   final Color color;
@@ -835,8 +813,7 @@ class _RoundedRectCornerMaskPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     if (size.isEmpty) return;
     final outer = Path()..addRect(Offset.zero & size);
-    final inner = Path()
-      ..addRRect(borderRadius.toRRect(Offset.zero & size));
+    final inner = Path()..addRRect(borderRadius.toRRect(Offset.zero & size));
     final path = Path.combine(PathOperation.difference, outer, inner);
     canvas.drawPath(path, Paint()..color = color);
   }

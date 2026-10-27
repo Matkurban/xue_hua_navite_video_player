@@ -180,8 +180,7 @@ class LivePhotoVideoSource extends VideoSource {
 
   @override
   bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is LivePhotoVideoSource && other.livePhoto == livePhoto;
+      identical(this, other) || other is LivePhotoVideoSource && other.livePhoto == livePhoto;
 
   @override
   int get hashCode => livePhoto.hashCode;

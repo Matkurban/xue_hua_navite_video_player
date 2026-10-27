@@ -47,7 +47,9 @@ abstract final class PlayerIconCatalog {
 
   static IconData livePhoto({required bool isCupertino, bool active = true}) {
     if (isCupertino) {
-      return active ? CupertinoIcons.smallcircle_fill_circle : CupertinoIcons.smallcircle_fill_circle_fill;
+      return active
+          ? CupertinoIcons.smallcircle_fill_circle
+          : CupertinoIcons.smallcircle_fill_circle_fill;
     }
     return active ? Icons.motion_photos_on_rounded : Icons.motion_photos_paused_rounded;
   }
