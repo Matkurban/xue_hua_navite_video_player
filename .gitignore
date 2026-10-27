@@ -37,3 +37,6 @@ migrate_working_dir/
 /win_shots/
 /mac_shots/
 /xvfb_shots/
+
+# Android emulator screenshots (local)
+android_shots/

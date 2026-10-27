@@ -19,6 +19,10 @@ String _shotsDir() {
   if (Platform.isMacOS) {
     return r'/Users/admin/XueHuaPackages/xue_hua_navite_video_player/mac_shots';
   }
+  // Android screenshots go through takeScreenshot / host adb — no device path.
+  if (Platform.isAndroid) {
+    return Directory.systemTemp.path;
+  }
   return '/workspace/xvfb_shots';
 }
 
@@ -44,6 +48,15 @@ Future<void> _sleep(WidgetTester tester, Duration d) async {
 }
 
 Future<void> _shot(String name) async {
+  // On Android the test runs inside the emulator: host Mac paths are not
+  // writable. Prefer the integration_test screenshot channel; host adb
+  // screencaps into android_shots/ are optional and external to this helper.
+  if (Platform.isAndroid) {
+    try {
+      await IntegrationTestWidgetsFlutterBinding.instance.takeScreenshot(name);
+    } catch (_) {}
+    return;
+  }
   final dir = Directory(_shotsDir());
   if (!dir.existsSync()) {
     dir.createSync(recursive: true);
@@ -253,15 +266,21 @@ void main() {
       await _sleep(tester, const Duration(seconds: 1));
       await _shot('ui_06_after_replay');
 
-      final page = find.byKey(const ValueKey<String>('player_page'));
-      if (find.byIcon(Icons.close).evaluate().isEmpty &&
-          find.byIcon(Icons.close_rounded).evaluate().isEmpty) {
-        await _revealControls(tester);
-      }
-      final topLeft = tester.getTopLeft(page);
-      await tester.tapAt(topLeft + const Offset(28, 28));
+      // Prefer the stable close key — coordinate taps miss under Android SafeArea.
+      final closeBtn = find.byKey(
+        const ValueKey<String>('video_player_close_button'),
+      );
+      await _waitForChrome(tester, closeBtn);
+      expect(
+        closeBtn,
+        findsOneWidget,
+        reason: 'close button never appeared after revealing chrome',
+      );
+      await tester.tap(closeBtn);
       await tester.pumpAndSettle(const Duration(seconds: 2));
       expect(find.byKey(const ValueKey<String>('home_page')), findsOneWidget);
+      // Allow async controller.dispose() to finish releasing the native slot.
+      await _sleep(tester, const Duration(milliseconds: 500));
       await _shot('ui_07_back_home');
 
       final otherKey = hasLocal

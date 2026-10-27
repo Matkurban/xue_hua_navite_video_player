@@ -1,3 +1,10 @@
+## 2.6.8
+
+- Fix: release the process-wide native `PlaybackSession` slot synchronously at the start of `dispose()` so a newly pushed player page can initialize while the previous async teardown still awaits backend cleanup (Widget.dispose cannot await). Fixes Android races when closing then opening another playlist item.
+- UI: add stable `ValueKey('video_player_close_button')` on the top-bar close control so integration tests can dismiss the player under Android SafeArea (coordinate taps at Offset(28,28) miss the button).
+- Tests / example: Android UI IT screenshots use `IntegrationTestWidgetsFlutterBinding.takeScreenshot` instead of creating host Mac paths inside the emulator; gitignore `android_shots/`.
+- Verified on Android emulators API 30/34/35/36 (Bgdl): `flutter analyze` clean, unit tests, `plugin_integration_test`, and `example_ui_test`.
+
 ## 2.6.7
 
 - Tests / example: track `example/assets/test.mp4` (was accidentally gitignored by a broad `test.mp4` rule) so iOS/macOS local-file integration tests can materialize a fixture without ffmpeg.

@@ -507,14 +507,18 @@ class PlaybackSession {
 
   Future<void> dispose() async {
     if (_disposed) return;
+    // Mark disposed and free the process-wide native slot synchronously so a
+    // newly pushed route can initialize even while this Future still awaits
+    // fullscreen exit / backend teardown (Widget.dispose cannot await).
+    _disposed = true;
+    _openEpoch++;
+    _releaseNativeSession();
     if (isFullscreen.value) {
       try {
         await _fullscreen.exit();
       } catch (_) {}
       isFullscreen.value = false;
     }
-    _disposed = true;
-    _openEpoch++;
     _readyFallbackTimer?.cancel();
     _readyFallbackTimer = null;
     _fullscreenExternalSub?.cancel();
@@ -526,7 +530,6 @@ class PlaybackSession {
     await _backend.dispose();
     castState.value = CastState.unavailable;
     castDeviceName.value = null;
-    _releaseNativeSession();
   }
 
   void _scheduleReadyFallback(int epoch) {

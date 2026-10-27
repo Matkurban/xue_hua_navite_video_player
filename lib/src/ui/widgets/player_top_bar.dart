@@ -59,6 +59,7 @@ class PlayerTopBar extends StatelessWidget {
         final closeButton =
             leading ??
             PlayerIconButton(
+              key: const ValueKey<String>('video_player_close_button'),
               compact: isCupertino,
               onPressed: onClose,
               color: style.foregroundColor,
