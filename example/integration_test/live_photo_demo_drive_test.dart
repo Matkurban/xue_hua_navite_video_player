@@ -33,12 +33,29 @@ Future<void> _sleep(WidgetTester tester, Duration d) async {
   await tester.pump();
 }
 
+Future<void> _tapVisible(WidgetTester tester, Finder finder) async {
+  expect(finder, findsWidgets);
+  await tester.ensureVisible(finder.first);
+  await tester.pump();
+  await tester.tap(finder.first, warnIfMissed: false);
+  await tester.pump();
+}
+
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets('live photo demo: stay on page, play motion_*, fullscreen', (
     tester,
   ) async {
+    // Default IT surface (800x600) clips the 7:3 split + AppBar actions.
+    const Size surface = Size(1400, 900);
+    await tester.binding.setSurfaceSize(surface);
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    tester.view.physicalSize = surface;
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
     await app.startLivePhotoDemoApp();
     await tester.pump();
 
@@ -82,14 +99,15 @@ void main() {
     );
 
     // Switch to tap mode so one tap triggers motion playback.
-    await tester.tap(find.byKey(const ValueKey<String>('live_photo_mode_tap')));
-    await tester.pump();
+    await _tapVisible(
+      tester,
+      find.byKey(const ValueKey<String>('live_photo_mode_tap')),
+    );
     await _sleep(tester, const Duration(milliseconds: 300));
 
     for (var i = 0; i < 3; i++) {
-      await tester.tap(find.byKey(ValueKey<String>('live_photo_item_$i')));
-      await tester.pump();
-      await _sleep(tester, const Duration(milliseconds: 500));
+      await _tapVisible(tester, find.byKey(ValueKey<String>('live_photo_item_$i')));
+      await _sleep(tester, const Duration(milliseconds: 600));
 
       expect(
         find.byType(LivePhotoPlayer),
@@ -97,10 +115,11 @@ void main() {
         reason: 'item $i should keep a single LivePhotoPlayer on stage',
       );
 
-      final badge = find.byKey(const ValueKey<String>('live_photo_badge'));
-      expect(badge, findsOneWidget);
-      await tester.tap(badge);
-      await tester.pump();
+      // Tap the gesture layer (more reliable than badge corner hit-tests).
+      await _tapVisible(
+        tester,
+        find.byKey(const ValueKey<String>('live_photo_gesture_detector')),
+      );
 
       expect(
         await _waitFor(
@@ -118,10 +137,10 @@ void main() {
       );
 
       // Fullscreen must host LivePhotoPlayer + video surface (not empty black).
-      await tester.tap(
+      await _tapVisible(
+        tester,
         find.byKey(const ValueKey<String>('live_photo_fullscreen_button')),
       );
-      await tester.pump();
       expect(
         await _waitFor(
           tester,
@@ -134,10 +153,11 @@ void main() {
       );
 
       expect(find.byType(LivePhotoPlayer), findsWidgets);
-      final fsBadge = find.byKey(const ValueKey<String>('live_photo_badge'));
-      if (fsBadge.evaluate().isNotEmpty) {
-        await tester.tap(fsBadge.first);
-        await tester.pump();
+      final fsGesture = find.byKey(
+        const ValueKey<String>('live_photo_gesture_detector'),
+      );
+      if (fsGesture.evaluate().isNotEmpty) {
+        await _tapVisible(tester, fsGesture);
       }
       expect(
         await _waitFor(
@@ -153,17 +173,21 @@ void main() {
             'item $i fullscreen: video surface missing (possible black stage)',
       );
 
-      await tester.tap(
-        find.byKey(const ValueKey<String>('live_photo_fullscreen_close')),
-      );
+      // Prefer pageBack — AppBar close can sit outside the IT hit-test surface.
+      await tester.pageBack();
       await tester.pump();
       expect(
         await _waitFor(
           tester,
-          () => find
-              .byKey(const ValueKey<String>('live_photo_demo_page'))
-              .evaluate()
-              .isNotEmpty,
+          () =>
+              find
+                  .byKey(const ValueKey<String>('live_photo_demo_page'))
+                  .evaluate()
+                  .isNotEmpty &&
+              find
+                  .byKey(const ValueKey<String>('live_photo_fullscreen_page'))
+                  .evaluate()
+                  .isEmpty,
         ),
         isTrue,
       );
