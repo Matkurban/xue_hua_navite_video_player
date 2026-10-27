@@ -56,13 +56,36 @@ class LivePhotoExtractor {
           source,
           presentationTimestampOverride: presentationTimestamp,
         );
-        if (bundle == null) {
-          throw FormatException(
-            'Source is not a valid Motion Photo on Web: ${source.identity}',
-          );
-        }
-        return bundle;
+        if (bundle != null) return bundle;
+        return _stillContainerBundle(
+          source,
+          presentationTimestampOverride: presentationTimestamp,
+        );
     }
+  }
+
+
+  static Future<LivePhotoBundle> _stillContainerBundle(
+    VideoSource source, {
+    Duration? presentationTimestampOverride,
+  }) async {
+    String nativeVideoUrl;
+    try {
+      nativeVideoUrl = await source.resolveToNativeUrl();
+    } catch (_) {
+      nativeVideoUrl = source.identity;
+    }
+    final imageUrl = nativeVideoUrl;
+    return LivePhotoBundle(
+      imageFile: NaviteFile.fromLocation(imageUrl),
+      imageSource: source,
+      videoSource: source,
+      nativeVideoUrl: nativeVideoUrl,
+      metadata: LivePhotoMetadata(
+        format: LivePhotoFormat.unknown,
+        presentationTimestamp: presentationTimestampOverride,
+      ),
+    );
   }
 
   /// 尝试从单个 [VideoSource] 中探测并提取动态照片。

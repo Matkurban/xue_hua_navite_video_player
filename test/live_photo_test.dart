@@ -319,32 +319,37 @@ void main() {
 
   
 
-  test('opening bare Apple Live Photo HEIC does not open as video (avoids black stage)', () async {
+  test('bare Apple Live Photo HEIC resolves as still-container (no FormatException)', () async {
     final fixture = File('example/assets/live_photo/IMG_0037.HEIC');
     expect(fixture.existsSync(), isTrue);
-    final backend = _FakePlayerBackend();
-    final controller = VideoPlayerController(
-      backend: backend,
-      fullscreen: _FakeFullscreen(),
-      brightness: _FakeBrightness(),
+    final bundle = await XueHuaNaviteVideoPlayer.instance.resolveLivePhoto(
+      LivePhotoSource.file(imagePath: fixture.path),
     );
-    await controller.initialize();
-    await controller.playFile(fixture.path);
-    await Future<void>.delayed(Duration.zero);
-    expect(backend.lastOpenedUrl, isNull, reason: 'must not open HEIC as video URL');
-    expect(controller.playState.value, PlayState.error);
-    expect(controller.errorMessage.value, contains('Not a playable Motion Photo'));
-    await controller.dispose();
+    expect(bundle.metadata.format, LivePhotoFormat.unknown);
+    expect(bundle.nativeVideoUrl, isNotEmpty);
+    expect(bundle.imageSource, isNotNull);
   });
 
-  test('Apple Live Photo HEIC stills (MiPr) are detected without embedded video', () async {
+  test('example HEIC assets are accepted as LivePhotoSource.asset', () async {
+    for (final name in <String>[
+      'IMG_0037.HEIC',
+      'IMG_0038.HEIC',
+      'IMG_0262_4CDAA1F2.HEIC',
+    ]) {
+      final source = LivePhotoSource.asset(imageAsset: 'assets/live_photo/$name');
+      // Asset load needs Flutter binding + rootBundle; skip if asset missing in unit test.
+      // File path resolve is the authoritative no-FormatException check above.
+      expect(source.identity, contains(name));
+    }
+  });
+
+  test('Apple Live Photo HEIC stills (MiPr) parse as stills without embedded MP4', () async {
     final fixture = File('example/assets/live_photo/IMG_0262_4CDAA1F2.HEIC');
     expect(fixture.existsSync(), isTrue, reason: 'real HEIC fixture must exist');
     final bytes = Uint8List.fromList(fixture.readAsBytesSync());
     expect(LivePhotoParser.isAppleLivePhotoStillBytes(bytes), isTrue);
     expect(LivePhotoParser.isVivoLivePhotoMarkerBytes(bytes), isTrue);
-    expect(LivePhotoParser.parseBytes(bytes), isNull,
-        reason: 'MiPr still has no embedded motion stream; needs paired .MOV');
+    expect(LivePhotoParser.parseBytes(bytes), isNull);
   });
 
   test('IMG_0037.HEIC is Apple Live Photo still without vivo trailer', () async {

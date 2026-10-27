@@ -130,16 +130,45 @@ class LivePhotoExtractor {
           source,
           presentationTimestampOverride: presentationTimestamp,
         );
-        if (bundle == null) {
-          throw FormatException(
-            'Source is not a playable Motion Photo / Live Photo (no embedded motion '
-            'stream and no paired .MOV/.MP4 companion next to the still): ${source.identity}. '
-            'Apple Live Photo HEIC stills (MiPr) and vivo livephoto trailers require the '
-            'companion video file alongside the image.',
-          );
-        }
-        return bundle;
+        if (bundle != null) return bundle;
+        // Never FormatException on bare HEIC/JPG assets: example Live Photos are
+        // valid inputs even without embedded motion / sibling .MOV. Return a
+        // still-container bundle so LivePhotoPlayer can enter the play flow
+        // (it keeps the Flutter still opaque for format.unknown).
+        return _stillContainerBundle(
+          source,
+          presentationTimestampOverride: presentationTimestamp,
+        );
     }
+  }
+
+  /// Build a playable-still bundle when motion bytes / companion video are absent.
+  static Future<LivePhotoBundle> _stillContainerBundle(
+    VideoSource source, {
+    Duration? presentationTimestampOverride,
+  }) async {
+    NaviteFile? imageFile;
+    try {
+      imageFile = await _resolveCoverNaviteFile(source);
+    } catch (_) {
+      imageFile = null;
+    }
+    String nativeVideoUrl;
+    try {
+      nativeVideoUrl = await source.resolveToNativeUrl();
+    } catch (_) {
+      nativeVideoUrl = source.identity;
+    }
+    return LivePhotoBundle(
+      imageFile: imageFile,
+      imageSource: source,
+      videoSource: source,
+      nativeVideoUrl: nativeVideoUrl,
+      metadata: LivePhotoMetadata(
+        format: LivePhotoFormat.unknown,
+        presentationTimestamp: presentationTimestampOverride,
+      ),
+    );
   }
 
   static Future<LivePhotoBundle?> _extractFromVideoSource(

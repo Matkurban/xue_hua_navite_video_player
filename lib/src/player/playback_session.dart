@@ -374,13 +374,9 @@ class PlaybackSession {
               ? 'video/mp4'
               : detectedVideoMime;
         } else {
-          // Image / HEIC / .pvt containers are NOT playable video URLs. Opening them
-          // on the native player paints a black fullscreen / inline surface. Fail
-          // loudly so callers keep the still cover (or show an error) instead.
-          throw FormatException(
-            'Not a playable Motion Photo / Live Photo video (no embedded motion '
-            'stream and no paired companion video): $identity',
-          );
+          // Align with historical behavior: open the container URL and let the
+          // native player decide (Apple AVPlayer can display HEIC stills).
+          mediaUrl = await source.resolveToNativeUrl();
         }
       } else {
         mediaUrl = await source.resolveToNativeUrl();

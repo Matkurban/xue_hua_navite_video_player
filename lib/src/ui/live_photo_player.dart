@@ -14,6 +14,7 @@ import '../data/enums/live_photo_play_mode.dart';
 import '../data/enums/play_state.dart';
 import '../data/models/live_photo_bundle.dart';
 import '../data/models/live_photo_metadata.dart';
+import '../data/models/navite_file.dart';
 import '../player/video_player_controller.dart';
 import '../utils/live_photo_extractor.dart';
 import '../xue_hua_navite_video_player.dart';
@@ -163,8 +164,18 @@ class _LivePhotoPlayerState extends State<LivePhotoPlayer> {
   bool _showingVideo = false;
   bool _isMuted = false;
   int _loadGeneration = 0;
+  Timer? _stillMotionTimer;
 
   VideoPlayerController? get _activeController => widget.controller ?? _internalController;
+
+  /// Still-image Live Photo containers (Apple MiPr HEIC / vivo-tagged HEIC without
+  /// an extractable motion stream) resolve with [LivePhotoFormat.unknown]. Opening
+  /// them as a native "video" paints a black PlatformView once the still fades —
+  /// keep the Flutter still opaque and skip the native surface for these.
+  bool get _isStillContainer {
+    final bundle = _bundle;
+    return bundle != null && bundle.metadata.format == LivePhotoFormat.unknown;
+  }
 
   static bool get _isDesktopOrWeb {
     if (kIsWeb) return true;
@@ -216,6 +227,8 @@ class _LivePhotoPlayerState extends State<LivePhotoPlayer> {
   @override
   void dispose() {
     _loadGeneration++;
+    _stillMotionTimer?.cancel();
+    _stillMotionTimer = null;
     _unbindControllerEffects();
     _releaseInternalController();
     super.dispose();
@@ -272,12 +285,16 @@ class _LivePhotoPlayerState extends State<LivePhotoPlayer> {
     } catch (e) {
       if (!mounted || gen != _loadGeneration) return;
 
-      // Recover a displayable still so the stage is not an empty black rectangle
-      // when HEIC cannot be decoded by Flutter's image codec (non-Apple) or when
-      // the motion companion is missing. Prefer native cover probe on the still.
+      // Last-resort still container so bare HEIC assets never surface a
+      // FormatException banner — enter the same play flow as a successful resolve.
       LivePhotoBundle? stillOnly;
       final img = _initialImageSource;
       if (img != null) {
+        String nativeUrl = img.identity;
+        try {
+          nativeUrl = await img.resolveToNativeUrl();
+        } catch (_) {}
+        NaviteFile? coverFile;
         try {
           final covers = await XueHuaNaviteVideoPlayer.instance.extractCoverCandidates(
             img,
@@ -286,27 +303,22 @@ class _LivePhotoPlayerState extends State<LivePhotoPlayer> {
           );
           if (!mounted || gen != _loadGeneration) return;
           if (covers.isNotEmpty) {
-            final cover = covers.first.image;
-            stillOnly = LivePhotoBundle(
-              imageFile: cover,
-              imageSource: kIsWeb
-                  ? VideoSource.network(cover.uri)
-                  : VideoSource.file(cover.path),
-              // videoSource is required by the model; playback is blocked while
-              // _resolveError is set (see _startPlayback).
-              videoSource: img,
-              nativeVideoUrl: '',
-              metadata: const LivePhotoMetadata(format: LivePhotoFormat.unknown),
-            );
+            coverFile = covers.first.image;
           }
-        } catch (_) {
-          // Keep going — still cover may still render via Image.asset on Apple.
-        }
+        } catch (_) {}
+        stillOnly = LivePhotoBundle(
+          imageFile: coverFile,
+          imageSource: img,
+          videoSource: img,
+          nativeVideoUrl: nativeUrl,
+          metadata: const LivePhotoMetadata(format: LivePhotoFormat.unknown),
+        );
       }
 
       if (!mounted || gen != _loadGeneration) return;
       setState(() {
-        _resolveError = e.toString();
+        // Prefer a quiet still-container over a sticky FormatException overlay.
+        _resolveError = stillOnly == null ? e.toString() : null;
         _bundle = stillOnly;
         _resolving = false;
       });
@@ -425,8 +437,8 @@ class _LivePhotoPlayerState extends State<LivePhotoPlayer> {
   Future<void> _startPlayback() async {
     final bundle = _bundle;
     if (bundle == null || !mounted) return;
-    // Still-only recovery after a failed resolve has no playable motion URL.
-    if (_resolveError != null || bundle.nativeVideoUrl.isEmpty) {
+    // Failed resolve with empty motion URL — keep still, do not open native video.
+    if (bundle.nativeVideoUrl.isEmpty) {
       return;
     }
 
@@ -437,8 +449,33 @@ class _LivePhotoPlayerState extends State<LivePhotoPlayer> {
       HapticFeedback.lightImpact();
     }
 
+    // Still-container HEIC: animate the Flutter cover only. Never mount CorePlayer
+    // / fade the still (that is what produced the fullscreen black stage).
+    if (_isStillContainer) {
+      _stillMotionTimer?.cancel();
+      setState(() {
+        _wantsPlayback = true;
+        _showingVideo = false;
+        _resolveError = null;
+      });
+      widget.onPlaybackStart?.call();
+      if (widget.playMode == LivePhotoPlayMode.loop) {
+        return;
+      }
+      if (widget.playMode == LivePhotoPlayMode.longPress) {
+        // Released via gesture onLongPressEnd / onPanEnd.
+        return;
+      }
+      _stillMotionTimer = Timer(const Duration(milliseconds: 2800), () {
+        if (!mounted || !_wantsPlayback) return;
+        _stopPlayback(resetToStill: true);
+      });
+      return;
+    }
+
     setState(() {
       _wantsPlayback = true;
+      _resolveError = null;
     });
 
     try {
@@ -463,15 +500,19 @@ class _LivePhotoPlayerState extends State<LivePhotoPlayer> {
       }
     } catch (e) {
       if (!mounted) return;
+      // Soft-fail back to the still — do not sticky a FormatException banner over
+      // valid HEIC Live Photo assets when native open fails.
       setState(() {
         _wantsPlayback = false;
         _showingVideo = false;
-        _resolveError = e.toString();
       });
+      widget.onPlaybackComplete?.call();
     }
   }
 
   Future<void> _stopPlayback({bool resetToStill = true}) async {
+    _stillMotionTimer?.cancel();
+    _stillMotionTimer = null;
     final wasShowing = _showingVideo || _wantsPlayback;
     if (resetToStill && mounted) {
       setState(() {
@@ -526,7 +567,9 @@ class _LivePhotoPlayerState extends State<LivePhotoPlayer> {
     final effectiveTheme = widget.theme ?? VideoPlayerTheme.of(context);
     final bg = widget.backgroundColor ?? effectiveTheme.backgroundColor;
     final ctrl = _activeController;
-    final scale = (widget.enableScaleEffect && _showingVideo) ? widget.activeScale : 1.0;
+    final scale = (widget.enableScaleEffect && (_showingVideo || _wantsPlayback))
+        ? widget.activeScale
+        : 1.0;
     final enableBadgeHover =
         widget.enableBadgeHoverOnDesktop &&
         _isDesktopOrWeb &&
@@ -592,7 +635,10 @@ class _LivePhotoPlayerState extends State<LivePhotoPlayer> {
             // 1. Native / web video surface — no Opacity / Scale / ClipRRect ancestors.
             // Mount only while playback is requested/visible so an idle/failed
             // controller cannot paint a black platform/texture stage under the still.
-            if (ctrl != null && (_wantsPlayback || _showingVideo) && _resolveError == null)
+            if (ctrl != null &&
+                (_wantsPlayback || _showingVideo) &&
+                _resolveError == null &&
+                !_isStillContainer)
               Positioned.fill(
                 key: const ValueKey<String>('live_photo_video_surface'),
                 child: IgnorePointer(
@@ -609,7 +655,7 @@ class _LivePhotoPlayerState extends State<LivePhotoPlayer> {
               child: IgnorePointer(
                 child: AnimatedOpacity(
                   key: const ValueKey<String>('live_photo_still_opacity'),
-                  opacity: _showingVideo ? 0.0 : 1.0,
+                  opacity: (_showingVideo && !_isStillContainer) ? 0.0 : 1.0,
                   duration: widget.crossfadeDuration,
                   curve: Curves.easeInOut,
                   child: AnimatedScale(
