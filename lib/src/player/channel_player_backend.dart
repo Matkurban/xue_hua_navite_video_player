@@ -11,16 +11,68 @@ import 'player_backend.dart';
 import 'player_event.dart';
 import 'player_event_decoder.dart';
 
+/// Process-wide native [EventChannel] listener with ref-counting.
+///
+/// Native only allows one active listen on `player/events`. Live Photo (and any
+/// recreate/dispose cycle) must share that single subscription instead of each
+/// [ChannelPlayerBackend] calling [EventChannel.receiveBroadcastStream].
+class _SharedNativeEventHub {
+  static const EventChannel _eventChannel =
+      EventChannel('xue_hua_navite_video_player/player/events');
+
+  static final StreamController<dynamic> _raw =
+      StreamController<dynamic>.broadcast();
+  static StreamSubscription<dynamic>? _sub;
+  static int _refs = 0;
+
+  static Stream<dynamic> retain() {
+    if (_refs == 0) {
+      _sub = _eventChannel.receiveBroadcastStream().listen(
+        _raw.add,
+        onError: _raw.addError,
+      );
+    }
+    _refs += 1;
+    return _raw.stream;
+  }
+
+  static Future<void> release() async {
+    if (_refs <= 0) {
+      return;
+    }
+    _refs -= 1;
+    if (_refs > 0) {
+      return;
+    }
+    final StreamSubscription<dynamic>? sub = _sub;
+    _sub = null;
+    if (sub == null) {
+      return;
+    }
+    try {
+      await sub.cancel();
+    } on PlatformException catch (error) {
+      // Concurrent dispose / already-cleared native handler.
+      if (error.message != 'No active stream to cancel') {
+        // Same class of cancel races — swallow to avoid failing widget tests.
+      }
+    } catch (_) {
+      // Ignore cancel races on shared channel teardown.
+    }
+  }
+
+}
+
 /// [PlayerBackend] adapter over MethodChannel / EventChannel.
 ///
 /// Wire protocol is unchanged; delegates event map decoding to [PlayerEventDecoder].
 class ChannelPlayerBackend implements PlayerBackend {
   static const _methodChannel = MethodChannel('xue_hua_navite_video_player/player');
-  static const _eventChannel = EventChannel('xue_hua_navite_video_player/player/events');
 
   final FlutterSignal<int?> _textureId = signal<int?>(null);
   StreamSubscription<dynamic>? _eventSubscription;
   StreamController<PlayerEvent> _events = StreamController<PlayerEvent>.broadcast();
+  bool _holdingSharedEvents = false;
 
   @override
   FlutterSignal<int?> get textureId => _textureId;
@@ -47,8 +99,11 @@ class ChannelPlayerBackend implements PlayerBackend {
   }
 
   void _listenEvents() {
-    _eventSubscription?.cancel();
-    _eventSubscription = _eventChannel.receiveBroadcastStream().listen(
+    if (_holdingSharedEvents) {
+      return;
+    }
+    _holdingSharedEvents = true;
+    _eventSubscription = _SharedNativeEventHub.retain().listen(
       (dynamic raw) {
         try {
           if (raw is! Map) return;
@@ -148,8 +203,17 @@ class ChannelPlayerBackend implements PlayerBackend {
 
   @override
   Future<void> dispose() async {
-    await _eventSubscription?.cancel();
-    _eventSubscription = null;
+    if (_holdingSharedEvents) {
+      _holdingSharedEvents = false;
+      final StreamSubscription<dynamic>? local = _eventSubscription;
+      _eventSubscription = null;
+      try {
+        await local?.cancel();
+      } catch (_) {
+        // Local forwarder cancel should not fail tests.
+      }
+      await _SharedNativeEventHub.release();
+    }
     try {
       await _methodChannel.invokeMethod('dispose');
     } catch (_) {}
