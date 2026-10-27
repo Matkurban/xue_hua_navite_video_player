@@ -32,6 +32,7 @@ flutter:
   assets:
     - assets/test.mp4
     - assets/live_photo/
+    - assets/live_photo/web_motion_photo.jpg
     - assets/live_photo/IMG_0037.HEIC
     - assets/live_photo/IMG_0038.HEIC
     - assets/live_photo/IMG_0262_4CDAA1F2.HEIC

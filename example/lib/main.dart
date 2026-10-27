@@ -68,6 +68,7 @@ class _DemoItem {
 }
 
 const List<String> _bundledLivePhotoAssets = <String>[
+  'assets/live_photo/web_motion_photo.jpg',
   'assets/live_photo/IMG_0037.HEIC',
   'assets/live_photo/IMG_0038.HEIC',
   'assets/live_photo/IMG_0262_4CDAA1F2.HEIC',
@@ -103,14 +104,21 @@ const List<_DemoItem> _networkDemoPlaylist = <_DemoItem>[
 ];
 
 /// Prefer a short local fixture when present (Linux/macOS/Windows CI) so UI EOS tests are fast.
+///
+/// On web, `dart:io` Platform/File/Directory are unavailable; keep network demos only.
 List<_DemoItem> get _demoPlaylist {
+  if (kIsWeb) {
+    return List<_DemoItem>.from(_networkDemoPlaylist);
+  }
+  final sep = Platform.pathSeparator;
   final localCandidates = <String>[
-    if (Platform.isMacOS || Platform.isIOS)
-      '${Directory.systemTemp.path}${Platform.pathSeparator}xh_it_test.mp4',
+    if (defaultTargetPlatform == TargetPlatform.macOS ||
+        defaultTargetPlatform == TargetPlatform.iOS)
+      '${Directory.systemTemp.path}${sep}xh_it_test.mp4',
     '/workspace/test.mp4',
     r'/Users/admin/XueHuaPackages/xue_hua_navite_video_player/test.mp4',
     r'E:\XueHuaPackages\xue_hua_navite_video_player\test.mp4',
-    '${Directory.systemTemp.path}${Platform.pathSeparator}xh_it_test.mp4',
+    '${Directory.systemTemp.path}${sep}xh_it_test.mp4',
     'test.mp4',
     '../test.mp4',
   ];
