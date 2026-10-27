@@ -30,15 +30,16 @@ class NaviteFile {
   /// MIME type, defaults to `'image/png'`.
   final String mimeType;
 
-  final Uint8List? _bytes;
+  /// 可选的内存字节缓存（当通过 [NaviteFile.fromBytes] 创建时持有）。
+  final Uint8List? bytes;
 
   const NaviteFile({
     required this.path,
     required this.uri,
     required this.name,
     this.mimeType = 'image/png',
-    Uint8List? bytes,
-  }) : _bytes = bytes;
+    this.bytes,
+  });
 
   /// 从本地文件路径、`file://` URI 或 Web `data:` / `blob:` URL 构造 [NaviteFile]。
   ///
@@ -110,7 +111,7 @@ class NaviteFile {
   ///
   /// Reads the entire file contents as bytes.
   Future<Uint8List> readAsBytes() async {
-    final inMemory = _bytes;
+    final inMemory = bytes;
     if (inMemory != null) {
       return inMemory;
     }
@@ -124,7 +125,7 @@ class NaviteFile {
   ///
   /// Returns the length of the file in bytes.
   Future<int> length() async {
-    final inMemory = _bytes;
+    final inMemory = bytes;
     if (inMemory != null) {
       return inMemory.length;
     }
