@@ -228,14 +228,15 @@ class _LivePhotoPlayerState extends State<LivePhotoPlayer> {
       var bundle = await LivePhotoExtractor.resolve(widget.source);
       if (!mounted || gen != _loadGeneration) return;
 
-      // On Windows / Linux, Flutter's image decoder does not natively decode
-      // .heic / .avif still covers. If the cover is HEIC/AVIF on Windows/Linux,
-      // extract a PNG cover candidate from the motion video via libmpv so the
-      // still cover displays cleanly!
-      if (!kIsWeb &&
-          (defaultTargetPlatform == TargetPlatform.windows ||
-              defaultTargetPlatform == TargetPlatform.linux) &&
-          _isUnsupportedDesktopImageMime(bundle.imageFile?.mimeType)) {
+      // On non-Apple platforms (Android / Windows / Linux / Web), Flutter's
+      // built-in Skia/Impeller image codec does not decode .heic / .avif still
+      // covers directly. Extract a PNG cover frame from the motion video stream
+      // so the still cover displays on all 6 platforms!
+      final isApplePlatform = !kIsWeb &&
+          (defaultTargetPlatform == TargetPlatform.iOS ||
+              defaultTargetPlatform == TargetPlatform.macOS);
+      if (!isApplePlatform &&
+          _isUnsupportedNonAppleImageMime(bundle.imageFile?.mimeType)) {
         final covers = await XueHuaNaviteVideoPlayer.instance.extractCoverCandidates(
           bundle.videoSource,
           count: 1,
@@ -245,7 +246,9 @@ class _LivePhotoPlayerState extends State<LivePhotoPlayer> {
         if (covers.isNotEmpty) {
           bundle = LivePhotoBundle(
             imageFile: covers.first.image,
-            imageSource: VideoSource.file(covers.first.image.path),
+            imageSource: kIsWeb
+                ? VideoSource.network(covers.first.image.uri)
+                : VideoSource.file(covers.first.image.path),
             videoSource: bundle.videoSource,
             nativeVideoUrl: bundle.nativeVideoUrl,
             metadata: bundle.metadata,
@@ -271,7 +274,7 @@ class _LivePhotoPlayerState extends State<LivePhotoPlayer> {
     }
   }
 
-  static bool _isUnsupportedDesktopImageMime(String? mime) {
+  static bool _isUnsupportedNonAppleImageMime(String? mime) {
     if (mime == null) return false;
     final lower = mime.toLowerCase();
     return lower.contains('heic') || lower.contains('heif') || lower.contains('avif');

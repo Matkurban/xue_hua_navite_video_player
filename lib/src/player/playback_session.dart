@@ -58,6 +58,12 @@ class PlaybackSession {
   Duration _backendDuration = Duration.zero;
   double _volumeBeforeMute = 1.0;
 
+  /// After [seek], ignore native position events that are still far from the
+  /// target so a stale pre-seek tick cannot overwrite the optimistic position.
+  int _seekGeneration = 0;
+  Duration? _pendingSeekTarget;
+  static const int _seekSettleToleranceMs = 900;
+
   /// Live / audio-only streams may never emit a positive duration.
   @visibleForTesting
   static Duration readyFallbackDelay = const Duration(seconds: 3);
@@ -177,6 +183,15 @@ class PlaybackSession {
         _handlePlayingEvent(playing);
       case PlayerPositionEvent(:final position):
         if (_hasReadySinceOpen && playState.value != PlayState.error) {
+          final pending = _pendingSeekTarget;
+          if (pending != null) {
+            final deltaMs = (position - pending).inMilliseconds.abs();
+            if (deltaMs > _seekSettleToleranceMs) {
+              // Stale tick from before the seek completed — drop it.
+              break;
+            }
+            _pendingSeekTarget = null;
+          }
           this.position.value = position;
         }
       case PlayerDurationEvent(:final duration):
@@ -435,8 +450,12 @@ class PlaybackSession {
     if (total > Duration.zero && clamped > total) {
       clamped = total;
     }
+    final generation = ++_seekGeneration;
+    _pendingSeekTarget = clamped;
     await _backend.seek(clamped.inMilliseconds);
     if (_disposed) return;
+    // A newer seek may have started while we awaited the backend.
+    if (generation != _seekGeneration) return;
     position.value = clamped;
     // If the user seeks away from the end while in completed state, transition
     // to paused so that subsequent play() resumes from the seeked position

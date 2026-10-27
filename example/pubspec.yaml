@@ -16,8 +16,8 @@ dependencies:
 
   cupertino_icons: ^2.0.0
   signals_flutter: ^7.1.0
-  material_ui: ^1.8.0
-  cupertino_ui: ^1.1.4
+  material_ui: ^1.7.0
+  cupertino_ui: ^1.1.3
   flex_color_scheme: ^9.0.0
 
 dev_dependencies:
@@ -32,6 +32,8 @@ flutter:
   assets:
     - assets/test.mp4
     - assets/live_photo/
+    - assets/live_photo/IMG_0037.HEIC
+    - assets/live_photo/IMG_0038.HEIC
     - assets/live_photo/IMG_0262_4CDAA1F2.HEIC
     - assets/live_photo/IMG_0264_0E7941B7.HEIC
     - assets/live_photo/IMG_0266_02198E26.HEIC

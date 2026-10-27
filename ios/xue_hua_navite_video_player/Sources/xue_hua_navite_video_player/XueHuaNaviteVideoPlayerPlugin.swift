@@ -653,19 +653,24 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler {
     }
 
     private static func activeWindow() -> UIWindow? {
-        if #available(iOS 13.0, *) {
-            for scene in UIApplication.shared.connectedScenes {
-                if let windowScene = scene as? UIWindowScene {
-                    if let keyWin = windowScene.windows.first(where: { $0.isKeyWindow }) {
-                        return keyWin
-                    }
-                    if let firstWin = windowScene.windows.first {
-                        return firstWin
-                    }
-                }
+        // Min deployment is iOS 13; prefer the foreground active scene's key window.
+        let scenes = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+        let ordered = scenes.sorted { lhs, rhs in
+            // Prefer foreground active scenes when available.
+            let l = lhs.activationState == .foregroundActive ? 0 : 1
+            let r = rhs.activationState == .foregroundActive ? 0 : 1
+            return l < r
+        }
+        for windowScene in ordered {
+            if let keyWin = windowScene.windows.first(where: { $0.isKeyWindow }) {
+                return keyWin
+            }
+            if let firstWin = windowScene.windows.first {
+                return firstWin
             }
         }
-        return UIApplication.shared.keyWindow
+        return nil
     }
 
     private static func findButton(in view: UIView) -> UIButton? {

@@ -104,6 +104,8 @@ class _LivePhotoStillViewState extends State<LivePhotoStillView> {
         gaplessPlayback: true,
         width: double.infinity,
         height: double.infinity,
+        errorBuilder: (context, _, _) =>
+            widget.placeholderBuilder?.call(context) ?? const SizedBox.expand(),
       );
     }
 
@@ -164,6 +166,8 @@ class _LivePhotoStillViewState extends State<LivePhotoStillView> {
             gaplessPlayback: true,
             width: double.infinity,
             height: double.infinity,
+            errorBuilder: (context, _, _) =>
+                widget.placeholderBuilder?.call(context) ?? const SizedBox.expand(),
           );
         },
       );

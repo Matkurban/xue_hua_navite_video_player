@@ -19,8 +19,9 @@ String _shotsDir() {
   if (Platform.isMacOS) {
     return r'/Users/admin/XueHuaPackages/xue_hua_navite_video_player/mac_shots';
   }
-  // Android screenshots go through takeScreenshot / host adb — no device path.
-  if (Platform.isAndroid) {
+  // Android / iOS screenshots go through takeScreenshot — device FS may be
+  // sandboxed and host paths like /workspace are not writable.
+  if (Platform.isAndroid || Platform.isIOS) {
     return Directory.systemTemp.path;
   }
   return '/workspace/xvfb_shots';
@@ -48,10 +49,9 @@ Future<void> _sleep(WidgetTester tester, Duration d) async {
 }
 
 Future<void> _shot(String name) async {
-  // On Android the test runs inside the emulator: host Mac paths are not
-  // writable. Prefer the integration_test screenshot channel; host adb
-  // screencaps into android_shots/ are optional and external to this helper.
-  if (Platform.isAndroid) {
+  // On Android/iOS the test runs inside the device/simulator: host Mac paths
+  // are not writable. Prefer the integration_test screenshot channel.
+  if (Platform.isAndroid || Platform.isIOS) {
     try {
       await IntegrationTestWidgetsFlutterBinding.instance.takeScreenshot(name);
     } catch (_) {}

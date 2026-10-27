@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:ui' as ui;
 
 import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:flutter/foundation.dart';
@@ -69,14 +68,14 @@ class _DemoItem {
 }
 
 const List<String> _bundledLivePhotoAssets = <String>[
+  'assets/live_photo/IMG_0037.HEIC',
+  'assets/live_photo/IMG_0038.HEIC',
   'assets/live_photo/IMG_0262_4CDAA1F2.HEIC',
   'assets/live_photo/IMG_0264_0E7941B7.HEIC',
   'assets/live_photo/IMG_0266_02198E26.HEIC',
   'assets/live_photo/IMG_0267_9B7F181C.HEIC',
   'assets/live_photo/IMG_0268_33A277C0.HEIC',
   'assets/live_photo/IMG_0278_E357CFC0.HEIC',
-  'assets/live_photo/IMG_0037.HEIC',
-  'assets/live_photo/IMG_0038.HEIC',
 ];
 
 const List<_DemoItem> _networkDemoPlaylist = <_DemoItem>[
@@ -173,7 +172,7 @@ class HomePage extends StatelessWidget {
               leading: const CircleAvatar(
                 child: Icon(Icons.motion_photos_on_rounded, size: 20),
               ),
-              title: const Text('Live Photos · 动态照片画廊 (6 张 HEIC)'),
+              title: const Text('Live Photos · 动态照片画廊 (8 张 HEIC)'),
               subtitle: const Text('assets/live_photo/*.HEIC'),
               trailing: const Icon(Icons.chevron_right),
               onTap: () {
@@ -284,85 +283,21 @@ class _LivePhotoDemoPageState extends State<LivePhotoDemoPage> {
 
     for (final assetPath in _bundledLivePhotoAssets) {
       final fileName = assetPath.split('/').last;
-      // 1. Check if the .HEIC asset has an embedded video stream or a sibling .MOV/.MP4 asset.
       final probed = await XueHuaNaviteVideoPlayer.instance.extractLivePhoto(
         VideoSource.asset(assetPath),
       );
-      if (probed != null) {
-        resolved.add(
-          _ResolvedGalleryLivePhoto(
-            title: fileName,
-            assetPath: assetPath,
-            source: LivePhotoSource.asset(imageAsset: assetPath),
-            subtitle: '${probed.metadata.format.name} ·内嵌或同名配对视频',
-          ),
-        );
-      } else {
-        // 2. If only the .HEIC still image was copied into assets/live_photo/
-        // (e.g. vivo/iOS paired export where the companion .MOV was not copied),
-        // pair the real .HEIC cover asset with assets/test.mp4 so it can be
-        // previewed and played immediately in the example!
-        resolved.add(
-          _ResolvedGalleryLivePhoto(
-            title: fileName,
-            assetPath: assetPath,
-            source: LivePhotoSource.asset(
-              imageAsset: assetPath,
-              videoAsset: 'assets/test.mp4',
-            ),
-            subtitle: 'HEIC 实况封面 + 配对视频流',
-          ),
-        );
-      }
-    }
-
-    // Also include a synthesized single-file XMP Motion Photo at the end for comparison.
-    try {
-      final recorder = ui.PictureRecorder();
-      final canvas = Canvas(recorder);
-      const size = Size(640, 360);
-      final paint = Paint()
-        ..shader = const LinearGradient(
-          colors: <Color>[
-            Color(0xFF0F2027),
-            Color(0xFF203A43),
-            Color(0xFF2C5364),
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ).createShader(Offset.zero & size);
-      canvas.drawRect(Offset.zero & size, paint);
-      final picture = recorder.endRecording();
-      final img = await picture.toImage(
-        size.width.toInt(),
-        size.height.toInt(),
-      );
-      final byteData = await img.toByteData(format: ui.ImageByteFormat.png);
-      final coverBytes = byteData!.buffer.asUint8List();
-
-      final videoAsset = await rootBundle.load('assets/test.mp4');
-      final videoBytes = videoAsset.buffer.asUint8List(
-        videoAsset.offsetInBytes,
-        videoAsset.lengthInBytes,
-      );
-      final motionBytes = LivePhotoParser.createMotionPhotoBytes(
-        imageBytes: coverBytes,
-        videoBytes: videoBytes,
-        presentationTimestamp: const Duration(milliseconds: 500),
-      );
+      final metaInfo = probed != null
+          ? '${probed.metadata.format.name} · offset: ${probed.metadata.videoOffset}B · len: ${probed.metadata.videoLength}B'
+          : 'HEIC Live Photo';
       resolved.add(
         _ResolvedGalleryLivePhoto(
-          title: 'Synthesized · XMP MotionPhoto.jpg',
-          assetPath: 'memory://demo_motion_photo.jpg',
-          source: LivePhotoSource.bytes(
-            motionBytes,
-            name: 'demo_motion_photo.jpg',
-          ),
-          subtitle:
-              'GCamera:MicroVideoOffset 单文件内嵌 MP4 (${motionBytes.length}B)',
+          title: fileName,
+          assetPath: assetPath,
+          source: LivePhotoSource.asset(imageAsset: assetPath),
+          subtitle: metaInfo,
         ),
       );
-    } catch (_) {}
+    }
 
     if (!mounted) return;
     setState(() {
@@ -377,7 +312,9 @@ class _LivePhotoDemoPageState extends State<LivePhotoDemoPage> {
 
     return Scaffold(
       key: const ValueKey<String>('live_photo_demo_page'),
-      appBar: AppBar(title: const Text('Live Photo · 动态照片')),
+      appBar: AppBar(
+        title: const Text('Live Photo · 动态照片'),
+      ),
       body: _loading || current == null
           ? const Center(child: CircularProgressIndicator())
           : ListView(
@@ -390,38 +327,23 @@ class _LivePhotoDemoPageState extends State<LivePhotoDemoPage> {
                     groupValue: _playMode,
                     children: const <LivePhotoPlayMode, Widget>{
                       LivePhotoPlayMode.longPress: Padding(
-                        padding: EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 6,
-                        ),
+                        padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                         child: Text('长按'),
                       ),
                       LivePhotoPlayMode.hover: Padding(
-                        padding: EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 6,
-                        ),
+                        padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                         child: Text('悬停'),
                       ),
                       LivePhotoPlayMode.tap: Padding(
-                        padding: EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 6,
-                        ),
+                        padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                         child: Text('点击'),
                       ),
                       LivePhotoPlayMode.autoPlayOnce: Padding(
-                        padding: EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 6,
-                        ),
+                        padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                         child: Text('一次'),
                       ),
                       LivePhotoPlayMode.loop: Padding(
-                        padding: EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 6,
-                        ),
+                        padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                         child: Text('循环'),
                       ),
                     },
