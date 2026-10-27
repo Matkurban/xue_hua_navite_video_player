@@ -132,7 +132,10 @@ class LivePhotoExtractor {
         );
         if (bundle == null) {
           throw FormatException(
-            'Source is not a valid Motion Photo or paired Live Photo: ${source.identity}',
+            'Source is not a playable Motion Photo / Live Photo (no embedded motion '
+            'stream and no paired .MOV/.MP4 companion next to the still): ${source.identity}. '
+            'Apple Live Photo HEIC stills (MiPr) and vivo livephoto trailers require the '
+            'companion video file alongside the image.',
           );
         }
         return bundle;

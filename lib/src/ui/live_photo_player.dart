@@ -9,9 +9,11 @@ import '../core/live_photo_source.dart';
 import '../core/video_source.dart';
 import '../data/enums/aspect_ratio_mode.dart';
 import '../data/enums/live_photo_badge_position.dart';
+import '../data/enums/live_photo_format.dart';
 import '../data/enums/live_photo_play_mode.dart';
 import '../data/enums/play_state.dart';
 import '../data/models/live_photo_bundle.dart';
+import '../data/models/live_photo_metadata.dart';
 import '../player/video_player_controller.dart';
 import '../utils/live_photo_extractor.dart';
 import '../xue_hua_navite_video_player.dart';
@@ -269,8 +271,43 @@ class _LivePhotoPlayerState extends State<LivePhotoPlayer> {
       }
     } catch (e) {
       if (!mounted || gen != _loadGeneration) return;
+
+      // Recover a displayable still so the stage is not an empty black rectangle
+      // when HEIC cannot be decoded by Flutter's image codec (non-Apple) or when
+      // the motion companion is missing. Prefer native cover probe on the still.
+      LivePhotoBundle? stillOnly;
+      final img = _initialImageSource;
+      if (img != null) {
+        try {
+          final covers = await XueHuaNaviteVideoPlayer.instance.extractCoverCandidates(
+            img,
+            count: 1,
+            minBrightness: 0.0,
+          );
+          if (!mounted || gen != _loadGeneration) return;
+          if (covers.isNotEmpty) {
+            final cover = covers.first.image;
+            stillOnly = LivePhotoBundle(
+              imageFile: cover,
+              imageSource: kIsWeb
+                  ? VideoSource.network(cover.uri)
+                  : VideoSource.file(cover.path),
+              // videoSource is required by the model; playback is blocked while
+              // _resolveError is set (see _startPlayback).
+              videoSource: img,
+              nativeVideoUrl: '',
+              metadata: const LivePhotoMetadata(format: LivePhotoFormat.unknown),
+            );
+          }
+        } catch (_) {
+          // Keep going — still cover may still render via Image.asset on Apple.
+        }
+      }
+
+      if (!mounted || gen != _loadGeneration) return;
       setState(() {
         _resolveError = e.toString();
+        _bundle = stillOnly;
         _resolving = false;
       });
     }
@@ -388,6 +425,10 @@ class _LivePhotoPlayerState extends State<LivePhotoPlayer> {
   Future<void> _startPlayback() async {
     final bundle = _bundle;
     if (bundle == null || !mounted) return;
+    // Still-only recovery after a failed resolve has no playable motion URL.
+    if (_resolveError != null || bundle.nativeVideoUrl.isEmpty) {
+      return;
+    }
 
     if (widget.enableHapticFeedback &&
         !_isDesktopOrWeb &&
@@ -508,17 +549,32 @@ class _LivePhotoPlayerState extends State<LivePhotoPlayer> {
     }
 
     Widget content;
-    if (_resolveError != null && _bundle == null) {
+    final errorBanner = _resolveError == null
+        ? null
+        : (widget.errorBuilder != null
+            ? widget.errorBuilder!(context, _resolveError)
+            : ColoredBox(
+                color: Colors.black54,
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Text(
+                    _resolveError!,
+                    style: TextStyle(color: effectiveTheme.foregroundColor, fontSize: 12),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ));
+
+    if (_resolveError != null && _bundle == null && ctrl == null) {
+      // Keep the still fallback (Apple HEIC) under the error — never an empty black stage.
       content = ColoredBox(
         color: bg,
-        child: Center(
-          child: widget.errorBuilder != null
-              ? widget.errorBuilder!(context, _resolveError)
-              : Text(
-                  _resolveError!,
-                  style: TextStyle(color: effectiveTheme.foregroundColor, fontSize: 12),
-                  textAlign: TextAlign.center,
-                ),
+        child: Stack(
+          fit: StackFit.expand,
+          children: <Widget>[
+            Positioned.fill(child: stillCover),
+            if (errorBanner != null) Center(child: errorBanner),
+          ],
         ),
       );
       if (widget.borderRadius != null) {
@@ -534,7 +590,9 @@ class _LivePhotoPlayerState extends State<LivePhotoPlayer> {
           fit: StackFit.expand,
           children: <Widget>[
             // 1. Native / web video surface — no Opacity / Scale / ClipRRect ancestors.
-            if (ctrl != null)
+            // Mount only while playback is requested/visible so an idle/failed
+            // controller cannot paint a black platform/texture stage under the still.
+            if (ctrl != null && (_wantsPlayback || _showingVideo) && _resolveError == null)
               Positioned.fill(
                 key: const ValueKey<String>('live_photo_video_surface'),
                 child: IgnorePointer(
@@ -625,6 +683,23 @@ class _LivePhotoPlayerState extends State<LivePhotoPlayer> {
                                 : null,
                             onToggleMute: _toggleMute,
                           ),
+                  ),
+                ),
+              ),
+
+            // 5. Resolve/play error overlay (keep still visible underneath).
+            if (errorBanner != null)
+              Positioned.fill(
+                child: IgnorePointer(
+                  ignoring: false,
+                  child: Align(
+                    alignment: Alignment.bottomCenter,
+                    child: SafeArea(
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: errorBanner,
+                      ),
+                    ),
                   ),
                 ),
               ),

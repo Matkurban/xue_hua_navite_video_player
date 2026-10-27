@@ -105,7 +105,13 @@ class _LivePhotoStillViewState extends State<LivePhotoStillView> {
         width: double.infinity,
         height: double.infinity,
         errorBuilder: (context, _, _) =>
-            widget.placeholderBuilder?.call(context) ?? const SizedBox.expand(),
+            widget.placeholderBuilder?.call(context) ??
+            const ColoredBox(
+              color: Color(0xFF1A1A1A),
+              child: Center(
+                child: Icon(Icons.photo_outlined, color: Color(0x66FFFFFF), size: 36),
+              ),
+            ),
       );
     }
 
@@ -120,7 +126,13 @@ class _LivePhotoStillViewState extends State<LivePhotoStillView> {
         width: double.infinity,
         height: double.infinity,
         errorBuilder: (context, _, _) =>
-            widget.placeholderBuilder?.call(context) ?? const SizedBox.expand(),
+            widget.placeholderBuilder?.call(context) ??
+            const ColoredBox(
+              color: Color(0xFF1A1A1A),
+              child: Center(
+                child: Icon(Icons.photo_outlined, color: Color(0x66FFFFFF), size: 36),
+              ),
+            ),
       );
     }
 
@@ -134,7 +146,13 @@ class _LivePhotoStillViewState extends State<LivePhotoStillView> {
         width: double.infinity,
         height: double.infinity,
         errorBuilder: (context, _, _) =>
-            widget.placeholderBuilder?.call(context) ?? const SizedBox.expand(),
+            widget.placeholderBuilder?.call(context) ??
+            const ColoredBox(
+              color: Color(0xFF1A1A1A),
+              child: Center(
+                child: Icon(Icons.photo_outlined, color: Color(0x66FFFFFF), size: 36),
+              ),
+            ),
       );
     }
     if (imgSource is NetworkVideoSource) {
@@ -146,7 +164,13 @@ class _LivePhotoStillViewState extends State<LivePhotoStillView> {
         width: double.infinity,
         height: double.infinity,
         errorBuilder: (context, _, _) =>
-            widget.placeholderBuilder?.call(context) ?? const SizedBox.expand(),
+            widget.placeholderBuilder?.call(context) ??
+            const ColoredBox(
+              color: Color(0xFF1A1A1A),
+              child: Center(
+                child: Icon(Icons.photo_outlined, color: Color(0x66FFFFFF), size: 36),
+              ),
+            ),
       );
     }
 
@@ -157,7 +181,13 @@ class _LivePhotoStillViewState extends State<LivePhotoStillView> {
         builder: (context, snapshot) {
           final bytes = snapshot.data ?? _cachedBytes;
           if (bytes == null) {
-            return widget.placeholderBuilder?.call(context) ?? const SizedBox.expand();
+            return widget.placeholderBuilder?.call(context) ??
+            const ColoredBox(
+              color: Color(0xFF1A1A1A),
+              child: Center(
+                child: Icon(Icons.photo_outlined, color: Color(0x66FFFFFF), size: 36),
+              ),
+            );
           }
           return Image.memory(
             bytes,
@@ -167,12 +197,24 @@ class _LivePhotoStillViewState extends State<LivePhotoStillView> {
             width: double.infinity,
             height: double.infinity,
             errorBuilder: (context, _, _) =>
-                widget.placeholderBuilder?.call(context) ?? const SizedBox.expand(),
+                widget.placeholderBuilder?.call(context) ??
+            const ColoredBox(
+              color: Color(0xFF1A1A1A),
+              child: Center(
+                child: Icon(Icons.photo_outlined, color: Color(0x66FFFFFF), size: 36),
+              ),
+            ),
           );
         },
       );
     }
 
-    return widget.placeholderBuilder?.call(context) ?? const SizedBox.expand();
+    return widget.placeholderBuilder?.call(context) ??
+            const ColoredBox(
+              color: Color(0xFF1A1A1A),
+              child: Center(
+                child: Icon(Icons.photo_outlined, color: Color(0x66FFFFFF), size: 36),
+              ),
+            );
   }
 }

@@ -317,6 +317,45 @@ void main() {
     });
   });
 
+  
+
+  test('opening bare Apple Live Photo HEIC does not open as video (avoids black stage)', () async {
+    final fixture = File('example/assets/live_photo/IMG_0037.HEIC');
+    expect(fixture.existsSync(), isTrue);
+    final backend = _FakePlayerBackend();
+    final controller = VideoPlayerController(
+      backend: backend,
+      fullscreen: _FakeFullscreen(),
+      brightness: _FakeBrightness(),
+    );
+    await controller.initialize();
+    await controller.playFile(fixture.path);
+    await Future<void>.delayed(Duration.zero);
+    expect(backend.lastOpenedUrl, isNull, reason: 'must not open HEIC as video URL');
+    expect(controller.playState.value, PlayState.error);
+    expect(controller.errorMessage.value, contains('Not a playable Motion Photo'));
+    await controller.dispose();
+  });
+
+  test('Apple Live Photo HEIC stills (MiPr) are detected without embedded video', () async {
+    final fixture = File('example/assets/live_photo/IMG_0262_4CDAA1F2.HEIC');
+    expect(fixture.existsSync(), isTrue, reason: 'real HEIC fixture must exist');
+    final bytes = Uint8List.fromList(fixture.readAsBytesSync());
+    expect(LivePhotoParser.isAppleLivePhotoStillBytes(bytes), isTrue);
+    expect(LivePhotoParser.isVivoLivePhotoMarkerBytes(bytes), isTrue);
+    expect(LivePhotoParser.parseBytes(bytes), isNull,
+        reason: 'MiPr still has no embedded motion stream; needs paired .MOV');
+  });
+
+  test('IMG_0037.HEIC is Apple Live Photo still without vivo trailer', () async {
+    final fixture = File('example/assets/live_photo/IMG_0037.HEIC');
+    expect(fixture.existsSync(), isTrue);
+    final bytes = Uint8List.fromList(fixture.readAsBytesSync());
+    expect(LivePhotoParser.isAppleLivePhotoStillBytes(bytes), isTrue);
+    expect(LivePhotoParser.isVivoLivePhotoMarkerBytes(bytes), isFalse);
+    expect(LivePhotoParser.parseBytes(bytes), isNull);
+  });
+
   group('LivePhotoPlayer & LivePhotoBadge Widgets', () {
     testWidgets('LivePhotoPlayer supports tap and badge trigger, mute toggle, and completion reset', (
       WidgetTester tester,

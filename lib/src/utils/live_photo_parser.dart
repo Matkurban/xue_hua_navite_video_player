@@ -81,6 +81,35 @@ abstract final class LivePhotoParser {
     'ndss',
   };
 
+  /// Returns `true` if [bytes] looks like an Apple Live Photo *still* (HEIC `MiPr` brand).
+  ///
+  /// These files are valid Live Photo stills; the motion clip is a paired `.MOV`
+  /// (or an embedded Motion Photo stream). Detecting this avoids treating the
+  /// still as a playable video URL when the companion is missing.
+  static bool isAppleLivePhotoStillBytes(Uint8List bytes) {
+    if (bytes.length < 16) return false;
+    if (bytes[4] != 0x66 || bytes[5] != 0x74 || bytes[6] != 0x79 || bytes[7] != 0x70) {
+      return false;
+    }
+    final end = bytes.length < 64 ? bytes.length : 64;
+    for (var i = 8; i + 4 <= end; i++) {
+      if (bytes[i] == 0x4D &&
+          bytes[i + 1] == 0x69 &&
+          bytes[i + 2] == 0x50 &&
+          bytes[i + 3] == 0x72) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// Returns `true` if [bytes] carries a vivo / Android `livephoto` trailer marker.
+  static bool isVivoLivePhotoMarkerBytes(Uint8List bytes) {
+    if (bytes.length < 32) return false;
+    return _indexOfSequence(bytes, ascii.encode('com.android.camera.livephoto')) != -1 ||
+        _indexOfSequence(bytes, ascii.encode('com.vivo.gallery.livePhoto')) != -1;
+  }
+
   /// 快速检测字节流是否包含单文件动态照片（Motion Photo）。
   ///
   /// Returns `true` if [bytes] contains an embedded Motion Photo video stream.

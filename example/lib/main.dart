@@ -68,7 +68,6 @@ class _DemoItem {
 }
 
 const List<String> _bundledLivePhotoAssets = <String>[
-  'assets/live_photo/web_motion_photo.jpg',
   'assets/live_photo/IMG_0037.HEIC',
   'assets/live_photo/IMG_0038.HEIC',
   'assets/live_photo/IMG_0262_4CDAA1F2.HEIC',
@@ -180,8 +179,8 @@ class HomePage extends StatelessWidget {
               leading: const CircleAvatar(
                 child: Icon(Icons.motion_photos_on_rounded, size: 20),
               ),
-              title: const Text('Live Photos · 动态照片画廊 (8 张 HEIC)'),
-              subtitle: const Text('assets/live_photo/*.HEIC'),
+              title: const Text('Live Photos · 动态照片画廊 (HEIC)'),
+              subtitle: const Text('assets/live_photo/*.HEIC（真实样例）'),
               trailing: const Icon(Icons.chevron_right),
               onTap: () {
                 Navigator.of(context).push(
@@ -374,14 +373,42 @@ class _LivePhotoDemoPageState extends State<LivePhotoDemoPage> {
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ),
-                LivePhotoPlayer(
-                  key: ValueKey<String>('demo_live_photo_${current.assetPath}'),
-                  source: current.source,
-                  playMode: _playMode,
-                  aspectRatio: 3 / 4,
-                  fit: BoxFit.cover,
-                  borderRadius: BorderRadius.circular(16),
-                  badgeLabel: '实况',
+                Stack(
+                  children: <Widget>[
+                    LivePhotoPlayer(
+                      key: ValueKey<String>('demo_live_photo_${current.assetPath}'),
+                      source: current.source,
+                      playMode: _playMode,
+                      aspectRatio: 3 / 4,
+                      fit: BoxFit.cover,
+                      borderRadius: BorderRadius.circular(16),
+                      badgeLabel: '实况',
+                    ),
+                    Positioned(
+                      right: 8,
+                      bottom: 8,
+                      child: Material(
+                        color: Colors.black54,
+                        borderRadius: BorderRadius.circular(20),
+                        child: IconButton(
+                          key: const ValueKey<String>('live_photo_fullscreen_button'),
+                          tooltip: '全屏查看',
+                          icon: const Icon(Icons.fullscreen, color: Colors.white),
+                          onPressed: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute<void>(
+                                builder: (_) => LivePhotoFullscreenPage(
+                                  source: current.source,
+                                  playMode: _playMode,
+                                  title: current.title,
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 16),
                 Text(
@@ -408,6 +435,53 @@ class _LivePhotoDemoPageState extends State<LivePhotoDemoPage> {
                   ),
               ],
             ),
+    );
+  }
+}
+
+class LivePhotoFullscreenPage extends StatelessWidget {
+  const LivePhotoFullscreenPage({
+    super.key,
+    required this.source,
+    required this.playMode,
+    required this.title,
+  });
+
+  final LivePhotoSource source;
+  final LivePhotoPlayMode playMode;
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        foregroundColor: Colors.white,
+        title: Text(title),
+        actions: <Widget>[
+          IconButton(
+            key: const ValueKey<String>('live_photo_fullscreen_close'),
+            icon: const Icon(Icons.fullscreen_exit),
+            onPressed: () => Navigator.of(context).maybePop(),
+          ),
+        ],
+      ),
+      body: SafeArea(
+        child: Center(
+          child: LivePhotoPlayer(
+            key: ValueKey<String>('demo_live_photo_fullscreen_${source.identity}'),
+            source: source,
+            playMode: playMode == LivePhotoPlayMode.longPress
+                ? LivePhotoPlayMode.tap
+                : playMode,
+            fit: BoxFit.contain,
+            badgeLabel: '实况',
+            // Fullscreen stage: no ClipRRect / Opacity around the video surface
+            // (LivePhotoPlayer already keeps CorePlayer free of those ancestors).
+          ),
+        ),
+      ),
     );
   }
 }
