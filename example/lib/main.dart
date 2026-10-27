@@ -324,117 +324,197 @@ class _LivePhotoDemoPageState extends State<LivePhotoDemoPage> {
       ),
       body: _loading || current == null
           ? const Center(child: CircularProgressIndicator())
-          : ListView(
-              padding: const EdgeInsets.all(16),
-              children: <Widget>[
-                const Center(child: _DesignStyleSelector()),
-                const SizedBox(height: 12),
-                Center(
-                  child: CupertinoSlidingSegmentedControl<LivePhotoPlayMode>(
-                    groupValue: _playMode,
-                    children: const <LivePhotoPlayMode, Widget>{
-                      LivePhotoPlayMode.longPress: Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                        child: Text('长按'),
-                      ),
-                      LivePhotoPlayMode.hover: Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                        child: Text('悬停'),
-                      ),
-                      LivePhotoPlayMode.tap: Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                        child: Text('点击'),
-                      ),
-                      LivePhotoPlayMode.autoPlayOnce: Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                        child: Text('一次'),
-                      ),
-                      LivePhotoPlayMode.loop: Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                        child: Text('循环'),
-                      ),
-                    },
-                    onValueChanged: (mode) {
-                      if (mode != null) {
-                        setState(() => _playMode = mode);
-                      }
-                    },
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  current.title,
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                Padding(
-                  padding: const EdgeInsets.only(top: 4, bottom: 10),
-                  child: Text(
-                    current.subtitle,
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                ),
-                Stack(
+          : LayoutBuilder(
+              builder: (context, constraints) {
+                final useSplit = constraints.maxWidth >= 720;
+                final stage = _buildLivePhotoStage(context, current);
+                final sidebar = _buildLivePhotoSidebar(context, current);
+                if (useSplit) {
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      Expanded(flex: 7, child: stage),
+                      const VerticalDivider(width: 1),
+                      Expanded(flex: 3, child: sidebar),
+                    ],
+                  );
+                }
+                return Column(
                   children: <Widget>[
-                    LivePhotoPlayer(
-                      key: ValueKey<String>('demo_live_photo_${current.assetPath}'),
-                      source: current.source,
-                      playMode: _playMode,
-                      aspectRatio: 3 / 4,
-                      fit: BoxFit.cover,
-                      borderRadius: BorderRadius.circular(16),
-                      badgeLabel: '实况',
-                    ),
-                    Positioned(
-                      right: 8,
-                      bottom: 8,
-                      child: Material(
-                        color: Colors.black54,
-                        borderRadius: BorderRadius.circular(20),
-                        child: IconButton(
-                          key: const ValueKey<String>('live_photo_fullscreen_button'),
-                          tooltip: '全屏查看',
-                          icon: const Icon(Icons.fullscreen, color: Colors.white),
-                          onPressed: () {
-                            Navigator.of(context).push(
-                              MaterialPageRoute<void>(
-                                builder: (_) => LivePhotoFullscreenPage(
-                                  source: current.source,
-                                  playMode: _playMode,
-                                  title: current.title,
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                    ),
+                    Expanded(flex: 7, child: stage),
+                    const Divider(height: 1),
+                    Expanded(flex: 3, child: sidebar),
                   ],
+                );
+              },
+            ),
+    );
+  }
+
+  Widget _buildLivePhotoStage(
+    BuildContext context,
+    _ResolvedGalleryLivePhoto current,
+  ) {
+    return ColoredBox(
+      color: Colors.black,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final width = constraints.maxWidth;
+            final height = constraints.maxHeight;
+            final aspectRatio =
+                (width > 0 && height > 0) ? width / height : 3 / 4;
+            return Stack(
+              fit: StackFit.expand,
+              children: <Widget>[
+                Center(
+                  child: LivePhotoPlayer(
+                    key: ValueKey<String>(
+                      'demo_live_photo_${current.assetPath}',
+                    ),
+                    source: current.source,
+                    playMode: _playMode,
+                    aspectRatio: aspectRatio,
+                    fit: BoxFit.cover,
+                    borderRadius: BorderRadius.circular(16),
+                    badgeLabel: '实况',
+                  ),
                 ),
-                const SizedBox(height: 16),
-                Text(
-                  '选择动态照片 (${_items.length})',
-                  style: Theme.of(context).textTheme.titleSmall,
-                ),
-                const SizedBox(height: 8),
-                for (var i = 0; i < _items.length; i++)
-                  Card(
-                    margin: const EdgeInsets.only(bottom: 8),
-                    child: ListTile(
-                      key: ValueKey<String>('live_photo_item_$i'),
-                      selected: i == _selectedIndex,
-                      leading: CircleAvatar(child: Text('${i + 1}')),
-                      title: Text(_items[i].title),
-                      subtitle: Text(_items[i].subtitle),
-                      trailing: i == _selectedIndex
-                          ? const Icon(Icons.check_circle_rounded)
-                          : const Icon(Icons.play_circle_outline_rounded),
-                      onTap: () {
-                        setState(() => _selectedIndex = i);
+                Positioned(
+                  right: 8,
+                  bottom: 8,
+                  child: Material(
+                    color: Colors.black54,
+                    borderRadius: BorderRadius.circular(20),
+                    child: IconButton(
+                      key: const ValueKey<String>(
+                        'live_photo_fullscreen_button',
+                      ),
+                      tooltip: '全屏查看',
+                      icon: const Icon(Icons.fullscreen, color: Colors.white),
+                      onPressed: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => LivePhotoFullscreenPage(
+                              source: current.source,
+                              playMode: _playMode,
+                              title: current.title,
+                            ),
+                          ),
+                        );
                       },
                     ),
                   ),
+                ),
               ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLivePhotoSidebar(
+    BuildContext context,
+    _ResolvedGalleryLivePhoto current,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          const Center(child: _DesignStyleSelector()),
+          const SizedBox(height: 12),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: CupertinoSlidingSegmentedControl<LivePhotoPlayMode>(
+              groupValue: _playMode,
+              children: const <LivePhotoPlayMode, Widget>{
+                LivePhotoPlayMode.longPress: Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  child: Text('长按'),
+                ),
+                LivePhotoPlayMode.hover: Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  child: Text('悬停'),
+                ),
+                LivePhotoPlayMode.tap: Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  child: Text('点击'),
+                ),
+                LivePhotoPlayMode.autoPlayOnce: Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  child: Text('一次'),
+                ),
+                LivePhotoPlayMode.loop: Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  child: Text('循环'),
+                ),
+              },
+              onValueChanged: (mode) {
+                if (mode != null) {
+                  setState(() => _playMode = mode);
+                }
+              },
             ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            current.title,
+            style: Theme.of(context).textTheme.titleMedium,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          Padding(
+            padding: const EdgeInsets.only(top: 4, bottom: 10),
+            child: Text(
+              current.subtitle,
+              style: Theme.of(context).textTheme.bodySmall,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          Text(
+            '选择动态照片 (${_items.length})',
+            style: Theme.of(context).textTheme.titleSmall,
+          ),
+          const SizedBox(height: 8),
+          Expanded(
+            child: ListView.builder(
+              padding: const EdgeInsets.only(bottom: 12),
+              itemCount: _items.length,
+              itemBuilder: (context, i) {
+                return Card(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  child: ListTile(
+                    key: ValueKey<String>('live_photo_item_$i'),
+                    selected: i == _selectedIndex,
+                    dense: true,
+                    leading: CircleAvatar(child: Text('${i + 1}')),
+                    title: Text(
+                      _items[i].title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    subtitle: Text(
+                      _items[i].subtitle,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    trailing: i == _selectedIndex
+                        ? const Icon(Icons.check_circle_rounded)
+                        : const Icon(Icons.play_circle_outline_rounded),
+                    onTap: () {
+                      setState(() => _selectedIndex = i);
+                    },
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
