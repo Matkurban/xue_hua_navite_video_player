@@ -38,6 +38,8 @@ import 'widgets/live_photo_still_view.dart';
 ///   - [LivePhotoPlayMode.loop]：持续无缝循环播放
 /// - **单会话自动协调**：当未传入外部 [controller] 时，组件仅在触发动态播放时按需申请原生播放器会话，
 ///   并在多个 [LivePhotoPlayer] 之间自动移交原生单会话。
+/// - **合成安全**：原生 PlatformView / Web `HtmlElementView` 不会被包在 `Opacity` /
+///   `Transform` / `ClipRRect` 祖先下（否则全端易黑屏）；微缩放与交叉淡入仅作用在静态封面上。
 class LivePhotoPlayer extends StatefulWidget {
   const LivePhotoPlayer({
     super.key,
@@ -469,6 +471,7 @@ class _LivePhotoPlayerState extends State<LivePhotoPlayer> {
     _startPlayback();
   }
 
+
   static AspectRatioMode _mapBoxFitToAspectRatioMode(BoxFit fit) {
     return switch (fit) {
       BoxFit.cover => AspectRatioMode.fill,
@@ -488,6 +491,22 @@ class _LivePhotoPlayerState extends State<LivePhotoPlayer> {
         _isDesktopOrWeb &&
         widget.playMode != LivePhotoPlayMode.loop;
 
+    // Platform views / HtmlElementView / (on some hosts) Texture go black when an
+    // ancestor applies Opacity, Transform/Scale, or ClipRRect. Keep [CorePlayer]
+    // free of those effects; animate/clip only the Flutter still cover on top.
+    Widget stillCover = LivePhotoStillView(
+      bundle: _bundle,
+      fallbackImageSource: _initialImageSource,
+      fit: widget.fit,
+      placeholderBuilder: widget.placeholderBuilder,
+    );
+    if (widget.borderRadius != null) {
+      stillCover = ClipRRect(
+        borderRadius: widget.borderRadius!,
+        child: stillCover,
+      );
+    }
+
     Widget content;
     if (_resolveError != null && _bundle == null) {
       content = ColoredBox(
@@ -502,49 +521,50 @@ class _LivePhotoPlayerState extends State<LivePhotoPlayer> {
                 ),
         ),
       );
+      if (widget.borderRadius != null) {
+        content = ClipRRect(
+          borderRadius: widget.borderRadius!,
+          child: content,
+        );
+      }
     } else {
       content = ColoredBox(
         color: bg,
         child: Stack(
           fit: StackFit.expand,
           children: <Widget>[
-            // 1. Animated scale wrapper containing both the still photo and video surface
-            AnimatedScale(
-              scale: scale,
-              duration: widget.crossfadeDuration,
-              curve: Curves.easeOutCubic,
-              child: Stack(
-                fit: StackFit.expand,
-                children: <Widget>[
-                  Positioned.fill(
-                    child: LivePhotoStillView(
-                      bundle: _bundle,
-                      fallbackImageSource: _initialImageSource,
-                      fit: widget.fit,
-                      placeholderBuilder: widget.placeholderBuilder,
-                    ),
+            // 1. Native / web video surface — no Opacity / Scale / ClipRRect ancestors.
+            if (ctrl != null)
+              Positioned.fill(
+                key: const ValueKey<String>('live_photo_video_surface'),
+                child: IgnorePointer(
+                  child: CorePlayer(
+                    controller: ctrl,
+                    backgroundColor: Colors.transparent,
+                    loadingBuilder: (_) => const SizedBox.shrink(),
                   ),
-                  if (ctrl != null)
-                    Positioned.fill(
-                      child: AnimatedOpacity(
-                        key: const ValueKey<String>('live_photo_video_opacity'),
-                        opacity: _showingVideo ? 1.0 : 0.0,
-                        duration: widget.crossfadeDuration,
-                        curve: Curves.easeInOut,
-                        child: IgnorePointer(
-                          child: CorePlayer(
-                            controller: ctrl,
-                            backgroundColor: Colors.transparent,
-                            loadingBuilder: (_) => const SizedBox.shrink(),
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
+                ),
+              ),
+
+            // 2. Still cover fades/scales out over the opaque video surface.
+            Positioned.fill(
+              child: IgnorePointer(
+                child: AnimatedOpacity(
+                  key: const ValueKey<String>('live_photo_still_opacity'),
+                  opacity: _showingVideo ? 0.0 : 1.0,
+                  duration: widget.crossfadeDuration,
+                  curve: Curves.easeInOut,
+                  child: AnimatedScale(
+                    scale: scale,
+                    duration: widget.crossfadeDuration,
+                    curve: Curves.easeOutCubic,
+                    child: stillCover,
+                  ),
+                ),
               ),
             ),
 
-            // 2. Interactive gesture & desktop mouse hover layer
+            // 3. Interactive gesture & desktop mouse hover layer
             Positioned.fill(
               child: MouseRegion(
                 key: const ValueKey<String>('live_photo_mouse_region'),
@@ -583,7 +603,7 @@ class _LivePhotoPlayerState extends State<LivePhotoPlayer> {
               ),
             ),
 
-            // 3. Corner LIVE badge & mute button
+            // 4. Corner LIVE badge & mute button
             if (widget.showBadge)
               Positioned.fill(
                 child: SafeArea(
@@ -611,13 +631,36 @@ class _LivePhotoPlayerState extends State<LivePhotoPlayer> {
           ],
         ),
       );
-    }
 
-    if (widget.borderRadius != null) {
-      content = ClipRRect(
-        borderRadius: widget.borderRadius!,
-        child: content,
-      );
+      // Never ClipRRect a tree that contains the video surface: PlatformView /
+      // HtmlElementView go black under clip ancestors. When a controller is
+      // mounted, soft-mask the corners instead. Still-only (ctrl == null) may
+      // use a real ClipRRect safely.
+      if (widget.borderRadius != null) {
+        if (ctrl == null) {
+          content = ClipRRect(
+            borderRadius: widget.borderRadius!,
+            child: content,
+          );
+        } else {
+          content = Stack(
+            fit: StackFit.expand,
+            children: <Widget>[
+              content,
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: CustomPaint(
+                    painter: _RoundedRectCornerMaskPainter(
+                      borderRadius: widget.borderRadius!,
+                      color: Theme.of(context).scaffoldBackgroundColor,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          );
+        }
+      }
     }
 
     if (widget.aspectRatio != null) {
@@ -641,5 +684,33 @@ class _LivePhotoPlayerState extends State<LivePhotoPlayer> {
     }
 
     return content;
+  }
+}
+
+
+/// Paints the four corners outside a rounded rect so platform-view video can
+/// keep an apparent border radius without a clipping ancestor.
+class _RoundedRectCornerMaskPainter extends CustomPainter {
+  const _RoundedRectCornerMaskPainter({
+    required this.borderRadius,
+    required this.color,
+  });
+
+  final BorderRadius borderRadius;
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.isEmpty) return;
+    final outer = Path()..addRect(Offset.zero & size);
+    final inner = Path()
+      ..addRRect(borderRadius.toRRect(Offset.zero & size));
+    final path = Path.combine(PathOperation.difference, outer, inner);
+    canvas.drawPath(path, Paint()..color = color);
+  }
+
+  @override
+  bool shouldRepaint(covariant _RoundedRectCornerMaskPainter oldDelegate) {
+    return oldDelegate.borderRadius != borderRadius || oldDelegate.color != color;
   }
 }
