@@ -20,7 +20,7 @@ dependencies:
   flutter_web_plugins:
     sdk: flutter
   web: ^1.1.2
-  crypto: ^3.0.7
+  crypto: ^3.0.8
   path_provider: ^2.1.6
   signals_flutter: ^7.1.0
   chat_context_menu: ^4.2.0
