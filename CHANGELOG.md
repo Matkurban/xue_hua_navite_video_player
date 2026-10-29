@@ -1,3 +1,9 @@
+## 2.7.0
+
+- Unified Dart Cache Management and Public API
+- Six-Platform "Cache-While-Streaming" and Zero-Network-Latency Instant Playback Engine
+- Dynamic Photo Cache Reuse for Single-File Network Assets & Dual-Layer Buffer Progress Bar
+
 ## 2.6.10
 
 - Fix: Live Photo fullscreen black screen — do not wrap `CorePlayer` / PlatformView in `Opacity` / `AnimatedOpacity` / `AnimatedScale` / `ClipRRect`.
