@@ -33,7 +33,7 @@ class _PlayerPageState extends State<PlayerPage> {
   }
 
   Future<void> _openCurrent() async {
-    final playlist = demoPlaylist;
+    final playlist = networkDemoPlaylist;
     if (_index < 0 || _index >= playlist.length) return;
     final item = playlist[_index];
     if (isLocalSource(item.url)) {
@@ -44,7 +44,7 @@ class _PlayerPageState extends State<PlayerPage> {
   }
 
   Future<void> _playAt(int index) async {
-    final playlist = demoPlaylist;
+    final playlist = networkDemoPlaylist;
     if (index < 0 || index >= playlist.length) return;
     setState(() => _index = index);
     await _openCurrent();
@@ -57,7 +57,7 @@ class _PlayerPageState extends State<PlayerPage> {
   }
 
   void _showMoreSheet() {
-    final playlist = demoPlaylist;
+    final playlist = networkDemoPlaylist;
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -175,7 +175,7 @@ class _PlayerPageState extends State<PlayerPage> {
   }
 
   Future<void> _extractCovers() async {
-    final item = demoPlaylist[_index];
+    final item = networkDemoPlaylist[_index];
     final messenger = ScaffoldMessenger.of(context);
     messenger.showSnackBar(
       const SnackBar(content: Text('Extracting covers...')),
@@ -206,7 +206,7 @@ class _PlayerPageState extends State<PlayerPage> {
 
   @override
   Widget build(BuildContext context) {
-    final playlist = demoPlaylist;
+    final playlist = networkDemoPlaylist;
     final current = (_index >= 0 && _index < playlist.length)
         ? playlist[_index]
         : null;

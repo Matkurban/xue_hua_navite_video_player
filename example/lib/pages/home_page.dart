@@ -57,7 +57,7 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-    final playlist = demoPlaylist;
+    final playlist = networkDemoPlaylist;
     return Scaffold(
       key: const ValueKey<String>('home_page'),
       appBar: AppBar(
