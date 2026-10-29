@@ -229,7 +229,13 @@ class _FakeBackend implements PlayerBackend {
   Future<int> create() async => 1;
 
   @override
-  Future<void> open(String url, {String? castUrl}) async {}
+  Future<void> open(
+    String url, {
+    String? castUrl,
+    String? cacheKey,
+    Map<String, String>? headers,
+    bool? enableCache,
+  }) async {}
 
   @override
   Future<void> play() async {}

@@ -13,6 +13,7 @@ export 'src/data/enums/skip_second_type.dart';
 export 'src/data/models/live_photo_bundle.dart';
 export 'src/data/models/live_photo_metadata.dart';
 export 'src/data/models/navite_file.dart';
+export 'src/data/models/video_cache_config.dart';
 export 'src/data/models/video_cover_frame.dart';
 
 // Utilities

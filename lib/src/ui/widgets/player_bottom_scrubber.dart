@@ -91,6 +91,7 @@ class _PlayerBottomScrubberState extends State<PlayerBottomScrubber> {
         builder: (context) {
           final position = controller.position.value;
           final duration = controller.duration.value;
+          final buffered = controller.bufferedPercent.value;
           final hasDuration = duration.inMilliseconds > 0;
           final progress = hasDuration
               ? (position.inMilliseconds / duration.inMilliseconds).clamp(0.0, 1.0)
@@ -125,6 +126,7 @@ class _PlayerBottomScrubberState extends State<PlayerBottomScrubber> {
                 child: PlayerScrubberSlider(
                   key: const ValueKey<String>('video_player_scrubber'),
                   value: effectiveValue,
+                  bufferedValue: hasDuration ? buffered : 0.0,
                   activeColor: style.scrubberActiveColor,
                   bufferedColor: style.scrubberBufferedColor,
                   inactiveColor: style.scrubberInactiveColor,

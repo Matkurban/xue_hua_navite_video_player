@@ -32,6 +32,7 @@ A cross-platform Flutter audio/video player plugin. Dart exposes a unified contr
   - [Quick start](#quick-start)
   - [Important: single active session](#important-single-active-session)
   - [VideoSource](#videosource)
+  - [Media caching (play-while-caching \& instant offline replay)](#media-caching-play-while-caching--instant-offline-replay)
   - [VideoPlayerController](#videoplayercontroller)
     - [Lifecycle](#lifecycle)
     - [Open \& play](#open--play)
@@ -66,7 +67,8 @@ A cross-platform Flutter audio/video player plugin. Dart exposes a unified contr
 - **6 platforms** — Android, iOS, macOS, Linux, Windows, Web
 - **Native rendering** — PlatformView on Android / iOS / macOS; Texture (libmpv) on Linux / Windows; HTML5 `<video>` on Web
 - **Sources** — network URL, local file, Flutter asset (native platforms extract assets to a temp file; Web / WASM uses the Flutter-hosted `assets/` URL)
-- **Controls** — play / pause / seek / volume / mute / speed / brightness / aspect mode / snapshot
+- **Smart media caching** — enabled by default across all 6 platforms (Android Media3 `SimpleCache`, iOS/macOS `AVAssetResourceLoaderDelegate` sparse segments, Windows/Linux loopback `206` Range proxy, Web `Blob` LRU) for play-while-caching, zero-network second replay, `precache`, custom `cacheKey` signed-URL deduplication, and LRU eviction
+- **Controls** — play / pause / seek / volume / mute / speed / brightness / aspect mode / snapshot / dual-layer buffered scrubber (`bufferedPercent`)
 - **Casting** — platform route picker from `VideoPlayer` or `showCastPicker()` / `stopCasting()`. Android is Google Cast; iOS, macOS, and Safari are AirPlay
 - **Built-in UI** — drop-in `VideoPlayer` and bare `CorePlayer`
 - **Theming** — `VideoPlayerTheme` via `ThemeData.extensions`
@@ -141,7 +143,7 @@ flutter pub get
 import 'package:xue_hua_navite_video_player/xue_hua_navite_video_player.dart';
 ```
 
-Public exports include: `VideoSource`, `VideoPlayerController`, `VideoPlayer`, `CorePlayer`, `VideoPlayerTheme`, `PlayState`, `CastState`, `AspectRatioMode`, `SkipSecondType`, `VideoCoverFrame`, `NaviteFile`, `XueHuaNaviteVideoPlayer`, `PlayerScrubberSlider`, and `VideoPlayerSlotContext`.
+Public exports include: `VideoSource`, `VideoCacheConfig`, `VideoPlayerController`, `VideoPlayer`, `CorePlayer`, `LivePhotoPlayer`, `LivePhotoSource`, `VideoPlayerTheme`, `PlayState`, `CastState`, `AspectRatioMode`, `SkipSecondType`, `VideoCoverFrame`, `NaviteFile`, `XueHuaNaviteVideoPlayer`, `PlayerScrubberSlider`, and `VideoPlayerSlotContext`.
 
 ---
 
@@ -306,14 +308,18 @@ Multi-instance concurrent players (e.g. PiP + list preview) are **not** supporte
 
 Sealed source types:
 
-| Type                 | Factory                    | Notes                                                          |
-| -------------------- | -------------------------- | -------------------------------------------------------------- |
-| `NetworkVideoSource` | `VideoSource.network(url)` | HTTP(S); opened directly by the native player                  |
-| `FileVideoSource`    | `VideoSource.file(path)`   | Absolute path or `file://` URI                                 |
-| `AssetVideoSource`   | `VideoSource.asset(path)`  | Flutter asset; native extracts to temp; Web uses `assets/` URL |
+| Type                 | Factory                                                       | Notes                                                                    |
+| -------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `NetworkVideoSource` | `VideoSource.network(url, {cacheKey, headers, enableCache})`  | HTTP(S); cached on disk by default; supports custom `cacheKey` & headers |
+| `FileVideoSource`    | `VideoSource.file(path)`                                      | Absolute path or `file://` URI                                           |
+| `AssetVideoSource`   | `VideoSource.asset(path, {bundle})`                           | Flutter asset; native extracts to temp; Web uses `assets/` URL           |
 
 ```dart
-final network = VideoSource.network('https://example.com/a.mp4');
+final network = VideoSource.network(
+  'https://cdn.example.com/a.mp4?token=123',
+  cacheKey: 'video-a', // reuse cached file even when signed query tokens rotate
+  headers: const {'Authorization': 'Bearer xxx'},
+);
 final file = VideoSource.file('/absolute/path/to/movie.mp4');
 final asset = VideoSource.asset('assets/videos/intro.mp4');
 
@@ -328,7 +334,48 @@ flutter:
     - assets/videos/intro.mp4
 ```
 
-Network media is opened directly by the native player via the original URL.
+---
+
+## Media caching (play-while-caching & instant offline replay)
+
+On-disk media caching is **enabled by default** (`maxCacheBytes = 512 MiB`, `maxSingleFileBytes = 256 MiB`). Existing `playNetwork(url)` calls automatically stream and persist segments on the first play and open instantly with zero network traffic on subsequent plays.
+
+| Platform | Caching engine |
+| -------- | -------------- |
+| Android | Media3 `CacheDataSource` + `SimpleCache` + `LeastRecentlyUsedCacheEvictor` |
+| iOS / macOS | `file://` fast path when complete; `AVAssetResourceLoaderDelegate` sparse Range segments while streaming |
+| Windows / Linux | `file://` fast path when complete; `127.0.0.1` HTTP `206` Range proxy + `.seg` sparse segments while streaming |
+| Web | In-memory `Blob` LRU (`URL.createObjectURL`) when CORS allows, seamlessly falling back to `<video>` otherwise |
+
+- **Live / manifest bypass**: `.m3u8` (HLS), `.mpd` (DASH), and unknown-length live streams automatically bypass disk caching.
+- **Wireless Cast isolation**: Chromecast, AirPlay, and Windows Cast always receive the original remote `https://` URL even when local playback reads from `file://` or `127.0.0.1`.
+- **Live Photo reuse**: `LivePhotoSource.network` single-file Motion Photos and paired video tracks share the same cache governance (`cacheKey`, `headers`, `enableCache`).
+
+```dart
+// 1. Optional global configuration at startup or runtime
+await XueHuaNaviteVideoPlayer.instance.initialize(
+  cacheConfig: VideoCacheConfig(
+    enabled: true,
+    maxCacheBytes: 1024 * 1024 * 1024, // 1 GiB
+    maxSingleFileBytes: 512 * 1024 * 1024, // 512 MiB
+    cacheKeyBuilder: (uri) => uri.replace(query: '').toString(),
+  ),
+);
+
+// 2. Feed preloading (precache head bytes for instant first frame, or full file when preloadBytes is null)
+final nextSource = VideoSource.network('https://example.com/feed_2.mp4');
+await XueHuaNaviteVideoPlayer.instance.precache(
+  nextSource,
+  preloadBytes: 2 * 1024 * 1024,
+);
+await XueHuaNaviteVideoPlayer.instance.cancelPrecache(nextSource);
+
+// 3. Query & manage cache (actively playing entries are automatically pinned against eviction)
+final bool hit = await XueHuaNaviteVideoPlayer.instance.isCached(nextSource);
+final int totalBytes = await XueHuaNaviteVideoPlayer.instance.getCacheSize();
+await XueHuaNaviteVideoPlayer.instance.removeCache(nextSource);
+await XueHuaNaviteVideoPlayer.instance.clearCache();
+```
 
 ---
 
@@ -356,11 +403,11 @@ VideoPlayerController({
 
 ### Open & play
 
-| API                              | Behavior                                                                                       |
-| -------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `playNetwork(url)`               | Open network source and start                                                                  |
-| `openNetwork(url)`               | Open only; call `play()` later                                                                 |
-| `playFile` / `openFile`          | Local file                                                                                     |
+| API                                                   | Behavior                                                                                       |
+| ----------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `playNetwork(url, {cacheKey, headers, enableCache})`  | Open network source and start (cached by default)                                              |
+| `openNetwork(url, {cacheKey, headers, enableCache})`  | Open only; call `play()` later                                                                 |
+| `playFile` / `openFile`                               | Local file                                                                                     |
 | `playAsset` / `openAsset`        | Flutter asset                                                                                  |
 | `playSource` / `openSource`      | Generic entry                                                                                  |
 | `play` / `pause` / `playOrPause` | Transport                                                                                      |
@@ -419,6 +466,7 @@ final NaviteFile saved = await controller.takeSnapshot(savePath: '/tmp/frame.png
 | ----------------------- | ----------------- | -------------------------------------------------- |
 | `playState`             | `PlayState`       | Playback state                                     |
 | `position` / `duration` | `Duration`        | Progress / total                                   |
+| `bufferedPosition`      | `Duration`        | Buffered media position (equals `duration` on hit) |
 | `volume` / `speed`      | `double`          | Volume / rate                                      |
 | `isBuffering`           | `bool`            | Buffering                                          |
 | `errorMessage`          | `String?`         | Error text                                         |
@@ -429,7 +477,8 @@ final NaviteFile saved = await controller.takeSnapshot(savePath: '/tmp/frame.png
 | `videoAspectRatio`      | `double`          | Ratio after rotation                               |
 | `isVideo` / `isAudio`   | `bool`            | From mime                                          |
 | `isPlaying`             | `bool`            | Playing                                            |
-| `progressPercent`       | `double`          | 0.0 – 1.0                                          |
+| `progressPercent`       | `double`          | 0.0 – 1.0 played ratio                             |
+| `bufferedPercent`       | `double`          | 0.0 – 1.0 buffered ratio (wired to scrubber track) |
 | `muted`                 | `bool`            | Muted                                              |
 | `skipSecondType`        | `SkipSecondType`  | Skip step                                          |
 | `aspectRatioMode`       | `AspectRatioMode` | Fit mode                                           |

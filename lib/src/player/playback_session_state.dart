@@ -14,6 +14,7 @@ import '../data/models/navite_file.dart';
 class PlaybackSessionState {
   final FlutterSignal<PlayState> playState = signal(PlayState.idle);
   final FlutterSignal<Duration> position = signal(Duration.zero);
+  final FlutterSignal<Duration> bufferedPosition = signal(Duration.zero);
   final FlutterSignal<Duration> duration = signal(Duration.zero);
   final FlutterSignal<double> volume = signal(1.0);
   final FlutterSignal<double> speed = signal(1.0);
@@ -77,6 +78,11 @@ class PlaybackSessionState {
     return position.value.inMilliseconds / duration.value.inMilliseconds;
   });
 
+  late final FlutterComputed<double> bufferedPercent = computed(() {
+    if (duration.value.inMilliseconds <= 0) return 0.0;
+    return (bufferedPosition.value.inMilliseconds / duration.value.inMilliseconds).clamp(0.0, 1.0);
+  });
+
   /// Whether the current platform/environment supports wireless casting.
   late final FlutterComputed<bool> isCastSupported = computed(() {
     return castState.value != CastState.unavailable;
@@ -94,6 +100,7 @@ class PlaybackSessionState {
     batch(() {
       playState.value = PlayState.idle;
       position.value = Duration.zero;
+      bufferedPosition.value = Duration.zero;
       duration.value = Duration.zero;
       isBuffering.value = false;
       errorMessage.value = null;

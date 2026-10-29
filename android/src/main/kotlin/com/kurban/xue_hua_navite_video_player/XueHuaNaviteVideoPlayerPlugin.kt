@@ -28,8 +28,6 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.VideoSize
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.datasource.DefaultDataSource
-import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.mediacodec.DefaultMediaCodecAdapterFactory
@@ -82,6 +80,8 @@ class XueHuaNaviteVideoPlayerPlugin :
     private val engineGeneration = AtomicInteger(0)
     private var currentUrl: String? = null
     private var currentCastUrl: String? = null
+    private var currentCacheKey: String? = null
+    private var currentHeaders: Map<String, String>? = null
     private var lastCastState: String = "unavailable"
     private var lastCastDeviceName: String? = null
     private var flutterPluginBinding: FlutterPlugin.FlutterPluginBinding? = null
@@ -92,6 +92,7 @@ class XueHuaNaviteVideoPlayerPlugin :
     private var savedBrightness: Float? = null
 
     private var lastReportedDuration: Long = -1L
+    private var lastReportedBuffered: Long = -1L
 
     private var isPollingPosition = false
 
@@ -192,6 +193,9 @@ class XueHuaNaviteVideoPlayerPlugin :
                 lastReportedDuration = dur
                 sendEvent("duration", dur)
             }
+            val buffered = player.bufferedPosition.coerceAtLeast(0L)
+            lastReportedBuffered = buffered
+            sendEvent("buffered", buffered)
             sendEvent("position", player.currentPosition)
             sendEvent("playing", player.isPlaying)
             sendEvent("buffering", player.playbackState == Player.STATE_BUFFERING)
@@ -222,6 +226,15 @@ class XueHuaNaviteVideoPlayerPlugin :
             "getDuration" -> handleGetDuration(call, result)
             "getBrightness" -> handleGetBrightness(result)
             "setBrightness" -> handleSetBrightness(call, result)
+            "configureCache" -> handleConfigureCache(call, result)
+            "precache" -> handlePrecache(call, result)
+            "cancelPrecache" -> handleCancelPrecache(call, result)
+            "isCached" -> handleIsCached(call, result)
+            "getCacheSize" -> handleGetCacheSize(call, result)
+            "removeCache" -> handleRemoveCache(call, result)
+            "clearCache" -> handleClearCache(call, result)
+            "pinCacheKey" -> handlePinCacheKey(call, result)
+            "unpinCacheKey" -> handleUnpinCacheKey(call, result)
             "getPlatformVersion" -> result.success("Android ${android.os.Build.VERSION.RELEASE}")
             else -> result.notImplemented()
         }
@@ -274,14 +287,8 @@ class XueHuaNaviteVideoPlayerPlugin :
             setEnableDecoderFallback(true)
         }
 
-        // 2. 配置 HttpDataSource，添加标准浏览器 User-Agent，允许跨协议 302 重定向
-        val httpDataSourceFactory = DefaultHttpDataSource.Factory()
-            .setUserAgent("Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36")
-            .setAllowCrossProtocolRedirects(true)
-            .setConnectTimeoutMs(15_000)
-            .setReadTimeoutMs(15_000)
-
-        val dataSourceFactory = DefaultDataSource.Factory(context, httpDataSourceFactory)
+        // 2. 配置带 SimpleCache 的 DataSourceFactory（支持边播边存、302 重定向、标准浏览器 UA）
+        val dataSourceFactory = AndroidMediaCacheManager.buildDataSourceFactory(context)
         val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory)
 
         // 3. 构建 ExoPlayer
@@ -458,6 +465,19 @@ class XueHuaNaviteVideoPlayerPlugin :
     }
 
 
+    private fun extractHeaders(call: MethodCall): Map<String, String>? {
+        val raw = call.argument<Map<*, *>>("headers") ?: return null
+        val out = HashMap<String, String>()
+        for ((k, v) in raw) {
+            val key = k?.toString()?.trim()
+            val value = v?.toString()
+            if (!key.isNullOrEmpty() && value != null) {
+                out[key] = value
+            }
+        }
+        return out.takeIf { it.isNotEmpty() }
+    }
+
     /// 打开媒体 URL。
     private fun handleOpen(call: MethodCall, result: Result) {
         val url = call.argument<String>("url") ?: run {
@@ -468,12 +488,38 @@ class XueHuaNaviteVideoPlayerPlugin :
             result.error("NO_PLAYER", "Player not initialized", null)
             return
         }
+        val appContext = flutterPluginBinding?.applicationContext
+        val cacheKey = call.argument<String>("cacheKey")
+        val headers = extractHeaders(call)
+        val enableCache = call.argument<Boolean>("enableCache")
+
         lastReportedDuration = -1L
+        lastReportedBuffered = -1L
         currentUrl = url
         currentCastUrl = call.argument<String>("castUrl")
+        currentCacheKey = cacheKey
+        currentHeaders = headers
 
-        val mediaItem = MediaItem.fromUri(url)
-        local.setMediaItem(mediaItem)
+        val mediaItem = MediaItem.Builder()
+            .setUri(url)
+            .apply {
+                if (!cacheKey.isNullOrBlank()) {
+                    setCustomCacheKey(cacheKey)
+                }
+            }
+            .build()
+
+        if (appContext != null) {
+            val dsFactory = AndroidMediaCacheManager.buildDataSourceFactory(
+                context = appContext,
+                headers = headers,
+                enableCacheOverride = enableCache,
+            )
+            val mediaSource = DefaultMediaSourceFactory(dsFactory).createMediaSource(mediaItem)
+            local.setMediaSource(mediaSource)
+        } else {
+            local.setMediaItem(mediaItem)
+        }
         local.playWhenReady = false
         local.prepare()
 
@@ -613,6 +659,128 @@ class XueHuaNaviteVideoPlayerPlugin :
         result.success(null)
     }
 
+    private fun handleConfigureCache(call: MethodCall, result: Result) {
+        val appContext = flutterPluginBinding?.applicationContext ?: run {
+            result.success(null)
+            return
+        }
+        val enabled = call.argument<Boolean>("enabled") ?: true
+        val maxCacheBytes = call.argument<Number>("maxCacheBytes")?.toLong() ?: (512L * 1024L * 1024L)
+        val maxSingleFileBytes =
+            call.argument<Number>("maxSingleFileBytes")?.toLong() ?: (256L * 1024L * 1024L)
+        val cacheDir = call.argument<String>("cacheDir")
+        val generation = engineGeneration.get()
+        workerExecutor.execute {
+            AndroidMediaCacheManager.configure(
+                context = appContext,
+                enabled = enabled,
+                maxCacheBytes = maxCacheBytes,
+                maxSingleFileBytes = maxSingleFileBytes,
+                cacheDir = cacheDir,
+            )
+            postWorkerResult(generation) { result.success(null) }
+        }
+    }
+
+    private fun handlePrecache(call: MethodCall, result: Result) {
+        val appContext = flutterPluginBinding?.applicationContext
+        val url = call.argument<String>("url")
+        if (appContext == null || url.isNullOrBlank()) {
+            result.success(null)
+            return
+        }
+        val cacheKey = call.argument<String>("cacheKey")?.takeIf { it.isNotBlank() } ?: url
+        val cacheDir = call.argument<String>("cacheDir")
+        val headers = extractHeaders(call)
+        val preloadBytes = call.argument<Number>("preloadBytes")?.toLong()
+        val generation = engineGeneration.get()
+        AndroidMediaCacheManager.precache(
+            context = appContext,
+            executor = workerExecutor,
+            url = url,
+            cacheKey = cacheKey,
+            cacheDir = cacheDir,
+            headers = headers,
+            preloadBytes = preloadBytes,
+        ) {
+            postWorkerResult(generation) { result.success(null) }
+        }
+    }
+
+    private fun handleCancelPrecache(call: MethodCall, result: Result) {
+        val cacheKey = call.argument<String>("cacheKey")
+        if (!cacheKey.isNullOrBlank()) {
+            AndroidMediaCacheManager.cancelPrecache(cacheKey)
+        }
+        result.success(null)
+    }
+
+    private fun handleIsCached(call: MethodCall, result: Result) {
+        val appContext = flutterPluginBinding?.applicationContext
+        val cacheKey = call.argument<String>("cacheKey") ?: call.argument<String>("url")
+        val cacheDir = call.argument<String>("cacheDir")
+        if (appContext == null || cacheKey.isNullOrBlank()) {
+            result.success(false)
+            return
+        }
+        val generation = engineGeneration.get()
+        workerExecutor.execute {
+            val cached = AndroidMediaCacheManager.isCached(appContext, cacheDir, cacheKey)
+            postWorkerResult(generation) { result.success(cached) }
+        }
+    }
+
+    private fun handleGetCacheSize(call: MethodCall, result: Result) {
+        val appContext = flutterPluginBinding?.applicationContext ?: run {
+            result.success(0L)
+            return
+        }
+        val cacheDir = call.argument<String>("cacheDir")
+        val generation = engineGeneration.get()
+        workerExecutor.execute {
+            val size = AndroidMediaCacheManager.getCacheSize(appContext, cacheDir)
+            postWorkerResult(generation) { result.success(size) }
+        }
+    }
+
+    private fun handleRemoveCache(call: MethodCall, result: Result) {
+        val appContext = flutterPluginBinding?.applicationContext
+        val cacheKey = call.argument<String>("cacheKey") ?: call.argument<String>("url")
+        val cacheDir = call.argument<String>("cacheDir")
+        if (appContext == null || cacheKey.isNullOrBlank()) {
+            result.success(null)
+            return
+        }
+        val generation = engineGeneration.get()
+        workerExecutor.execute {
+            AndroidMediaCacheManager.removeCache(appContext, cacheDir, cacheKey)
+            postWorkerResult(generation) { result.success(null) }
+        }
+    }
+
+    private fun handleClearCache(call: MethodCall, result: Result) {
+        val appContext = flutterPluginBinding?.applicationContext ?: run {
+            result.success(null)
+            return
+        }
+        val cacheDir = call.argument<String>("cacheDir")
+        val generation = engineGeneration.get()
+        workerExecutor.execute {
+            AndroidMediaCacheManager.clearCache(appContext, cacheDir)
+            postWorkerResult(generation) { result.success(null) }
+        }
+    }
+
+    private fun handlePinCacheKey(call: MethodCall, result: Result) {
+        AndroidMediaCacheManager.pin(call.argument<String>("cacheKey"))
+        result.success(null)
+    }
+
+    private fun handleUnpinCacheKey(call: MethodCall, result: Result) {
+        AndroidMediaCacheManager.unpin(call.argument<String>("cacheKey"))
+        result.success(null)
+    }
+
     private fun handleGetBrightness(result: Result) {
         val window = activity?.window
         if (window == null) {
@@ -674,6 +842,7 @@ class XueHuaNaviteVideoPlayerPlugin :
 
     private fun releasePlayer() {
         lastReportedDuration = -1L
+        lastReportedBuffered = -1L
         stopPositionPolling()
         playerView?.player = null
         try {
@@ -697,6 +866,8 @@ class XueHuaNaviteVideoPlayerPlugin :
         activePlayer = null
         currentUrl = null
         currentCastUrl = null
+        currentCacheKey = null
+        currentHeaders = null
     }
 
     private fun sendCastState(state: String, deviceName: String?) {
@@ -737,6 +908,16 @@ class XueHuaNaviteVideoPlayerPlugin :
         }
     }
 
+    private fun checkAndSendBuffered(sourcePlayer: Player?) {
+        val player = sourcePlayer ?: activePlayer ?: return
+        if (player !== activePlayer) return
+        val buffered = player.bufferedPosition.coerceAtLeast(0L)
+        if (buffered != lastReportedBuffered) {
+            lastReportedBuffered = buffered
+            sendEvent("buffered", buffered)
+        }
+    }
+
     private fun createPlayerListener(playerProvider: () -> Player?): Player.Listener {
         return object : Player.Listener {
             private fun isCurrentActive(): Boolean {
@@ -769,6 +950,7 @@ class XueHuaNaviteVideoPlayerPlugin :
                     Player.STATE_READY -> {
                         sendEvent("buffering", false)
                         checkAndSendDuration(player)
+                        checkAndSendBuffered(player)
                         if (player.isPlaying) {
                             startPositionPolling()
                         }
@@ -777,7 +959,11 @@ class XueHuaNaviteVideoPlayerPlugin :
                     Player.STATE_ENDED -> {
                         stopPositionPolling()
                         sendEvent("buffering", false)
-                        player.duration.takeIf { it > 0 }?.let { sendEvent("position", it) }
+                        player.duration.takeIf { it > 0 }?.let {
+                            sendEvent("position", it)
+                            lastReportedBuffered = it
+                            sendEvent("buffered", it)
+                        }
                         sendEvent("completed", null)
                     }
 
@@ -786,6 +972,11 @@ class XueHuaNaviteVideoPlayerPlugin :
                         sendEvent("buffering", false)
                     }
                 }
+            }
+
+            override fun onIsLoadingChanged(isLoading: Boolean) {
+                if (!isCurrentActive()) return
+                checkAndSendBuffered(playerProvider())
             }
 
             override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
@@ -881,6 +1072,8 @@ class XueHuaNaviteVideoPlayerPlugin :
 
     private fun snapshotViaRetriever(result: Result, generation: Int) {
         val url = currentUrl
+        val cacheKey = currentCacheKey
+        val headers = currentHeaders
         val positionUs = ((activePlayer ?: exoPlayer)?.currentPosition ?: 0L) * 1000L
         val appContext = flutterPluginBinding?.applicationContext
         if (url == null) {
@@ -890,7 +1083,7 @@ class XueHuaNaviteVideoPlayerPlugin :
         workerExecutor.execute {
             val retriever = MediaMetadataRetriever()
             try {
-                setDataSourceForUrl(retriever, url, appContext)
+                setDataSourceForUrl(retriever, url, appContext, cacheKey, headers)
                 val bmp =
                     retriever.getFrameAtTime(positionUs, MediaMetadataRetriever.OPTION_CLOSEST)
                 if (bmp == null) {
@@ -919,6 +1112,8 @@ class XueHuaNaviteVideoPlayerPlugin :
 
     private fun handleGetDuration(call: MethodCall, result: Result) {
         val url = call.argument<String>("url")
+        val cacheKey = call.argument<String>("cacheKey")
+        val headers = extractHeaders(call)
         val timeoutMs = call.argument<Number>("timeoutMs")?.toLong() ?: 15_000L
         val appContext = flutterPluginBinding?.applicationContext
         if (url.isNullOrEmpty()) {
@@ -930,7 +1125,7 @@ class XueHuaNaviteVideoPlayerPlugin :
             val future = workerExecutor.submit<Long?> {
                 val retriever = MediaMetadataRetriever()
                 try {
-                    setDataSourceForUrl(retriever, url, appContext)
+                    setDataSourceForUrl(retriever, url, appContext, cacheKey, headers)
                     retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
                         ?.toLongOrNull()
                 } finally {
@@ -957,6 +1152,8 @@ class XueHuaNaviteVideoPlayerPlugin :
 
     private fun handleExtractCovers(call: MethodCall, result: Result) {
         val url = call.argument<String>("url")
+        val cacheKey = call.argument<String>("cacheKey")
+        val headers = extractHeaders(call)
         val count = call.argument<Int>("count") ?: 5
         val candidates = call.argument<Int>("candidates") ?: (count * 3)
         val minBrightness = call.argument<Double>("minBrightness") ?: 0.08
@@ -971,7 +1168,7 @@ class XueHuaNaviteVideoPlayerPlugin :
             val frames = ArrayList<Map<String, Any>>()
             val retriever = MediaMetadataRetriever()
             try {
-                setDataSourceForUrl(retriever, url, appContext)
+                setDataSourceForUrl(retriever, url, appContext, cacheKey, headers)
                 val durMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
                     ?.toLongOrNull() ?: 0L
                 if (durMs <= 0) {
@@ -1041,8 +1238,17 @@ class XueHuaNaviteVideoPlayerPlugin :
     private fun setDataSourceForUrl(
         retriever: MediaMetadataRetriever,
         url: String,
-        appContext: android.content.Context?
+        appContext: android.content.Context?,
+        cacheKey: String? = null,
+        headers: Map<String, String>? = null,
     ) {
+        if (appContext != null && !cacheKey.isNullOrBlank()) {
+            val cachedFile = AndroidMediaCacheManager.resolveCompleteCachedFile(appContext, cacheKey)
+            if (cachedFile != null) {
+                retriever.setDataSource(cachedFile.absolutePath)
+                return
+            }
+        }
         val uri = url.toUri()
         when (uri.scheme?.lowercase()) {
             "file" -> {
@@ -1050,7 +1256,14 @@ class XueHuaNaviteVideoPlayerPlugin :
                 else retriever.setDataSource(uri.path ?: url)
             }
 
-            "http", "https" -> retriever.setDataSource(url, HashMap())
+            "http", "https" -> {
+                val hdrs = HashMap<String, String>()
+                if (headers != null) {
+                    hdrs.putAll(headers)
+                }
+                retriever.setDataSource(url, hdrs)
+            }
+
             "content" -> {
                 if (appContext != null) retriever.setDataSource(appContext, uri)
                 else retriever.setDataSource(url, HashMap())
@@ -1082,6 +1295,7 @@ class XueHuaNaviteVideoPlayerPlugin :
             val player = activePlayer
             if (player != null && player.isPlaying) {
                 sendEvent("position", player.currentPosition)
+                checkAndSendBuffered(player)
                 mainHandler.postDelayed(this, 200)
             } else {
                 isPollingPosition = false

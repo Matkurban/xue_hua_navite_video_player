@@ -1,12 +1,14 @@
 ---
 name: xue-hua-navite-video-player-playback
 description: >-
-  Play, seek, and control media with xue_hua_navite_video_player. Use when
-  calling VideoPlayerController, VideoSource, PlayState, SkipSecondType,
-  AspectRatioMode, XueHuaNaviteVideoPlayer probe APIs, takeSnapshot,
-  extractCoverCandidates, or getDuration. For showCastPicker, stopCasting, or
-  CastState, use xue-hua-navite-video-player-cast. Read references/ before
-  inventing signatures.
+  Play, seek, cache, and control media with xue_hua_navite_video_player. Use
+  when calling VideoPlayerController, VideoSource, VideoCacheConfig, PlayState,
+  SkipSecondType, AspectRatioMode, XueHuaNaviteVideoPlayer probe or cache APIs
+  (configureCache, precache, cancelPrecache, isCached, getCacheSize,
+  removeCache, clearCache), takeSnapshot, extractCoverCandidates, or
+  getDuration. For showCastPicker, stopCasting, or CastState, use
+  xue-hua-navite-video-player-cast. Read references/ before inventing
+  signatures.
 ---
 
 # Playback — xue_hua_navite_video_player
@@ -52,6 +54,9 @@ Do not import `PlaybackSession`, `PlayerBackend`, `MediaProbe`, or `MimeDetector
 - `reset()` clears play/position/duration/buffering/error/url/mime/size/rotation. It does **not** reset volume, speed, muted, skip, aspect, fullscreen, brightness, `castState`, or `castDeviceName`, and does not dispose the native session.
 - Watch signals with `SignalBuilder` / `effect` from `signals_flutter`. Read `.value` inside the builder.
 - `isBuffering` can overlap other states (for example playing + buffering).
+- `playNetwork` / `openNetwork` and `VideoSource.network` accept optional `cacheKey`, `headers`, and `enableCache`. On-disk media caching is enabled by default (`512 MiB` max total, `256 MiB` max single file); `.m3u8` / `.mpd` streaming manifests automatically bypass disk cache.
+- Use `XueHuaNaviteVideoPlayer.instance` for cache management: `configureCache(VideoCacheConfig)`, `precache(source, {preloadBytes})`, `cancelPrecache(source)`, `isCached(source)`, `getCacheSize()`, `removeCache(source)`, and `clearCache()`. Active playback pins its cache entry against eviction.
+- `bufferedPosition` (`Duration`) and `bufferedPercent` (`0.0–1.0`) expose media buffer progress; built-in `VideoPlayer` already wires `bufferedPercent` to the bottom scrubber track.
 - Probe with `XueHuaNaviteVideoPlayer.instance`, not a new player. `extractCoverCandidates` requires `count > 0` (assert), times out at 60s (empty list), sorts by brightness descending. `getDuration` defaults to 15s and returns `null` on failure, timeout, or non-positive duration.
 
 ## Example — open then play

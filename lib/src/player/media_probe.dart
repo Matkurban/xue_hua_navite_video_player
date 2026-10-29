@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
+import '../cache/video_cache_manager.dart';
 import '../core/video_source.dart';
 import '../data/models/navite_file.dart';
 import '../data/models/video_cover_frame.dart';
@@ -23,12 +24,29 @@ class MediaProbe {
     VideoSource source, {
     Duration timeout = const Duration(seconds: 15),
   }) async {
+    String? pinnedKey;
     try {
-      final mediaUrl = await source.resolveToNativeUrl();
+      String mediaUrl;
+      String? cacheKey;
+      Map<String, String>? headers;
+      if (source is NetworkVideoSource) {
+        final target = await VideoCacheManager.instance.resolveForProbe(source);
+        mediaUrl = target.playUrl;
+        cacheKey = target.cacheKey;
+        headers = target.headers;
+        if (cacheKey != null) {
+          pinnedKey = cacheKey;
+          VideoCacheManager.instance.pin(cacheKey);
+        }
+      } else {
+        mediaUrl = await source.resolveToNativeUrl();
+      }
       final raw = await _channel
           .invokeMethod<dynamic>('getDuration', {
             'url': mediaUrl,
             'timeoutMs': timeout.inMilliseconds,
+            'cacheKey': ?cacheKey,
+            'headers': ?headers,
           })
           .timeout(timeout);
       if (raw == null) return null;
@@ -41,6 +59,10 @@ class MediaProbe {
       return Duration(milliseconds: ms);
     } catch (_) {
       return null;
+    } finally {
+      if (pinnedKey != null) {
+        VideoCacheManager.instance.unpin(pinnedKey);
+      }
     }
   }
 
@@ -54,8 +76,23 @@ class MediaProbe {
     assert(count > 0, 'count must be > 0');
     final candidateCount = (count * 3).clamp(count, 30);
 
+    String? pinnedKey;
     try {
-      final resolved = await source.resolveToNativeUrl();
+      String resolved;
+      String? cacheKey;
+      Map<String, String>? headers;
+      if (source is NetworkVideoSource) {
+        final target = await VideoCacheManager.instance.resolveForProbe(source);
+        resolved = target.playUrl;
+        cacheKey = target.cacheKey;
+        headers = target.headers;
+        if (cacheKey != null) {
+          pinnedKey = cacheKey;
+          VideoCacheManager.instance.pin(cacheKey);
+        }
+      } else {
+        resolved = await source.resolveToNativeUrl();
+      }
       final dir = kIsWeb ? '' : (outputDir ?? await pluginCoverDir());
       final raw = await _channel
           .invokeMethod<dynamic>('extractCovers', {
@@ -64,6 +101,8 @@ class MediaProbe {
             'candidates': candidateCount,
             'minBrightness': minBrightness,
             'outputDir': dir,
+            'cacheKey': ?cacheKey,
+            'headers': ?headers,
           })
           .timeout(const Duration(seconds: 60));
       if (raw is! List) return const <VideoCoverFrame>[];
@@ -77,6 +116,10 @@ class MediaProbe {
       return list;
     } catch (_) {
       return const <VideoCoverFrame>[];
+    } finally {
+      if (pinnedKey != null) {
+        VideoCacheManager.instance.unpin(pinnedKey);
+      }
     }
   }
 

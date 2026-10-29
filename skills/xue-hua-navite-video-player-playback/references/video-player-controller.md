@@ -24,8 +24,9 @@ Defaults after construction (before open):
 | Getter            | Type                             | Default                   | Meaning                                                                                                         |
 | ----------------- | -------------------------------- | ------------------------- | --------------------------------------------------------------------------------------------------------------- |
 | `playState`       | `FlutterSignal<PlayState>`       | `PlayState.idle`          | High-level state.                                                                                               |
-| `position`        | `FlutterSignal<Duration>`        | `Duration.zero`           | Playhead. Ignored until the session is ready.                                                                   |
-| `duration`        | `FlutterSignal<Duration>`        | `Duration.zero`           | Media duration. Zero for live / unknown.                                                                        |
+| `position`         | `FlutterSignal<Duration>`        | `Duration.zero`           | Playhead. Ignored until the session is ready.                                                                   |
+| `duration`         | `FlutterSignal<Duration>`        | `Duration.zero`           | Media duration. Zero for live / unknown.                                                                        |
+| `bufferedPosition` | `FlutterSignal<Duration>`        | `Duration.zero`           | Buffered media position (`duration` on local/complete-cache hits).                                              |
 | `volume`          | `FlutterSignal<double>`          | `1.0`                     | 0.0–1.0 after `setVolume`.                                                                                      |
 | `speed`           | `FlutterSignal<double>`          | `1.0`                     | Playback rate. Not clamped by the API.                                                                          |
 | `isBuffering`     | `FlutterSignal<bool>`            | `false`                   | Buffering flag; can overlap other states.                                                                       |
@@ -50,6 +51,7 @@ Defaults after construction (before open):
 | `isAudio`          | `FlutterComputed<bool>`   | `mimeType?.startsWith('audio/') ?? false`.                                                                                 |
 | `isPlaying`        | `FlutterComputed<bool>`   | `playState == PlayState.playing`.                                                                                          |
 | `progressPercent`  | `FlutterComputed<double>` | `0.0` when duration ms is 0; else `position.inMilliseconds / duration.inMilliseconds` (not clamped).                       |
+| `bufferedPercent`  | `FlutterComputed<double>` | `0.0` when duration ms is 0; else `(bufferedPosition.inMilliseconds / duration.inMilliseconds).clamp(0.0, 1.0)`.           |
 
 ## Lifecycle
 
@@ -85,8 +87,8 @@ All of these no-op if already disposed (except `initialize` / `takeSnapshot`, wh
 
 | Method        | Signature                                                         | Behavior                                                  |
 | ------------- | ----------------------------------------------------------------- | --------------------------------------------------------- |
-| `playNetwork` | `Future<void> playNetwork(String url)`                            | `openSource(VideoSource.network(url), autoPlay: true)`    |
-| `openNetwork` | `Future<void> openNetwork(String url)`                            | Same, `autoPlay: false`                                   |
+| `playNetwork` | `Future<void> playNetwork(String url, {String? cacheKey, Map<String, String>? headers, bool? enableCache})` | `openSource(VideoSource.network(url, ...), autoPlay: true)` |
+| `openNetwork` | `Future<void> openNetwork(String url, {String? cacheKey, Map<String, String>? headers, bool? enableCache})` | Same, `autoPlay: false`                                   |
 | `playFile`    | `Future<void> playFile(String path)`                              | `openSource(VideoSource.file(path), autoPlay: true)`      |
 | `openFile`    | `Future<void> openFile(String path)`                              | `autoPlay: false`                                         |
 | `playAsset`   | `Future<void> playAsset(String assetPath, {AssetBundle? bundle})` | `VideoSource.asset(assetPath, bundle: bundle)`, auto-play |

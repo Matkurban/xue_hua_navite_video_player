@@ -32,6 +32,7 @@
   - [快速开始](#快速开始)
   - [重要约束：单一活跃会话](#重要约束单一活跃会话)
   - [媒体来源 VideoSource](#媒体来源-videosource)
+  - [媒体缓存（边播边存 · 二次秒开）](#媒体缓存边播边存--二次秒开)
   - [控制器 VideoPlayerController](#控制器-videoplayercontroller)
     - [生命周期](#生命周期)
     - [打开与播放](#打开与播放)
@@ -74,7 +75,8 @@
 - **六端支持**：Android、iOS、macOS、Linux、Windows、Web
 - **原生渲染**：Android / iOS / macOS 使用 PlatformView；Linux / Windows 使用 Texture（libmpv）；Web 使用 HTML5 `<video>`
 - **多来源播放**：网络 URL、本地文件、Flutter asset（原生平台抽取到临时文件；Web / WASM 使用 Flutter 托管的 `assets/` URL）
-- **完整控制**：播放 / 暂停 / 跳转 / 音量 / 静音 / 倍速 / 亮度 / 画面适应模式 / 截图
+- **智能磁盘缓存**：默认开启全平台边播边存（Android Media3 `SimpleCache`、iOS/macOS `AVAssetResourceLoaderDelegate` 稀疏分片、Windows/Linux 本机 Range 代理分片、Web `Blob` LRU），同一视频二次播放零网络秒开，支持 `precache` 预加载、自定义 `cacheKey` 防盗链去重与 LRU 淘汰
+- **完整控制**：播放 / 暂停 / 跳转 / 音量 / 静音 / 倍速 / 亮度 / 画面适应模式 / 截图 / 双层缓冲进度条（`bufferedPercent`）
 - **无线投屏**：`VideoPlayer` 或 `showCastPicker()` / `stopCasting()` 调起系统选择器。Android 为 Google Cast；iOS、macOS 与 Safari 为 AirPlay
 - **内置 UI**：开箱即用的 `VideoPlayer`（带控件层）与纯画面 `CorePlayer`
 - **主题扩展**：通过 `ThemeData.extensions` 注册 `VideoPlayerTheme`
@@ -155,7 +157,7 @@ flutter pub get
 import 'package:xue_hua_navite_video_player/xue_hua_navite_video_player.dart';
 ```
 
-公开导出主要包括：`VideoSource`、`VideoPlayerController`、`VideoPlayer`、`CorePlayer`、`VideoPlayerTheme`、`PlayState`、`CastState`、`AspectRatioMode`、`SkipSecondType`、`VideoCoverFrame`、`NaviteFile`、`XueHuaNaviteVideoPlayer`、`PlayerScrubberSlider`、`VideoPlayerSlotContext`。
+公开导出主要包括：`VideoSource`、`VideoCacheConfig`、`VideoPlayerController`、`VideoPlayer`、`CorePlayer`、`LivePhotoPlayer`、`LivePhotoSource`、`VideoPlayerTheme`、`PlayState`、`CastState`、`AspectRatioMode`、`SkipSecondType`、`VideoCoverFrame`、`NaviteFile`、`XueHuaNaviteVideoPlayer`、`PlayerScrubberSlider`、`VideoPlayerSlotContext`。
 
 ---
 
@@ -324,14 +326,18 @@ class _MyAppState extends State<MyApp> {
 
 `VideoSource` 是密封类型，三种实现：
 
-| 类型                 | 工厂                       | 说明                                                      |
-| -------------------- | -------------------------- | --------------------------------------------------------- |
-| `NetworkVideoSource` | `VideoSource.network(url)` | HTTP(S) URL，原生直连                                     |
-| `FileVideoSource`    | `VideoSource.file(path)`   | 绝对路径或 `file://` URI                                  |
-| `AssetVideoSource`   | `VideoSource.asset(path)`  | Flutter asset；原生抽取到临时文件，Web 使用 `assets/` URL |
+| 类型                 | 工厂                                                                    | 说明                                                                |
+| -------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `NetworkVideoSource` | `VideoSource.network(url, {cacheKey, headers, enableCache})`            | HTTP(S) URL；默认开启边播边存缓存，支持签名去重 `cacheKey` 与请求头 |
+| `FileVideoSource`    | `VideoSource.file(path)`                                                | 绝对路径或 `file://` URI                                            |
+| `AssetVideoSource`   | `VideoSource.asset(path, {bundle})`                                     | Flutter asset；原生抽取到临时文件，Web 使用 `assets/` URL           |
 
 ```dart
-final network = VideoSource.network('https://example.com/a.mp4');
+final network = VideoSource.network(
+  'https://cdn.example.com/a.mp4?token=123',
+  cacheKey: 'video-a', // 签名防盗链 URL 轮换时仍命中同一份本地缓存
+  headers: const {'Authorization': 'Bearer xxx'},
+);
 final file = VideoSource.file('/absolute/path/to/movie.mp4');
 final asset = VideoSource.asset('assets/videos/intro.mp4');
 
@@ -347,7 +353,57 @@ flutter:
     - assets/videos/intro.mp4
 ```
 
-网络资源由原生播放器直接打开原始 URL。
+---
+
+## 媒体缓存（边播边存 · 二次秒开）
+
+插件**默认开启**跨平台网络媒体与动态照片缓存（默认总容量上限 `512 MiB`、单文件上限 `256 MiB`），业务侧无需修改任何 `playNetwork(url)` 调用即可自动获得**边播边存 + 二次零网络秒开**体验。
+
+| 平台 | 边播边存与命中机制 |
+| ---- | ------------------ |
+| Android | Media3 官方 `CacheDataSource` + `SimpleCache` + `LeastRecentlyUsedCacheEvictor`（零额外本地 Socket 开销） |
+| iOS / macOS | 完整缓存直走 `file://` 本地文件；未完成缓存走 `AVAssetResourceLoaderDelegate` 稀疏分片（仅拉取缺失 Range 区间并原子晋升为完整文件） |
+| Windows / Linux | 完整缓存直走 `file://` 本地文件；未完成缓存走 `127.0.0.1` HTTP `206` Range 回环代理与 `.seg` 稀疏分片 |
+| Web | CORS 允许时后台拉取 `Blob` 并托管内存 LRU `URL.createObjectURL`；受限时无感降级原生 `<video>` |
+
+- **直播 / 流媒体自动旁路**：`.m3u8`（HLS）、`.mpd`（DASH）或无 `Content-Length` 直播流自动旁路磁盘写入，不污染缓存空间。
+- **无线投屏隔离**：即使本地走 `file://` 或 `127.0.0.1` 缓存播放，向 Chromecast / AirPlay / Windows Cast 发起投屏时仍自动传递原始公网 `https://` 地址，确保电视端正常拉流。
+- **动态照片缓存复用**：单文件网络动态照片（`LivePhotoSource.network`）与配对实况照片的视频轨同样自动复用磁盘缓存，支持 `cacheKey` 与 `headers`。
+
+```dart
+// 1. 初始化或运行时调整全局缓存策略（可选，不调也默认开启 512 MiB）
+await XueHuaNaviteVideoPlayer.instance.initialize(
+  cacheConfig: VideoCacheConfig(
+    enabled: true,
+    maxCacheBytes: 1024 * 1024 * 1024, // 1 GiB
+    maxSingleFileBytes: 512 * 1024 * 1024, // 512 MiB
+    // 全局过滤签名 Query，使防盗链 URL 自动复用同一份缓存
+    cacheKeyBuilder: (uri) => uri.replace(query: '').toString(),
+  ),
+);
+
+// 2. 列表滑动预加载（首屏秒开：可只预取前 2 MiB，或不传 preloadBytes 预下载全片）
+final nextSource = VideoSource.network('https://example.com/feed_2.mp4');
+await XueHuaNaviteVideoPlayer.instance.precache(
+  nextSource,
+  preloadBytes: 2 * 1024 * 1024,
+);
+await XueHuaNaviteVideoPlayer.instance.cancelPrecache(nextSource);
+
+// 3. 查询与清理缓存（正在播放的活跃缓存会自动 Pin 保护，不被误删）
+final bool hit = await XueHuaNaviteVideoPlayer.instance.isCached(nextSource);
+final int totalBytes = await XueHuaNaviteVideoPlayer.instance.getCacheSize();
+await XueHuaNaviteVideoPlayer.instance.removeCache(nextSource);
+await XueHuaNaviteVideoPlayer.instance.clearCache();
+
+// 4. 单次播放临时禁用缓存或指定独立 cacheKey / headers
+await controller.playNetwork(
+  'https://example.com/live_replay.mp4',
+  cacheKey: 'replay-2026',
+  headers: const {'Referer': 'https://example.com'},
+  enableCache: true,
+);
+```
 
 ---
 
@@ -375,11 +431,11 @@ VideoPlayerController({
 
 ### 打开与播放
 
-| API                                            | 行为                                                                                   |
-| ---------------------------------------------- | -------------------------------------------------------------------------------------- |
-| `playNetwork(url)`                             | 打开网络源并开始播放                                                                   |
-| `openNetwork(url)`                             | 仅打开，不自动开播                                                                     |
-| `playFile(path)` / `openFile(path)`            | 本地文件                                                                               |
+| API                                                                 | 行为                                                                                   |
+| ------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `playNetwork(url, {cacheKey, headers, enableCache})`                | 打开网络源并开始播放（默认启用边播边存缓存）                                           |
+| `openNetwork(url, {cacheKey, headers, enableCache})`                | 仅打开，不自动开播                                                                     |
+| `playFile(path)` / `openFile(path)`                                 | 本地文件                                                                               |
 | `playAsset(path, {bundle})` / `openAsset(...)` | Flutter asset                                                                          |
 | `playSource(source)` / `openSource(source)`    | 通用入口                                                                               |
 | `play()` / `pause()` / `playOrPause()`         | 播放控制                                                                               |
@@ -443,6 +499,7 @@ final NaviteFile saved = await controller.takeSnapshot(savePath: '/tmp/frame.png
 | ----------------------- | ----------------- | ------------------------------------------------- |
 | `playState`             | `PlayState`       | 播放状态                                          |
 | `position` / `duration` | `Duration`        | 进度与总时长                                      |
+| `bufferedPosition`      | `Duration`        | 已缓冲到的媒体时间位置（本地/完整缓存命中为总长） |
 | `volume` / `speed`      | `double`          | 音量与倍速                                        |
 | `isBuffering`           | `bool`            | 是否缓冲中                                        |
 | `errorMessage`          | `String?`         | 错误信息                                          |
@@ -453,7 +510,8 @@ final NaviteFile saved = await controller.takeSnapshot(savePath: '/tmp/frame.png
 | `videoAspectRatio`      | `double`          | 考虑旋转后的宽高比                                |
 | `isVideo` / `isAudio`   | `bool`            | 根据 mime 推断                                    |
 | `isPlaying`             | `bool`            | 是否正在播放                                      |
-| `progressPercent`       | `double`          | 0.0 – 1.0                                         |
+| `progressPercent`       | `double`          | 0.0 – 1.0 播放进度比例                            |
+| `bufferedPercent`       | `double`          | 0.0 – 1.0 已缓冲进度比例（内置进度条双层轨道使用）|
 | `muted`                 | `bool`            | 是否静音                                          |
 | `skipSecondType`        | `SkipSecondType`  | 跳过步进                                          |
 | `aspectRatioMode`       | `AspectRatioMode` | 画面模式                                          |

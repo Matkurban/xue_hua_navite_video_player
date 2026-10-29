@@ -27,9 +27,17 @@ abstract class PlayerBackend {
 
   /// Opens [url] on the active session.
   ///
-  /// [castUrl] is an optional LAN HTTP URL (served by `LocalCastHttpServer`)
-  /// used by remote cast receivers when [url] is a local `file://` path.
-  Future<void> open(String url, {String? castUrl});
+  /// [castUrl] is an optional HTTP(S) URL used by remote cast receivers when
+  /// [url] is a local `file://` path, loopback proxy, or custom cache scheme.
+  /// [cacheKey], [headers], and [enableCache] forward media cache parameters to
+  /// native backends that manage disk caching directly.
+  Future<void> open(
+    String url, {
+    String? castUrl,
+    String? cacheKey,
+    Map<String, String>? headers,
+    bool? enableCache,
+  });
 
   Future<void> play();
 

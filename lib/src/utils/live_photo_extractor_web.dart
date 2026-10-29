@@ -5,6 +5,8 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/services.dart';
 import 'package:web/web.dart' as html;
 
+import '../cache/video_cache_manager.dart';
+import '../cache/video_cache_types.dart';
 import '../core/live_photo_source.dart';
 import '../core/video_source.dart';
 import '../data/enums/live_photo_format.dart';
@@ -182,14 +184,20 @@ class LivePhotoExtractor {
         }
         return null;
 
-      case NetworkVideoSource(:final url):
-        final bytes = await _fetchBytesOnWeb(url);
+      case NetworkVideoSource(:final url, :final headers, :final enableCache):
+        final cacheConfig = VideoCacheManager.instance.config;
+        final rawId = VideoCacheKeyUtils.resolveRawIdentity(source, cacheConfig);
+        final stableKey = 'net://$rawId';
+        if ((enableCache ?? cacheConfig.enabled) && _blobCache.containsKey(stableKey)) {
+          return _blobCache[stableKey];
+        }
+        final bytes = await _fetchBytesOnWeb(url, headers: headers);
         if (bytes == null) return null;
         final parsed = LivePhotoParser.parseBytes(bytes);
         if (parsed == null) return null;
         return _bundleFromParsed(
           parsed,
-          cacheKey: 'net://$url-${bytes.length}',
+          cacheKey: stableKey,
           presentationTimestampOverride: presentationTimestampOverride,
         );
 
@@ -257,7 +265,7 @@ class LivePhotoExtractor {
     }
   }
 
-  static Future<Uint8List?> _fetchBytesOnWeb(String url) async {
+  static Future<Uint8List?> _fetchBytesOnWeb(String url, {Map<String, String>? headers}) async {
     if (url.startsWith('data:')) {
       try {
         return UriData.parse(url).contentAsBytes();
@@ -266,7 +274,18 @@ class LivePhotoExtractor {
       }
     }
     try {
-      final response = await html.window.fetch(url.toJS).toDart;
+      final html.Response response;
+      if (headers != null && headers.isNotEmpty) {
+        final h = html.Headers();
+        headers.forEach((k, v) {
+          try {
+            h.append(k, v);
+          } catch (_) {}
+        });
+        response = await html.window.fetch(url.toJS, html.RequestInit(headers: h)).toDart;
+      } else {
+        response = await html.window.fetch(url.toJS).toDart;
+      }
       if (!response.ok) return null;
       final arrayBuffer = await response.arrayBuffer().toDart;
       return arrayBuffer.toDart.asUint8List();

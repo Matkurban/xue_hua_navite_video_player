@@ -38,6 +38,7 @@ struct CoverFrame {
 class MpvPlayer {
  public:
   using PositionCb = std::function<void(int64_t ms)>;
+  using BufferedCb = std::function<void(int64_t ms)>;
   using DurationCb = std::function<void(int64_t ms)>;
   using PlayingCb = std::function<void(bool playing)>;
   using BufferingCb = std::function<void(bool buffering)>;
@@ -98,6 +99,7 @@ class MpvPlayer {
                                std::string* error = nullptr);
 
   void SetOnPosition(PositionCb cb) { on_position_ = std::move(cb); }
+  void SetOnBuffered(BufferedCb cb) { on_buffered_ = std::move(cb); }
   void SetOnDuration(DurationCb cb) { on_duration_ = std::move(cb); }
   void SetOnPlaying(PlayingCb cb) { on_playing_ = std::move(cb); }
   void SetOnBuffering(BufferingCb cb) { on_buffering_ = std::move(cb); }
@@ -152,6 +154,7 @@ class MpvPlayer {
   void EmitBuffering();
 
   PositionCb on_position_;
+  BufferedCb on_buffered_;
   DurationCb on_duration_;
   PlayingCb on_playing_;
   BufferingCb on_buffering_;

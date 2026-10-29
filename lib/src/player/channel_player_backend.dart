@@ -128,8 +128,20 @@ class ChannelPlayerBackend implements PlayerBackend {
   }
 
   @override
-  Future<void> open(String url, {String? castUrl}) async {
-    await _methodChannel.invokeMethod('open', {'url': url, 'castUrl': ?castUrl});
+  Future<void> open(
+    String url, {
+    String? castUrl,
+    String? cacheKey,
+    Map<String, String>? headers,
+    bool? enableCache,
+  }) async {
+    await _methodChannel.invokeMethod('open', {
+      'url': url,
+      'castUrl': ?castUrl,
+      'cacheKey': ?cacheKey,
+      'headers': ?headers,
+      'enableCache': ?enableCache,
+    });
   }
 
   @override

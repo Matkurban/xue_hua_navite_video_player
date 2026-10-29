@@ -613,7 +613,13 @@ class _FakePlayerBackend implements PlayerBackend {
   }
 
   @override
-  Future<void> open(String url, {String? castUrl}) async {
+  Future<void> open(
+    String url, {
+    String? castUrl,
+    String? cacheKey,
+    Map<String, String>? headers,
+    bool? enableCache,
+  }) async {
     lastOpenedUrl = url;
   }
 

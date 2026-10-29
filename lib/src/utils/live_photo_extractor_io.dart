@@ -1,10 +1,13 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter/services.dart';
 
+import '../cache/video_cache_manager.dart';
+import '../cache/video_cache_types.dart';
 import '../core/live_photo_source.dart';
 import '../core/video_source.dart';
 import '../data/enums/live_photo_format.dart';
@@ -188,8 +191,8 @@ class LivePhotoExtractor {
       case AssetVideoSource(:final assetPath, :final bundle):
         final data = await (bundle ?? rootBundle).load(assetPath);
         return data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
-      case NetworkVideoSource(:final url):
-        return _downloadNetworkBytes(url);
+      case NetworkVideoSource(:final url, :final headers):
+        return _downloadNetworkBytes(url, headers: headers);
       case LivePhotoVideoSource(:final livePhoto):
         final bundle = await resolve(livePhoto);
         final img = bundle.imageFile;
@@ -306,14 +309,31 @@ class LivePhotoExtractor {
         }
         return null;
 
-      case NetworkVideoSource(:final url):
-        final bytes = await _downloadNetworkBytes(url);
+      case NetworkVideoSource(:final url, :final headers, :final enableCache):
+        final cacheConfig = VideoCacheManager.instance.config;
+        final shouldCache = (enableCache ?? cacheConfig.enabled) && cacheConfig.maxCacheBytes > 0;
+        final rawId = VideoCacheKeyUtils.resolveRawIdentity(source, cacheConfig);
+        final netPrefix = 'net-${sha1.convert(utf8.encode('net://$rawId'))}';
+
+        if (shouldCache) {
+          final cachedBundle = await _tryReadCachedNetworkMotionPhoto(
+            prefix: netPrefix,
+            presentationTimestampOverride: presentationTimestampOverride,
+          );
+          if (cachedBundle != null) {
+            return cachedBundle;
+          }
+        }
+
+        final bytes = await _downloadNetworkBytes(url, headers: headers);
         if (bytes == null) return null;
         final parsed = LivePhotoParser.parseBytes(bytes);
         if (parsed == null) return null;
         return _materializeParsedBytes(
           parsed: parsed,
-          cacheKeySeed: 'net://$url-${bytes.length}',
+          cacheKeySeed: 'net://$rawId',
+          explicitHashPrefix: shouldCache ? netPrefix : null,
+          persistMetaJson: shouldCache,
           presentationTimestampOverride: presentationTimestampOverride,
         );
     }
@@ -434,10 +454,12 @@ class LivePhotoExtractor {
   static Future<LivePhotoBundle> _materializeParsedBytes({
     required ParsedMotionPhotoBytes parsed,
     required String cacheKeySeed,
+    String? explicitHashPrefix,
+    bool persistMetaJson = false,
     Duration? presentationTimestampOverride,
   }) async {
     final outDir = await pluginLivePhotoDir();
-    final hash = sha1.convert(cacheKeySeed.codeUnits).toString();
+    final hash = explicitHashPrefix ?? sha1.convert(utf8.encode(cacheKeySeed)).toString();
     final imgExt = _imageExtFromMime(parsed.imageMimeType);
     final vidExt = parsed.videoMimeType == 'video/quicktime' ? 'mov' : 'mp4';
 
@@ -446,6 +468,23 @@ class LivePhotoExtractor {
 
     await _writeAtomicallyIfMissing(imgPath, parsed.imageBytes);
     await _writeAtomicallyIfMissing(vidPath, parsed.videoBytes);
+
+    if (persistMetaJson) {
+      final metaJson = jsonEncode(<String, dynamic>{
+        'imgExt': imgExt,
+        'vidExt': vidExt,
+        'imageMimeType': parsed.imageMimeType,
+        'format': parsed.metadata.format.name,
+        'videoOffset': parsed.metadata.videoOffset,
+        'videoLength': parsed.metadata.videoLength,
+        'presentationTimestampUs': parsed.metadata.presentationTimestamp?.inMicroseconds,
+        'contentIdentifier': parsed.metadata.contentIdentifier,
+      });
+      await _writeAtomicallyIfMissing(
+        '$outDir/$hash-meta.json',
+        Uint8List.fromList(utf8.encode(metaJson)),
+      );
+    }
 
     final imageFile = NaviteFile.fromLocation(imgPath, mimeType: parsed.imageMimeType);
     final imageSource = VideoSource.file(imgPath);
@@ -467,6 +506,52 @@ class LivePhotoExtractor {
       nativeVideoUrl: Uri.file(vidPath).toString(),
       metadata: metadata,
     );
+  }
+
+  static Future<LivePhotoBundle?> _tryReadCachedNetworkMotionPhoto({
+    required String prefix,
+    Duration? presentationTimestampOverride,
+  }) async {
+    try {
+      final outDir = await pluginLivePhotoDir();
+      final metaFile = File('$outDir/$prefix-meta.json');
+      if (!await metaFile.exists()) return null;
+
+      final decoded = jsonDecode(await metaFile.readAsString());
+      if (decoded is! Map<String, dynamic>) return null;
+
+      final imgExt = (decoded['imgExt'] as String?) ?? 'jpg';
+      final vidExt = (decoded['vidExt'] as String?) ?? 'mp4';
+      final imageMimeType = (decoded['imageMimeType'] as String?) ?? 'image/jpeg';
+      final formatName = decoded['format'] as String?;
+
+      final imgPath = '$outDir/$prefix-cover.$imgExt';
+      final vidPath = '$outDir/$prefix-motion.$vidExt';
+      final imgFile = File(imgPath);
+      final vidFile = File(vidPath);
+      if (!await imgFile.exists() || !await vidFile.exists()) return null;
+      if (await imgFile.length() <= 0 || await vidFile.length() <= 0) return null;
+
+      final format = LivePhotoFormat.fromWire(formatName);
+      final storedPtsUs = (decoded['presentationTimestampUs'] as num?)?.toInt();
+      final storedPts = storedPtsUs != null ? Duration(microseconds: storedPtsUs) : null;
+
+      return LivePhotoBundle(
+        imageFile: NaviteFile.fromLocation(imgPath, mimeType: imageMimeType),
+        imageSource: VideoSource.file(imgPath),
+        videoSource: VideoSource.file(vidPath),
+        nativeVideoUrl: Uri.file(vidPath).toString(),
+        metadata: LivePhotoMetadata(
+          format: format,
+          videoOffset: (decoded['videoOffset'] as num?)?.toInt(),
+          videoLength: (decoded['videoLength'] as num?)?.toInt(),
+          presentationTimestamp: presentationTimestampOverride ?? storedPts,
+          contentIdentifier: decoded['contentIdentifier'] as String?,
+        ),
+      );
+    } catch (_) {
+      return null;
+    }
   }
 
   static Future<void> _writeAtomicallyIfMissing(String targetPath, Uint8List bytes) async {
@@ -505,12 +590,18 @@ class LivePhotoExtractor {
     }
   }
 
-  static Future<Uint8List?> _downloadNetworkBytes(String url) async {
+  static Future<Uint8List?> _downloadNetworkBytes(
+    String url, {
+    Map<String, String>? headers,
+  }) async {
     final uri = Uri.tryParse(url);
     if (uri == null) return null;
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 15);
     try {
       final req = await client.getUrl(uri);
+      headers?.forEach((k, v) {
+        req.headers.set(k, v);
+      });
       final res = await req.close().timeout(const Duration(seconds: 20));
       if (res.statusCode != HttpStatus.ok) return null;
       final builder = BytesBuilder(copy: false);

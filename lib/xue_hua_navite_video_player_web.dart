@@ -138,6 +138,19 @@ class XueHuaNaviteVideoPlayerWeb {
       case 'setWindowFullscreen':
         // Browser fullscreen is applied from Dart via the Fullscreen API.
         return null;
+      case 'configureCache':
+      case 'precache':
+      case 'cancelPrecache':
+      case 'removeCache':
+      case 'clearCache':
+      case 'pinCacheKey':
+      case 'unpinCacheKey':
+        // Web cache lifecycle is managed in Dart via PlatformVideoCacheEngine (web).
+        return null;
+      case 'isCached':
+        return false;
+      case 'getCacheSize':
+        return 0;
       case 'getPlatformVersion':
         return 'Web';
       default:
@@ -271,10 +284,29 @@ class XueHuaNaviteVideoPlayerWeb {
       'canplay',
       ((html.Event e) {
         _sendEvent('buffering', false);
+        _emitBuffered(video);
+      }).toJS,
+    );
+
+    video.addEventListener(
+      'progress',
+      ((html.Event e) {
+        _emitBuffered(video);
       }).toJS,
     );
 
     _remotePlayback.attach(video);
+  }
+
+  void _emitBuffered(html.HTMLVideoElement video) {
+    try {
+      final ranges = video.buffered;
+      if (ranges.length <= 0) return;
+      final endSeconds = ranges.end(ranges.length - 1);
+      if (endSeconds.isFinite && endSeconds >= 0) {
+        _sendEvent('buffered', (endSeconds * 1000).round());
+      }
+    } catch (_) {}
   }
 
   void _open(String url) {
@@ -296,9 +328,11 @@ class XueHuaNaviteVideoPlayerWeb {
   void _startPositionTimer() {
     _stopPositionTimer();
     _positionTimer = Timer.periodic(const Duration(milliseconds: 200), (_) {
-      if (_videoElement != null) {
-        final ms = (_videoElement!.currentTime * 1000).toInt();
+      final video = _videoElement;
+      if (video != null) {
+        final ms = (video.currentTime * 1000).toInt();
         _sendEvent('position', ms);
+        _emitBuffered(video);
       }
     });
   }

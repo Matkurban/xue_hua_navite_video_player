@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:signals_flutter/signals_flutter.dart';
 
+import '../cache/video_cache_manager.dart';
 import '../core/live_photo_source.dart';
 import '../core/video_source.dart';
 import '../data/enums/aspect_ratio_mode.dart';
@@ -39,6 +40,7 @@ class PlaybackSession {
   final FullscreenCoordinator _fullscreen;
   final BrightnessController _brightness;
   final LocalCastHttpServer _localCastServer;
+  final VideoCacheManager? _cacheManager;
   final PlaybackSessionState _state = PlaybackSessionState();
 
   StreamSubscription<PlayerEvent>? _eventSubscription;
@@ -55,7 +57,10 @@ class PlaybackSession {
   bool _hasReceivedMetadata = false;
   bool _backendPlaying = false;
   bool _backendBuffering = false;
+  bool _isCompleteLocalOrCachedMedia = false;
   Duration _backendDuration = Duration.zero;
+  Duration _backendBufferedPosition = Duration.zero;
+  String? _pinnedCacheKey;
   double _volumeBeforeMute = 1.0;
 
   /// After [seek], ignore native position events that are still far from the
@@ -70,6 +75,7 @@ class PlaybackSession {
 
   FlutterSignal<PlayState> get playState => _state.playState;
   FlutterSignal<Duration> get position => _state.position;
+  FlutterSignal<Duration> get bufferedPosition => _state.bufferedPosition;
   FlutterSignal<Duration> get duration => _state.duration;
   FlutterSignal<double> get volume => _state.volume;
   FlutterSignal<double> get speed => _state.speed;
@@ -97,6 +103,7 @@ class PlaybackSession {
   FlutterComputed<bool> get isAudio => _state.isAudio;
   FlutterComputed<bool> get isPlaying => _state.isPlaying;
   FlutterComputed<double> get progressPercent => _state.progressPercent;
+  FlutterComputed<double> get bufferedPercent => _state.bufferedPercent;
   FlutterComputed<bool> get isCastSupported => _state.isCastSupported;
   FlutterComputed<bool> get isCasting => _state.isCasting;
 
@@ -105,10 +112,16 @@ class PlaybackSession {
     FullscreenCoordinator? fullscreen,
     BrightnessController? brightness,
     LocalCastHttpServer? localCastServer,
+    VideoCacheManager? cacheManager,
   }) : _backend = backend ?? ChannelPlayerBackend(),
        _fullscreen = fullscreen ?? SystemChromeFullscreenCoordinator(),
        _brightness = brightness ?? ChannelBrightnessController(),
-       _localCastServer = localCastServer ?? LocalCastHttpServer() {
+       _localCastServer = localCastServer ?? LocalCastHttpServer(),
+       _cacheManager =
+           cacheManager ??
+           (backend == null || backend is ChannelPlayerBackend
+               ? VideoCacheManager.instance
+               : null) {
     _fullscreenExternalSub = _fullscreen.externalChanges.listen(_onExternalFullscreen);
   }
 
@@ -194,6 +207,17 @@ class PlaybackSession {
           }
           this.position.value = position;
         }
+      case PlayerBufferedEvent(:final bufferedPosition):
+        if (playState.value != PlayState.error) {
+          _backendBufferedPosition = bufferedPosition;
+          if (_hasReadySinceOpen) {
+            if (_isCompleteLocalOrCachedMedia && duration.value > bufferedPosition) {
+              this.bufferedPosition.value = duration.value;
+            } else {
+              this.bufferedPosition.value = bufferedPosition;
+            }
+          }
+        }
       case PlayerDurationEvent(:final duration):
         _handleDurationEvent(duration);
       case PlayerBufferingEvent(:final buffering):
@@ -276,6 +300,9 @@ class PlaybackSession {
     }
     if (_hasReadySinceOpen) {
       duration.value = reportedDuration;
+      if (_isCompleteLocalOrCachedMedia && reportedDuration > bufferedPosition.value) {
+        bufferedPosition.value = reportedDuration;
+      }
     }
   }
 
@@ -297,6 +324,12 @@ class PlaybackSession {
 
     if (_backendDuration > Duration.zero) {
       duration.value = _backendDuration;
+      if (_isCompleteLocalOrCachedMedia) {
+        bufferedPosition.value = _backendDuration;
+      }
+    }
+    if (_backendBufferedPosition > bufferedPosition.value) {
+      bufferedPosition.value = _backendBufferedPosition;
     }
     isBuffering.value = _backendBuffering;
 
@@ -305,9 +338,25 @@ class PlaybackSession {
     }
   }
 
-  Future<void> playNetwork(String url) => openSource(VideoSource.network(url), autoPlay: true);
+  Future<void> playNetwork(
+    String url, {
+    String? cacheKey,
+    Map<String, String>? headers,
+    bool? enableCache,
+  }) => openSource(
+    VideoSource.network(url, cacheKey: cacheKey, headers: headers, enableCache: enableCache),
+    autoPlay: true,
+  );
 
-  Future<void> openNetwork(String url) => openSource(VideoSource.network(url), autoPlay: false);
+  Future<void> openNetwork(
+    String url, {
+    String? cacheKey,
+    Map<String, String>? headers,
+    bool? enableCache,
+  }) => openSource(
+    VideoSource.network(url, cacheKey: cacheKey, headers: headers, enableCache: enableCache),
+    autoPlay: false,
+  );
 
   Future<void> playFile(String path) => openSource(VideoSource.file(path), autoPlay: true);
 
@@ -349,13 +398,13 @@ class PlaybackSession {
 
       LivePhotoBundle? resolvedBundle;
       String mediaUrl;
-      VideoSource effectiveCastSource = source;
+      VideoSource effectiveMediaSource = source;
 
       if (source is LivePhotoVideoSource) {
         resolvedBundle = await LivePhotoExtractor.resolve(source.livePhoto);
         if (_disposed || epoch != _openEpoch) return;
         livePhotoBundle.value = resolvedBundle;
-        effectiveCastSource = resolvedBundle.videoSource;
+        effectiveMediaSource = resolvedBundle.videoSource;
         mediaUrl = resolvedBundle.nativeVideoUrl;
         final detectedVideoMime = MimeDetector.detect(mediaUrl);
         mimeType.value = detectedVideoMime == 'application/octet-stream'
@@ -367,7 +416,7 @@ class PlaybackSession {
         if (_disposed || epoch != _openEpoch) return;
         if (resolvedBundle != null) {
           livePhotoBundle.value = resolvedBundle;
-          effectiveCastSource = resolvedBundle.videoSource;
+          effectiveMediaSource = resolvedBundle.videoSource;
           mediaUrl = resolvedBundle.nativeVideoUrl;
           final detectedVideoMime = MimeDetector.detect(mediaUrl);
           mimeType.value = detectedVideoMime == 'application/octet-stream'
@@ -383,10 +432,49 @@ class PlaybackSession {
       }
       if (_disposed || epoch != _openEpoch) return;
 
-      final castUrl = await _resolveCastUrl(effectiveCastSource, mediaUrl);
-      if (_disposed || epoch != _openEpoch) return;
+      String? castUrl;
+      String? cacheKey;
+      Map<String, String>? headers;
+      bool? enableCache;
 
-      await _backend.open(mediaUrl, castUrl: castUrl);
+      if (effectiveMediaSource is NetworkVideoSource) {
+        await _stopLocalCastServerQuietly();
+        final cacheMgr = _cacheManager;
+        if (cacheMgr != null) {
+          final cacheTarget = await cacheMgr.resolveForPlayback(effectiveMediaSource);
+          if (_disposed || epoch != _openEpoch) return;
+          mediaUrl = cacheTarget.playUrl;
+          castUrl = cacheTarget.castUrl;
+          cacheKey = cacheTarget.cacheKey;
+          headers = cacheTarget.headers;
+          enableCache = cacheTarget.enableCache;
+          _isCompleteLocalOrCachedMedia =
+              cacheTarget.isCompleteFileHit || mediaUrl.startsWith('file://');
+          if (cacheKey != null && cacheKey.isNotEmpty) {
+            _pinnedCacheKey = cacheKey;
+            cacheMgr.pin(cacheKey);
+          }
+        } else {
+          mediaUrl = await effectiveMediaSource.resolveToNativeUrl();
+          castUrl = effectiveMediaSource.url;
+          cacheKey = effectiveMediaSource.cacheKey;
+          headers = effectiveMediaSource.headers;
+          enableCache = effectiveMediaSource.enableCache;
+          _isCompleteLocalOrCachedMedia = false;
+        }
+      } else {
+        _isCompleteLocalOrCachedMedia = mediaUrl.startsWith('file://');
+        castUrl = await _resolveCastUrl(effectiveMediaSource, mediaUrl);
+        if (_disposed || epoch != _openEpoch) return;
+      }
+
+      await _backend.open(
+        mediaUrl,
+        castUrl: castUrl,
+        cacheKey: cacheKey,
+        headers: headers,
+        enableCache: enableCache,
+      );
       if (_disposed || epoch != _openEpoch) return;
       _activeEventEpoch = epoch;
       _scheduleReadyFallback(epoch);
@@ -419,6 +507,20 @@ class PlaybackSession {
       // Never allow local cast HTTP server setup to block normal video playback.
     }
     return null;
+  }
+
+  Future<void> _stopLocalCastServerQuietly() async {
+    try {
+      await _localCastServer.stop();
+    } catch (_) {}
+  }
+
+  void _releasePinnedCacheKey() {
+    final key = _pinnedCacheKey;
+    if (key != null) {
+      _pinnedCacheKey = null;
+      _cacheManager?.unpin(key);
+    }
   }
 
   Future<void> play() async {
@@ -618,6 +720,7 @@ class PlaybackSession {
     // fullscreen exit / backend teardown (Widget.dispose cannot await).
     _disposed = true;
     _openEpoch++;
+    _releasePinnedCacheKey();
     _releaseNativeSession();
     if (isFullscreen.value) {
       try {
@@ -649,6 +752,7 @@ class PlaybackSession {
   }
 
   void reset() {
+    _releasePinnedCacheKey();
     _readyFallbackTimer?.cancel();
     _readyFallbackTimer = null;
     _hasPlayedSinceOpen = false;
@@ -656,7 +760,9 @@ class PlaybackSession {
     _hasReceivedMetadata = false;
     _backendPlaying = false;
     _backendBuffering = false;
+    _isCompleteLocalOrCachedMedia = false;
     _backendDuration = Duration.zero;
+    _backendBufferedPosition = Duration.zero;
     _state.resetMediaSignals();
   }
 }

@@ -21,7 +21,7 @@ sealed class VideoSource {
 
 ### Factories
 
-- `const factory VideoSource.network(String url) = NetworkVideoSource`
+- `const factory VideoSource.network(String url, {String? cacheKey, Map<String, String>? headers, bool? enableCache}) = NetworkVideoSource`
 - `const factory VideoSource.file(String path) = FileVideoSource`
 - `const factory VideoSource.asset(String assetPath, {AssetBundle? bundle}) = AssetVideoSource`
 
@@ -29,18 +29,29 @@ sealed class VideoSource {
 
 ```dart
 class NetworkVideoSource extends VideoSource {
-  const NetworkVideoSource(this.url);
+  const NetworkVideoSource(
+    this.url, {
+    this.cacheKey,
+    this.headers,
+    this.enableCache,
+  });
   final String url;
+  final String? cacheKey;
+  final Map<String, String>? headers;
+  final bool? enableCache;
 }
 ```
 
 | Member | Behavior |
 |--------|----------|
 | `url` | Original HTTP(S) URL. |
-| `identity` | Same as `url`. |
+| `cacheKey` | Optional logical cache key (for example to deduplicate rotating signed query tokens). |
+| `headers` | Optional custom HTTP request headers forwarded to native/proxy/precache requests. |
+| `enableCache` | Optional per-source override; `null` inherits `VideoCacheConfig.enabled` (`true` by default). |
+| `identity` | `cacheKey` when non-empty; otherwise `url`. |
 | `isNetwork` | `true`. |
-| `resolveToNativeUrl()` | Returns `url` unchanged. Native player opens it directly. |
-| `==` / `hashCode` | Equal when `url` matches. |
+| `resolveToNativeUrl()` | Returns `url` unchanged (`PlaybackSession` and `MediaProbe` resolve cache targets automatically). |
+| `==` / `hashCode` | Equal when `url`, `cacheKey`, `enableCache`, and `headers` match. |
 
 ## `FileVideoSource`
 

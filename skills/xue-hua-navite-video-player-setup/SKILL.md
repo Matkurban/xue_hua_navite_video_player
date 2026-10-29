@@ -23,7 +23,8 @@ Cast: [xue-hua-navite-video-player-cast](../xue-hua-navite-video-player-cast/SKI
 
 - Add `xue_hua_navite_video_player: ^2.6.0` and run `flutter pub get`.
 - Call `WidgetsFlutterBinding.ensureInitialized()` before any plugin work.
-- `XueHuaNaviteVideoPlayer.instance.initialize()` is optional, idempotent, and does **not** create the native player. It only ensures the binding and sets `isInitialized`.
+- `XueHuaNaviteVideoPlayer.instance.initialize({VideoCacheConfig? cacheConfig})` is optional, idempotent, and does **not** create the native player. It ensures the binding, optionally applies `cacheConfig`, and sets `isInitialized`.
+- On-disk media caching is **enabled by default** (`maxCacheBytes = 512 MiB`, `maxSingleFileBytes = 256 MiB`). Update cache limits at any time via `XueHuaNaviteVideoPlayer.instance.configureCache(VideoCacheConfig(...))`.
 - `VideoPlayerController.initialize()` creates the native session and subscribes to events. Call it once per controller lifetime, before `open*` / `play*`.
 - After `VideoPlayerController.dispose()`, that instance is unusable. Create a new controller and `initialize()` again.
 - The plugin hosts **one** native player behind process-wide channels. A second `VideoPlayerController.initialize()` while another native session is live throws `StateError`. Dispose the previous controller first.

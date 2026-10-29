@@ -651,6 +651,9 @@ class _FakePlayerBackend implements PlayerBackend {
 
   String? lastOpenedUrl;
   String? lastCastUrl;
+  String? lastCacheKey;
+  Map<String, String>? lastHeaders;
+  bool? lastEnableCache;
   double? lastVolume;
   double? lastSpeed;
   int? lastSeekMs;
@@ -674,12 +677,21 @@ class _FakePlayerBackend implements PlayerBackend {
   }
 
   @override
-  Future<void> open(String url, {String? castUrl}) async {
+  Future<void> open(
+    String url, {
+    String? castUrl,
+    String? cacheKey,
+    Map<String, String>? headers,
+    bool? enableCache,
+  }) async {
     if (openDelay != null) {
       await Future<void>.delayed(openDelay!);
     }
     lastOpenedUrl = url;
     lastCastUrl = castUrl;
+    lastCacheKey = cacheKey;
+    lastHeaders = headers;
+    lastEnableCache = enableCache;
   }
 
   @override

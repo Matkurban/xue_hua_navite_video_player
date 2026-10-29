@@ -20,13 +20,40 @@ Probe work shares the player MethodChannel (`xue_hua_navite_video_player/player`
 
 `true` after a successful plugin `initialize()`, `false` after plugin `dispose()` or before the first initialize.
 
-### `Future<void> initialize()`
+### `Future<void> initialize({VideoCacheConfig? cacheConfig})`
 
 Idempotent binding helper:
 
-- If already initialized, returns an already-completed future.
-- Otherwise calls `WidgetsFlutterBinding.ensureInitialized()` and sets `isInitialized`.
+- Ensures `WidgetsFlutterBinding.ensureInitialized()` and sets `isInitialized`.
+- When `cacheConfig` is provided, applies it via `configureCache(cacheConfig)` (even if already initialized).
 - Does **not** create the native player session. That is `VideoPlayerController.initialize()`.
+
+### Media cache APIs (`VideoCacheConfig`)
+
+On-disk media caching is enabled by default (`maxCacheBytes = 512 * 1024 * 1024`, `maxSingleFileBytes = 256 * 1024 * 1024`).
+
+```dart
+class VideoCacheConfig {
+  const VideoCacheConfig({
+    this.enabled = true,
+    this.maxCacheBytes = 512 * 1024 * 1024,
+    this.maxSingleFileBytes = 256 * 1024 * 1024,
+    this.cacheDirectory,
+    this.cacheKeyBuilder,
+  });
+}
+```
+
+Methods on `XueHuaNaviteVideoPlayer.instance`:
+
+- `VideoCacheConfig get cacheConfig`
+- `Future<void> configureCache(VideoCacheConfig config)`
+- `Future<void> precache(VideoSource source, {int? preloadBytes})` — preloads head bytes (`preloadBytes`) or the full file (`preloadBytes == null`) for `NetworkVideoSource`.
+- `Future<void> cancelPrecache(VideoSource source)`
+- `Future<bool> isCached(VideoSource source)` — `true` when 100% cached on disk (or local/asset).
+- `Future<int> getCacheSize()` — total disk cache bytes across complete files and sparse `.part` segments.
+- `Future<void> removeCache(VideoSource source)`
+- `Future<void> clearCache()` — clears unpinned cache entries while preserving any entry currently pinned by active playback.
 
 ### `Future<void> dispose()`
 

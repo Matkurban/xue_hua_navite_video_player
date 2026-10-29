@@ -46,7 +46,12 @@ sealed class VideoSource {
 
   /// 快速构造一个网络来源。
   /// Shortcut for a network URL.
-  const factory VideoSource.network(String url) = NetworkVideoSource;
+  const factory VideoSource.network(
+    String url, {
+    String? cacheKey,
+    Map<String, String>? headers,
+    bool? enableCache,
+  }) = NetworkVideoSource;
 
   /// 快速构造一个本地文件来源。
   /// Shortcut for a local file path / URI.
@@ -61,14 +66,26 @@ sealed class VideoSource {
   const factory VideoSource.livePhoto(LivePhotoSource livePhoto) = LivePhotoVideoSource;
 }
 
-/// 网络来源，由原生播放器直连。
-/// Network-backed media source, opened directly by the native player.
+/// 网络来源，由原生播放器直连（或通过本地缓存层透明加速）。
+/// Network-backed media source, opened by the native player (with optional transparent disk cache).
 class NetworkVideoSource extends VideoSource {
   /// 原始网络地址。
   /// Original network URL.
   final String url;
 
-  const NetworkVideoSource(this.url);
+  /// 可选稳定缓存键（如带动态签名的 OSS/S3 URL 可传入不随签名变化的资源 ID）。
+  /// Optional stable cache key overriding the raw URL for disk cache lookup.
+  final String? cacheKey;
+
+  /// 可选自定义 HTTP 请求头（如 `Authorization`、`Referer`、`Cookie`）。
+  /// Optional custom HTTP request headers forwarded when fetching or streaming media.
+  final Map<String, String>? headers;
+
+  /// 单源缓存开关；为 `null` 时继承全局 [VideoCacheConfig.enabled] 配置。
+  /// Per-source cache override; when `null`, inherits the global cache setting.
+  final bool? enableCache;
+
+  const NetworkVideoSource(this.url, {this.cacheKey, this.headers, this.enableCache});
 
   @override
   String get identity => url;
@@ -81,10 +98,22 @@ class NetworkVideoSource extends VideoSource {
 
   @override
   bool operator ==(Object other) =>
-      identical(this, other) || other is NetworkVideoSource && other.url == url;
+      identical(this, other) ||
+      other is NetworkVideoSource &&
+          other.url == url &&
+          other.cacheKey == cacheKey &&
+          other.enableCache == enableCache &&
+          mapEquals(other.headers, headers);
 
   @override
-  int get hashCode => url.hashCode;
+  int get hashCode => Object.hash(
+    url,
+    cacheKey,
+    enableCache,
+    headers == null
+        ? null
+        : Object.hashAllUnordered(headers!.entries.map((e) => Object.hash(e.key, e.value))),
+  );
 }
 
 /// 本地文件来源（绝对路径或 `file://` URI）。

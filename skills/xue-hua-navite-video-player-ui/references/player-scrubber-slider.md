@@ -65,6 +65,7 @@ SignalBuilder(
         : 0.0;
     return PlayerScrubberSlider(
       value: progress,
+      bufferedValue: controller.bufferedPercent.value,
       onChangeEnd: hasDuration
           ? (v) {
               controller.seek(

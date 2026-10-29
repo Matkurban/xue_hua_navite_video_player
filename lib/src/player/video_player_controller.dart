@@ -1,6 +1,7 @@
 import 'package:flutter/services.dart';
 import 'package:signals_flutter/signals_flutter.dart';
 
+import '../cache/video_cache_manager.dart';
 import '../core/live_photo_source.dart';
 import '../core/video_source.dart';
 import '../data/enums/aspect_ratio_mode.dart';
@@ -26,17 +27,20 @@ class VideoPlayerController {
     FullscreenCoordinator? fullscreen,
     BrightnessController? brightness,
     LocalCastHttpServer? localCastServer,
+    VideoCacheManager? cacheManager,
   }) : _session = PlaybackSession(
          backend: backend,
          fullscreen: fullscreen,
          brightness: brightness,
          localCastServer: localCastServer,
+         cacheManager: cacheManager,
        );
 
   final PlaybackSession _session;
 
   FlutterSignal<PlayState> get playState => _session.playState;
   FlutterSignal<Duration> get position => _session.position;
+  FlutterSignal<Duration> get bufferedPosition => _session.bufferedPosition;
   FlutterSignal<Duration> get duration => _session.duration;
   FlutterSignal<double> get volume => _session.volume;
   FlutterSignal<double> get speed => _session.speed;
@@ -51,6 +55,7 @@ class VideoPlayerController {
   FlutterComputed<bool> get isAudio => _session.isAudio;
   FlutterComputed<bool> get isPlaying => _session.isPlaying;
   FlutterComputed<double> get progressPercent => _session.progressPercent;
+  FlutterComputed<double> get bufferedPercent => _session.bufferedPercent;
 
   FlutterSignal<bool> get muted => _session.muted;
   FlutterSignal<bool> get isLooping => _session.isLooping;
@@ -87,9 +92,19 @@ class VideoPlayerController {
 
   Future<void> initialize() => _session.initialize();
 
-  Future<void> playNetwork(String url) => _session.playNetwork(url);
+  Future<void> playNetwork(
+    String url, {
+    String? cacheKey,
+    Map<String, String>? headers,
+    bool? enableCache,
+  }) => _session.playNetwork(url, cacheKey: cacheKey, headers: headers, enableCache: enableCache);
 
-  Future<void> openNetwork(String url) => _session.openNetwork(url);
+  Future<void> openNetwork(
+    String url, {
+    String? cacheKey,
+    Map<String, String>? headers,
+    bool? enableCache,
+  }) => _session.openNetwork(url, cacheKey: cacheKey, headers: headers, enableCache: enableCache);
 
   Future<void> playFile(String path) => _session.playFile(path);
 

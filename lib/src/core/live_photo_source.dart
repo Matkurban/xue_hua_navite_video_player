@@ -64,16 +64,30 @@ sealed class LivePhotoSource {
     required String imageUrl,
     String? videoUrl,
     Duration? presentationTimestamp,
+    String? cacheKey,
+    String? videoCacheKey,
+    Map<String, String>? headers,
+    bool? enableCache,
   }) {
     if (videoUrl != null && videoUrl.isNotEmpty) {
       return PairedLivePhotoSource(
-        image: VideoSource.network(imageUrl),
-        video: VideoSource.network(videoUrl),
+        image: VideoSource.network(
+          imageUrl,
+          cacheKey: cacheKey,
+          headers: headers,
+          enableCache: enableCache,
+        ),
+        video: VideoSource.network(
+          videoUrl,
+          cacheKey: videoCacheKey,
+          headers: headers,
+          enableCache: enableCache,
+        ),
         presentationTimestamp: presentationTimestamp,
       );
     }
     return SingleFileLivePhotoSource(
-      VideoSource.network(imageUrl),
+      VideoSource.network(imageUrl, cacheKey: cacheKey, headers: headers, enableCache: enableCache),
       presentationTimestamp: presentationTimestamp,
     );
   }

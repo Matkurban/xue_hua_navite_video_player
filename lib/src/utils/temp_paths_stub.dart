@@ -6,6 +6,9 @@ Future<String> pluginCoverDir() async => '';
 /// Web / WASM stub: live photos are kept in memory / data URLs.
 Future<String> pluginLivePhotoDir() async => '';
 
+/// Web / WASM stub: media cache uses browser / memory storage rather than a filesystem path.
+Future<String> pluginMediaCacheDir() async => '';
+
 /// Web / WASM stub: snapshots are kept in memory, not as files.
 Future<String> pluginSnapshotPath(String name) async => name;
 

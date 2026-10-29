@@ -13,6 +13,11 @@ abstract final class PlayerEventDecoder {
         final ms = _asInt(event['value']);
         if (ms == null) return null;
         return PlayerEvent.position(Duration(milliseconds: ms));
+      case 'buffered':
+      case 'bufferedPosition':
+        final ms = _asInt(event['value']);
+        if (ms == null) return null;
+        return PlayerEvent.buffered(Duration(milliseconds: ms < 0 ? 0 : ms));
       case 'duration':
         final ms = _asInt(event['value']);
         if (ms == null) return null;

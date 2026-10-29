@@ -11,6 +11,8 @@ sealed class PlayerEvent {
 
   const factory PlayerEvent.position(Duration position) = PlayerPositionEvent;
 
+  const factory PlayerEvent.buffered(Duration bufferedPosition) = PlayerBufferedEvent;
+
   const factory PlayerEvent.duration(Duration duration) = PlayerDurationEvent;
 
   const factory PlayerEvent.playing(bool playing) = PlayerPlayingEvent;
@@ -31,6 +33,11 @@ sealed class PlayerEvent {
 final class PlayerPositionEvent extends PlayerEvent {
   const PlayerPositionEvent(this.position);
   final Duration position;
+}
+
+final class PlayerBufferedEvent extends PlayerEvent {
+  const PlayerBufferedEvent(this.bufferedPosition);
+  final Duration bufferedPosition;
 }
 
 final class PlayerDurationEvent extends PlayerEvent {

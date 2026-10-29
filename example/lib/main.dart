@@ -167,26 +167,92 @@ bool _isLocalSource(String url) {
       (!url.contains('://') && !url.startsWith('http'));
 }
 
-class HomePage extends StatelessWidget {
+String _formatBytes(int bytes) {
+  if (bytes <= 0) return '0 B';
+  if (bytes < 1024) return '$bytes B';
+  if (bytes < 1024 * 1024) {
+    return '${(bytes / 1024).toStringAsFixed(1)} KB';
+  }
+  return '${(bytes / (1024 * 1024)).toStringAsFixed(2)} MB';
+}
+
+class HomePage extends StatefulWidget {
   const HomePage({super.key});
 
   @override
+  State<HomePage> createState() => _HomePageState();
+}
+
+class _HomePageState extends State<HomePage> {
+  final Set<String> _cachedUrls = <String>{};
+  int _cacheBytes = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _refreshCacheStatus();
+  }
+
+  Future<void> _refreshCacheStatus() async {
+    try {
+      final size = await XueHuaNaviteVideoPlayer.instance.getCacheSize();
+      final cached = <String>{};
+      for (final item in _networkDemoPlaylist) {
+        final hit = await XueHuaNaviteVideoPlayer.instance.isCached(
+          VideoSource.network(item.url),
+        );
+        if (hit) {
+          cached.add(item.url);
+        }
+      }
+      if (!mounted) return;
+      setState(() {
+        _cacheBytes = size;
+        _cachedUrls
+          ..clear()
+          ..addAll(cached);
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _openCacheSheet() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (_) => _CacheManagerSheet(onChanged: _refreshCacheStatus),
+    );
+    await _refreshCacheStatus();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final playlist = _demoPlaylist;
     return Scaffold(
       key: const ValueKey<String>('home_page'),
       appBar: AppBar(
         title: const Text('Video Player'),
         actions: <Widget>[
           IconButton(
+            key: const ValueKey<String>('cache_manage_button'),
+            tooltip: '媒体缓存 (${_formatBytes(_cacheBytes)})',
+            icon: Badge(
+              isLabelVisible: _cacheBytes > 0,
+              smallSize: 8,
+              child: const Icon(Icons.offline_bolt_outlined),
+            ),
+            onPressed: _openCacheSheet,
+          ),
+          IconButton(
             key: const ValueKey<String>('live_photo_demo_button'),
             tooltip: 'Live Photo / 动态照片',
             icon: const Icon(Icons.motion_photos_on_rounded),
-            onPressed: () {
-              Navigator.of(context).push(
+            onPressed: () async {
+              await Navigator.of(context).push(
                 MaterialPageRoute<void>(
                   builder: (_) => const LivePhotoDemoPage(),
                 ),
               );
+              await _refreshCacheStatus();
             },
           ),
         ],
@@ -200,10 +266,10 @@ class HomePage extends StatelessWidget {
       ),
       body: ListView.separated(
         padding: const EdgeInsets.symmetric(vertical: 8),
-        itemCount: _demoPlaylist.length + 1,
+        itemCount: playlist.length + 1,
         separatorBuilder: (_, _) => const Divider(height: 1),
         itemBuilder: (context, index) {
-          if (index == _demoPlaylist.length) {
+          if (index == playlist.length) {
             return ListTile(
               key: const ValueKey<String>('demo_live_photo_entry'),
               leading: const CircleAvatar(
@@ -212,17 +278,19 @@ class HomePage extends StatelessWidget {
               title: const Text('Live Photos · 动态照片画廊'),
               subtitle: const Text('GCamera Motion Photo JPEG（含可播视频轨）'),
               trailing: const Icon(Icons.chevron_right),
-              onTap: () {
-                Navigator.of(context).push(
+              onTap: () async {
+                await Navigator.of(context).push(
                   MaterialPageRoute<void>(
                     builder: (_) => const LivePhotoDemoPage(),
                   ),
                 );
+                await _refreshCacheStatus();
               },
             );
           }
 
-          final item = _demoPlaylist[index];
+          final item = playlist[index];
+          final isCached = _cachedUrls.contains(item.url);
           return ListTile(
             key: ValueKey<String>('demo_item_$index'),
             leading: CircleAvatar(child: Text('${index + 1}')),
@@ -232,16 +300,181 @@ class HomePage extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              Navigator.of(context).push(
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                if (isCached)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: Icon(
+                      Icons.offline_pin_rounded,
+                      size: 18,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                  ),
+                const Icon(Icons.chevron_right),
+              ],
+            ),
+            onTap: () async {
+              await Navigator.of(context).push(
                 MaterialPageRoute<void>(
                   builder: (_) => PlayerPage(initialIndex: index),
                 ),
               );
+              await _refreshCacheStatus();
             },
           );
         },
+      ),
+    );
+  }
+}
+
+class _CacheManagerSheet extends StatefulWidget {
+  final Future<void> Function() onChanged;
+
+  const _CacheManagerSheet({required this.onChanged});
+
+  @override
+  State<_CacheManagerSheet> createState() => _CacheManagerSheetState();
+}
+
+class _CacheManagerSheetState extends State<_CacheManagerSheet> {
+  int _cacheBytes = 0;
+  final Set<String> _cachedUrls = <String>{};
+  String? _precachingUrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _reload();
+  }
+
+  Future<void> _reload() async {
+    final size = await XueHuaNaviteVideoPlayer.instance.getCacheSize();
+    final hits = <String>{};
+    for (final item in _networkDemoPlaylist) {
+      if (await XueHuaNaviteVideoPlayer.instance.isCached(
+        VideoSource.network(item.url),
+      )) {
+        hits.add(item.url);
+      }
+    }
+    if (!mounted) return;
+    setState(() {
+      _cacheBytes = size;
+      _cachedUrls
+        ..clear()
+        ..addAll(hits);
+    });
+  }
+
+  Future<void> _precacheItem(_DemoItem item) async {
+    setState(() => _precachingUrl = item.url);
+    try {
+      await XueHuaNaviteVideoPlayer.instance.precache(
+        VideoSource.network(item.url),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _precachingUrl = null);
+      }
+      await _reload();
+      await widget.onChanged();
+    }
+  }
+
+  Future<void> _removeItem(_DemoItem item) async {
+    await XueHuaNaviteVideoPlayer.instance.removeCache(
+      VideoSource.network(item.url),
+    );
+    await _reload();
+    await widget.onChanged();
+  }
+
+  Future<void> _clearAll() async {
+    await XueHuaNaviteVideoPlayer.instance.clearCache();
+    await _reload();
+    await widget.onChanged();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        '磁盘媒体缓存',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      Text(
+                        '当前占用：${_formatBytes(_cacheBytes)}（边播边存 · 二次秒开）',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+                ),
+                TextButton.icon(
+                  onPressed: _cacheBytes > 0 ? _clearAll : null,
+                  icon: const Icon(Icons.delete_sweep_outlined, size: 18),
+                  label: const Text('清空缓存'),
+                ),
+              ],
+            ),
+            const Divider(height: 16),
+            Flexible(
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: _networkDemoPlaylist.length,
+                itemBuilder: (context, index) {
+                  final item = _networkDemoPlaylist[index];
+                  final hit = _cachedUrls.contains(item.url);
+                  final busy = _precachingUrl == item.url;
+                  return ListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(
+                      hit
+                          ? Icons.offline_pin_rounded
+                          : Icons.cloud_download_outlined,
+                      color: hit ? Theme.of(context).colorScheme.primary : null,
+                    ),
+                    title: Text(item.title),
+                    subtitle: Text(hit ? '已完整缓存到本地磁盘' : '未完整缓存'),
+                    trailing: busy
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : hit
+                        ? IconButton(
+                            tooltip: '移除此条缓存',
+                            icon: const Icon(Icons.delete_outline, size: 20),
+                            onPressed: () => _removeItem(item),
+                          )
+                        : TextButton(
+                            onPressed: _precachingUrl == null
+                                ? () => _precacheItem(item)
+                                : null,
+                            child: const Text('预缓存'),
+                          ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -732,6 +965,29 @@ class _PlayerPageState extends State<PlayerPage> {
                     await _extractCovers();
                   },
                 ),
+                if (_index + 1 < _demoPlaylist.length &&
+                    !_isLocalSource(_demoPlaylist[_index + 1].url))
+                  ListTile(
+                    dense: true,
+                    leading: const Icon(Icons.cloud_download_outlined),
+                    title: const Text('Precache next video'),
+                    onTap: () async {
+                      Navigator.pop(ctx);
+                      final next = _demoPlaylist[_index + 1];
+                      final messenger = ScaffoldMessenger.of(context);
+                      messenger.showSnackBar(
+                        SnackBar(content: Text('Precaching ${next.title}...')),
+                      );
+                      await XueHuaNaviteVideoPlayer.instance.precache(
+                        VideoSource.network(next.url),
+                      );
+                      if (!mounted) return;
+                      messenger.hideCurrentSnackBar();
+                      messenger.showSnackBar(
+                        SnackBar(content: Text('Cached: ${next.title}')),
+                      );
+                    },
+                  ),
                 const Divider(height: 1),
                 _PlayerStateBar(controller: _controller),
               ],
@@ -830,16 +1086,18 @@ class _PlayerStateBar extends StatelessWidget {
         builder: (context) {
           final state = controller.playState.value;
           final buffering = controller.isBuffering.value;
+          final bufferedPct = (controller.bufferedPercent.value * 100).round();
           final speed = controller.speed.value;
           final mime = controller.mimeType.value ?? '—';
-          return Row(
+          return Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: <Widget>[
               _Chip(label: 'State: ${state.name}'),
-              const SizedBox(width: 8),
               _Chip(label: buffering ? 'Buffering' : 'Idle'),
-              const SizedBox(width: 8),
+              _Chip(label: 'Buf: $bufferedPct%'),
               _Chip(label: '${speed}x'),
-              const Spacer(),
               Text(mime, style: Theme.of(context).textTheme.bodySmall),
             ],
           );

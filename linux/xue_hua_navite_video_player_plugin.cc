@@ -269,6 +269,7 @@ static void ensure_player(XueHuaNaviteVideoPlayerPlugin* self) {
     if (!self->render_source_id) self->render_source_id = g_idle_add(render_cb, self);
   });
   player->SetOnPosition([self](int64_t ms) { send_event_int(self, "position", ms); });
+  player->SetOnBuffered([self](int64_t ms) { send_event_int(self, "buffered", ms); });
   player->SetOnDuration([self](int64_t ms) { send_event_int(self, "duration", ms); });
   player->SetOnPlaying([self](bool p) { send_event_bool(self, "playing", p); });
   player->SetOnBuffering([self](bool b) { send_event_bool(self, "buffering", b); });

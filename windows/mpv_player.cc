@@ -43,6 +43,7 @@ namespace xue_hua_navite_video_player {
 		// rendering on some platforms (notably Windows).
 		constexpr uint64_t kPropSrcWidth = 9;
 		constexpr uint64_t kPropSrcHeight = 10;
+		constexpr uint64_t kPropDemuxerCacheTime = 11;
 
 		std::string TempFilePath(const char* suffix) {
 #if defined(_WIN32)
@@ -238,6 +239,7 @@ namespace xue_hua_navite_video_player {
 		// pixels (SAR ≠ 1), preventing the mp_image_crop assertion failure.
 		mpv_observe_property(mpv_, kPropSrcWidth, "video-params/dw", MPV_FORMAT_INT64);
 		mpv_observe_property(mpv_, kPropSrcHeight, "video-params/dh", MPV_FORMAT_INT64);
+		mpv_observe_property(mpv_, kPropDemuxerCacheTime, "demuxer-cache-time", MPV_FORMAT_DOUBLE);
 		return true;
 	}
 
@@ -436,6 +438,14 @@ namespace xue_hua_navite_video_player {
 					double v = *static_cast<double*>(prop->data);
 					if (std::isfinite(v) && v >= 0.0) {
 						if (on_duration_) on_duration_(static_cast<int64_t>(v * 1000));
+					}
+				}
+				break;
+			case kPropDemuxerCacheTime:
+				if (prop->format == MPV_FORMAT_DOUBLE && prop->data) {
+					double v = *static_cast<double*>(prop->data);
+					if (std::isfinite(v) && v >= 0.0) {
+						if (on_buffered_) on_buffered_(static_cast<int64_t>(v * 1000));
 					}
 				}
 				break;

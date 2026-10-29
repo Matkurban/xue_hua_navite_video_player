@@ -249,6 +249,10 @@ namespace xue_hua_navite_video_player {
 			last_local_position_ms_ = ms;
 			SendEvent("position", flutter::EncodableValue(ms));
 			});
+		p->SetOnBuffered([this](int64_t ms) {
+			if (cast_ctx_ && cast_ctx_->is_casting) return;
+			SendEvent("buffered", flutter::EncodableValue(ms));
+			});
 		p->SetOnDuration([this](int64_t ms) {
 			if (cast_ctx_ && cast_ctx_->is_casting) return;
 			SendEvent("duration", flutter::EncodableValue(ms));

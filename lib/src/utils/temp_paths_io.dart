@@ -11,12 +11,30 @@ Future<String> pluginCoverDir() async {
 
 /// Default directory for extracted Live Photo / Motion Photo assets.
 Future<String> pluginLivePhotoDir() async {
-  final base = await getTemporaryDirectory();
+  final base = await _safeTemporaryDirectory();
   final dir = Directory('${base.path}/xue_hua_navite_video_player/live_photos');
   if (!await dir.exists()) {
     await dir.create(recursive: true);
   }
   return dir.path;
+}
+
+/// Default directory for cached network media files.
+Future<String> pluginMediaCacheDir() async {
+  final base = await _safeTemporaryDirectory();
+  final dir = Directory('${base.path}/xue_hua_navite_video_player/media_cache');
+  if (!await dir.exists()) {
+    await dir.create(recursive: true);
+  }
+  return dir.path;
+}
+
+Future<Directory> _safeTemporaryDirectory() async {
+  try {
+    return await getTemporaryDirectory();
+  } catch (_) {
+    return Directory.systemTemp;
+  }
 }
 
 /// Default path for a snapshot PNG named [name].

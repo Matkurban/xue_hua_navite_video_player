@@ -76,6 +76,8 @@ kotlin {
 
 dependencies {
     implementation("androidx.media3:media3-exoplayer:1.11.1")
+    implementation("androidx.media3:media3-datasource:1.11.1")
+    implementation("androidx.media3:media3-database:1.11.1")
     implementation("androidx.media3:media3-common:1.11.1")
     implementation("androidx.media3:media3-ui:1.11.1")
     implementation("androidx.media3:media3-cast:1.11.1")
