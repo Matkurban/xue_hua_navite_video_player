@@ -23,11 +23,6 @@ const List<String> bundledLivePhotoAssets = <String>[
 /// GitHub 及公开可信源多分辨率视频测试列表（覆盖 8K 到 180p）。
 const List<DemoItem> networkDemoPlaylist = <DemoItem>[
   DemoItem(
-    'GitHub · 8K UHD (7680x4320)',
-    'https://thetestdata.com/assets/video/mp4/highquality/8K_Thetestdata.mp4',
-  ),
-
-  DemoItem(
     'GitHub · 4K UHD (3840x2160 · Sizzle)',
     'https://github.com/stevederico/omarchy-quattro-sizzle/releases/download/v1-4k/v1-4k.mp4',
   ),
