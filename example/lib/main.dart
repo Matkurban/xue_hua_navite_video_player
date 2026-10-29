@@ -102,6 +102,14 @@ class _DemoItem {
   const _DemoItem(this.title, this.url);
 }
 
+/// GitHub 上公开的在线动态照片（Motion Photo）URL 列表。
+const List<String> _onlineLivePhotoUrls = <String>[
+  'https://raw.githubusercontent.com/Matkurban/xue_hua_navite_video_player/main/example/assets/live_photo/motion_city_walk.jpg',
+  'https://raw.githubusercontent.com/Matkurban/xue_hua_navite_video_player/main/example/assets/live_photo/motion_park_pan.jpg',
+  'https://raw.githubusercontent.com/Matkurban/xue_hua_navite_video_player/main/example/assets/live_photo/motion_street_clip.jpg',
+];
+
+/// 本地备用动态照片资源（网络异常时回退保障）。
 const List<String> _bundledLivePhotoAssets = <String>[
   'assets/live_photo/motion_city_walk.jpg',
   'assets/live_photo/motion_park_pan.jpg',
@@ -110,25 +118,52 @@ const List<String> _bundledLivePhotoAssets = <String>[
 
 const List<_DemoItem> _networkDemoPlaylist = <_DemoItem>[
   _DemoItem(
-    'Pexels · 4K Landscape',
-    'https://videos.pexels.com/video-files/29603233/12740435_3840_2160_30fps.mp4',
+    'GitHub · 8K UHD (7680x4320)',
+    'https://thetestdata.com/assets/video/mp4/highquality/8K_Thetestdata.mp4',
+  ),
+  _DemoItem(
+    'Chromium · 4K UHD (3840x2160 · HEVC)',
+    'https://raw.githubusercontent.com/chromium/chromium/master/media/test/data/bear-3840x2160-hevc.mp4',
+  ),
+  _DemoItem(
+    'GitHub · 4K UHD (3840x2160 · Sizzle)',
+    'https://github.com/stevederico/omarchy-quattro-sizzle/releases/download/v1-4k/v1-4k.mp4',
+  ),
+  _DemoItem(
+    'GitHub · 2K QHD (2560x1440)',
+    'https://placeholdervideo.dev/2560x1440',
+  ),
+  _DemoItem(
+    'GitHub · 1K FHD (1920x1080 · Big Buck Bunny)',
+    'https://raw.githubusercontent.com/chthomos/video-media-samples/master/big-buck-bunny-1080p-30sec.mp4',
   ),
   _DemoItem(
     'Flutter · Butterfly',
     'https://flutter.github.io/assets-for-api-docs/assets/videos/butterfly.mp4',
   ),
   _DemoItem(
-    'W3C · Big Buck Bunny',
-    'https://media.w3.org/2010/05/bunny/trailer.mp4',
+    'Chromium · 720p HD (1280x720 · Bear)',
+    'https://raw.githubusercontent.com/chromium/chromium/master/media/test/data/bear-1280x720.mp4',
   ),
-  _DemoItem('W3C · Sintel', 'https://media.w3.org/2010/05/sintel/trailer.mp4'),
+  _DemoItem(
+    'GitHub · 480p SD (854x480 · Big Buck Bunny)',
+    'https://raw.githubusercontent.com/chthomos/video-media-samples/master/big-buck-bunny-480p-30sec.mp4',
+  ),
+  _DemoItem(
+    'W3C · Sintel',
+    'https://raw.githubusercontent.com/andreasbotsikas/DemoVideos/master/sintel.mp4',
+  ),
   _DemoItem(
     'W3C · Movie 300',
-    'https://media.w3.org/2010/05/video/movie_300.mp4',
+    'https://raw.githubusercontent.com/web-platform-tests/wpt/master/media/movie_300.mp4',
   ),
   _DemoItem(
-    'W3Schools · Big Buck Bunny',
-    'https://www.w3schools.com/html/mov_bbb.mp4',
+    'Chromium · 240p LD (320x240 · Big Buck Bunny)',
+    'https://raw.githubusercontent.com/chromium/chromium/master/media/test/data/bbb-320x240-2video-2audio.mp4',
+  ),
+  _DemoItem(
+    'Chromium · 180p LD (320x180 · Bear)',
+    'https://raw.githubusercontent.com/chromium/chromium/master/media/test/data/bear-320x180-hi10p.mp4',
   ),
 ];
 
@@ -545,25 +580,42 @@ class _LivePhotoDemoPageState extends State<LivePhotoDemoPage> {
   @override
   void initState() {
     super.initState();
-    _loadBundledLivePhotos();
+    _loadLivePhotos();
   }
 
-  Future<void> _loadBundledLivePhotos() async {
+  Future<void> _loadLivePhotos() async {
     final resolved = <_ResolvedGalleryLivePhoto>[];
 
-    for (final assetPath in _bundledLivePhotoAssets) {
-      final fileName = assetPath.split('/').last;
-      final probed = await XueHuaNaviteVideoPlayer.instance.extractLivePhoto(
-        VideoSource.asset(assetPath),
-      );
+    for (var i = 0; i < _onlineLivePhotoUrls.length; i++) {
+      final url = _onlineLivePhotoUrls[i];
+      final fileName = url.split('/').last;
+      final fallbackAsset =
+          i < _bundledLivePhotoAssets.length ? _bundledLivePhotoAssets[i] : null;
+
+      LivePhotoBundle? probed;
+      try {
+        probed = await XueHuaNaviteVideoPlayer.instance.extractLivePhoto(
+          VideoSource.network(url),
+        );
+      } catch (e) {
+        debugPrint('Online live photo probe error for $url: $e');
+      }
+
+      final source = (probed != null || fallbackAsset == null)
+          ? LivePhotoSource.network(imageUrl: url)
+          : LivePhotoSource.asset(imageAsset: fallbackAsset);
+
       final metaInfo = probed != null
-          ? '${probed.metadata.format.name} · video ${probed.metadata.videoLength ?? 0}B'
-          : '未识别到内嵌视频轨';
+          ? 'GitHub 在线 · ${probed.metadata.format.name} · 视频轨 ${probed.metadata.videoLength ?? 0}B'
+          : (fallbackAsset != null
+              ? 'GitHub 在线加载中 (备用可用)'
+              : '未识别到内嵌视频轨');
+
       resolved.add(
         _ResolvedGalleryLivePhoto(
           title: fileName,
-          assetPath: assetPath,
-          source: LivePhotoSource.asset(imageAsset: assetPath),
+          assetPath: url,
+          source: source,
           subtitle: metaInfo,
         ),
       );
@@ -733,7 +785,7 @@ class _LivePhotoDemoPageState extends State<LivePhotoDemoPage> {
             child: const Padding(
               padding: EdgeInsets.all(10),
               child: Text(
-                '样例为单文件 Motion Photo（JPEG+内嵌 MP4）。'
+                '样例为 GitHub 上公开的在线单文件 Motion Photo（JPEG+内嵌 MP4）。'
                 '长按/悬停/点击「实况」可播动效；全屏走同一播放器。'
                 '若使用 Apple Live Photo，请把同名 .MOV 放在图片同目录以自动配对。',
                 style: TextStyle(fontSize: 12, height: 1.35),
