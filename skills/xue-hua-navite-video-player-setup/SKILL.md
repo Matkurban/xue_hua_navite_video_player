@@ -21,18 +21,18 @@ Cast: [xue-hua-navite-video-player-cast](../xue-hua-navite-video-player-cast/SKI
 
 ## Guidelines
 
-- Add `xue_hua_navite_video_player: ^2.6.0` and run `flutter pub get`.
+- Add `xue_hua_navite_video_player: ^2.8.0` and run `flutter pub get`.
 - Call `WidgetsFlutterBinding.ensureInitialized()` before any plugin work.
 - `XueHuaNaviteVideoPlayer.instance.initialize({VideoCacheConfig? cacheConfig})` is optional, idempotent, and does **not** create the native player. It ensures the binding, optionally applies `cacheConfig`, and sets `isInitialized`.
 - On-disk media caching is **enabled by default** (`maxCacheBytes = 512 MiB`, `maxSingleFileBytes = 256 MiB`). Update cache limits at any time via `XueHuaNaviteVideoPlayer.instance.configureCache(VideoCacheConfig(...))`.
 - `VideoPlayerController.initialize()` creates the native session and subscribes to events. Call it once per controller lifetime, before `open*` / `play*`.
 - After `VideoPlayerController.dispose()`, that instance is unusable. Create a new controller and `initialize()` again.
-- The plugin hosts **one** native player behind process-wide channels. A second `VideoPlayerController.initialize()` while another native session is live throws `StateError`. Dispose the previous controller first.
+- The plugin hosts **one** native player behind a process-wide native bridge. A second `VideoPlayerController.initialize()` while another native session is live throws `StateError`. Dispose the previous controller first.
 - Do not treat multiple controllers as parallel independent players. A later `open` / `play*` takes over the same native session.
 - Leave `VideoPlayerController` constructor `backend` / `fullscreen` / `brightness` at defaults. Those types are **not** barrel-exported (test injection only).
 - `XueHuaNaviteVideoPlayer.dispose()` only clears the plugin binding flag. It does **not** release the playback session. Always `dispose()` the controller.
 - Declare Flutter assets in the **app** `pubspec.yaml`. Native platforms extract assets to a temp file; Web/WASM uses the Flutter-hosted `assets/` URL.
-- Probe APIs (`getDuration`, `extractCoverCandidates`) share the MethodChannel but do not call `create()`. Avoid heavy probe work while a playback session is active.
+- Probe APIs (`getDuration`, `extractCoverCandidates`) share the Pigeon `PlayerHostApi` bridge but do not call `create()`. Avoid heavy probe work while a playback session is active.
 
 ## Platform setup
 

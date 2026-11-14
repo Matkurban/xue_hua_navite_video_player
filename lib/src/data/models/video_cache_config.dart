@@ -67,7 +67,7 @@ class VideoCacheConfig {
     );
   }
 
-  /// 序列化为可通过 MethodChannel 同步给原生层的参数字典。
+  /// 序列化为可同步给原生层的参数字典。
   Map<String, dynamic> toChannelMap({required String resolvedCacheDir}) {
     return <String, dynamic>{
       'enabled': enabled,

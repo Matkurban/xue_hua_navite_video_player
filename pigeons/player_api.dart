@@ -7,20 +7,13 @@ import 'package:pigeon/pigeon.dart';
     dartPackageName: 'xue_hua_navite_video_player',
     dartOut: 'lib/src/pigeon/player_api.g.dart',
     dartOptions: DartOptions(),
-    kotlinOut:
-        'android/src/main/kotlin/com/kurban/xue_hua_navite_video_player/PlayerApi.g.kt',
-    kotlinOptions: KotlinOptions(
-      package: 'com.kurban.xue_hua_navite_video_player',
-      useJni: true,
-    ),
+    kotlinOut: 'android/src/main/kotlin/com/kurban/xue_hua_navite_video_player/PlayerApi.g.kt',
+    kotlinOptions: KotlinOptions(package: 'com.kurban.xue_hua_navite_video_player', useJni: true),
     swiftOut: <String>[
       'ios/xue_hua_navite_video_player/Sources/xue_hua_navite_video_player/PlayerApi.g.swift',
       'macos/xue_hua_navite_video_player/Sources/xue_hua_navite_video_player/PlayerApi.g.swift',
     ],
-    swiftOptions: SwiftOptions(
-      useFfi: true,
-      ffiModuleName: 'xue_hua_navite_video_player',
-    ),
+    swiftOptions: SwiftOptions(useFfi: true, ffiModuleName: 'xue_hua_navite_video_player'),
     cppHeaderOut: 'windows/player_api.g.h',
     cppSourceOut: 'windows/player_api.g.cpp',
     cppOptions: CppOptions(namespace: 'xue_hua_navite_video_player'),
@@ -31,13 +24,7 @@ import 'package:pigeon/pigeon.dart';
 )
 enum NativeAspectRatioMode { fit, fill, stretch }
 
-enum NativeCastState {
-  unavailable,
-  notConnected,
-  connecting,
-  connected,
-  disconnecting,
-}
+enum NativeCastState { unavailable, notConnected, connecting, connected, disconnecting }
 
 enum NativePlayerEventType {
   position,
@@ -68,12 +55,7 @@ class OpenMediaRequest {
 }
 
 class DurationProbeRequest {
-  DurationProbeRequest({
-    required this.url,
-    required this.timeoutMs,
-    this.cacheKey,
-    this.headers,
-  });
+  DurationProbeRequest({required this.url, required this.timeoutMs, this.cacheKey, this.headers});
 
   String url;
   int timeoutMs;
@@ -102,11 +84,7 @@ class CoverExtractRequest {
 }
 
 class CoverFrameData {
-  CoverFrameData({
-    required this.path,
-    required this.positionMs,
-    required this.brightness,
-  });
+  CoverFrameData({required this.path, required this.positionMs, required this.brightness});
 
   String path;
   int positionMs;
@@ -155,11 +133,7 @@ class PrecacheRequest {
 }
 
 class CacheEntryRequest {
-  CacheEntryRequest({
-    required this.url,
-    this.cacheKey,
-    this.cacheDir,
-  });
+  CacheEntryRequest({required this.url, this.cacheKey, this.cacheDir});
 
   String url;
   String? cacheKey;

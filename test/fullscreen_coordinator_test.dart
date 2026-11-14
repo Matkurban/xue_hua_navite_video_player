@@ -28,11 +28,7 @@ void main() {
   test('web enter / exit uses browser applier', () async {
     final bridge = _FakeHostBridge();
     final browser = _FakeBrowser();
-    final coord = SystemChromeFullscreenCoordinator(
-      bridge: bridge,
-      browser: browser,
-      isWeb: true,
-    );
+    final coord = SystemChromeFullscreenCoordinator(bridge: bridge, browser: browser, isWeb: true);
 
     await coord.enter(landscapeVideo: true);
     expect(browser.entered, isTrue);
@@ -60,11 +56,7 @@ void main() {
   test('web browser changes are forwarded as externalChanges', () async {
     final bridge = _FakeHostBridge();
     final browser = _FakeBrowser();
-    final coord = SystemChromeFullscreenCoordinator(
-      bridge: bridge,
-      browser: browser,
-      isWeb: true,
-    );
+    final coord = SystemChromeFullscreenCoordinator(bridge: bridge, browser: browser, isWeb: true);
     final events = <bool>[];
     final sub = coord.externalChanges.listen(events.add);
 

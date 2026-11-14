@@ -22,7 +22,7 @@ enum CastState {
   /// Disconnecting from the remote receiver and restoring local playback.
   disconnecting;
 
-  /// MethodChannel 协议名称。
+  /// 原生桥接协议名称。
   String get wireName => name;
 
   /// 从原生端传回的字符串解析 [CastState]。

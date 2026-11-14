@@ -44,76 +44,79 @@ void main() {
     await second.dispose();
   });
 
-  test('PigeonVideoPlayerHostBridge delegates host calls and dispatches FlutterApi events', () async {
-    final fakeApi = _FakePlayerHostApi();
-    final bridge = PigeonVideoPlayerHostBridge(hostApi: fakeApi);
-    final backend = ChannelPlayerBackend(bridge: bridge);
+  test(
+    'PigeonVideoPlayerHostBridge delegates host calls and dispatches FlutterApi events',
+    () async {
+      final fakeApi = _FakePlayerHostApi();
+      final bridge = PigeonVideoPlayerHostBridge(hostApi: fakeApi);
+      final backend = ChannelPlayerBackend(bridge: bridge);
 
-    final receivedEvents = <PlayerEvent>[];
-    final sub = backend.events.listen(receivedEvents.add);
+      final receivedEvents = <PlayerEvent>[];
+      final sub = backend.events.listen(receivedEvents.add);
 
-    final textureId = await backend.create();
-    expect(textureId, 7);
-    expect(backend.textureId.value, 7);
+      final textureId = await backend.create();
+      expect(textureId, 7);
+      expect(backend.textureId.value, 7);
 
-    await backend.open(
-      'https://example.com/video.mp4',
-      castUrl: 'https://example.com/cast.mp4',
-      cacheKey: 'k1',
-      headers: const <String, String>{'Authorization': 'Bearer x'},
-      enableCache: true,
-    );
-    expect(fakeApi.lastOpenRequest?.url, 'https://example.com/video.mp4');
-    expect(fakeApi.lastOpenRequest?.castUrl, 'https://example.com/cast.mp4');
-    expect(fakeApi.lastOpenRequest?.cacheKey, 'k1');
-    expect(fakeApi.lastOpenRequest?.enableCache, isTrue);
+      await backend.open(
+        'https://example.com/video.mp4',
+        castUrl: 'https://example.com/cast.mp4',
+        cacheKey: 'k1',
+        headers: const <String, String>{'Authorization': 'Bearer x'},
+        enableCache: true,
+      );
+      expect(fakeApi.lastOpenRequest?.url, 'https://example.com/video.mp4');
+      expect(fakeApi.lastOpenRequest?.castUrl, 'https://example.com/cast.mp4');
+      expect(fakeApi.lastOpenRequest?.cacheKey, 'k1');
+      expect(fakeApi.lastOpenRequest?.enableCache, isTrue);
 
-    await backend.play();
-    await backend.pause();
-    await backend.seek(1234);
-    await backend.setVolume(1.5);
-    await backend.setSpeed(1.25);
-    await backend.setAspectRatioMode(AspectRatioMode.fill);
-    await backend.setVideoViewSize(width: 800, height: 600, devicePixelRatio: 2.0);
-    await backend.showCastPicker();
-    await backend.stopCasting();
+      await backend.play();
+      await backend.pause();
+      await backend.seek(1234);
+      await backend.setVolume(1.5);
+      await backend.setSpeed(1.25);
+      await backend.setAspectRatioMode(AspectRatioMode.fill);
+      await backend.setVideoViewSize(width: 800, height: 600, devicePixelRatio: 2.0);
+      await backend.showCastPicker();
+      await backend.stopCasting();
 
-    expect(fakeApi.playCount, 1);
-    expect(fakeApi.pauseCount, 1);
-    expect(fakeApi.lastSeekMs, 1234);
-    expect(fakeApi.lastVolume, 1.0);
-    expect(fakeApi.lastSpeed, 1.25);
-    expect(fakeApi.lastAspectRatioMode, NativeAspectRatioMode.fill);
-    expect(fakeApi.lastViewSize, (800.0, 600.0, 2.0));
+      expect(fakeApi.playCount, 1);
+      expect(fakeApi.pauseCount, 1);
+      expect(fakeApi.lastSeekMs, 1234);
+      expect(fakeApi.lastVolume, 1.0);
+      expect(fakeApi.lastSpeed, 1.25);
+      expect(fakeApi.lastAspectRatioMode, NativeAspectRatioMode.fill);
+      expect(fakeApi.lastViewSize, (800.0, 600.0, 2.0));
 
-    await bridge.onPlayerEvent(
-      PlayerEventData(kind: NativePlayerEventType.duration, intValue: 5000),
-    );
-    await bridge.onPlayerEvent(
-      PlayerEventData(kind: NativePlayerEventType.playing, boolValue: true),
-    );
-    await Future<void>.delayed(Duration.zero);
+      await bridge.onPlayerEvent(
+        PlayerEventData(kind: NativePlayerEventType.duration, intValue: 5000),
+      );
+      await bridge.onPlayerEvent(
+        PlayerEventData(kind: NativePlayerEventType.playing, boolValue: true),
+      );
+      await Future<void>.delayed(Duration.zero);
 
-    expect(receivedEvents, hasLength(2));
-    expect((receivedEvents[0] as PlayerDurationEvent).duration, const Duration(seconds: 5));
-    expect((receivedEvents[1] as PlayerPlayingEvent).playing, isTrue);
+      expect(receivedEvents, hasLength(2));
+      expect((receivedEvents[0] as PlayerDurationEvent).duration, const Duration(seconds: 5));
+      expect((receivedEvents[1] as PlayerPlayingEvent).playing, isTrue);
 
-    final tempDir = await Directory.systemTemp.createTemp('pigeon_snapshot_test_');
-    try {
-      final snapPath = '${tempDir.path}/snap.png';
-      fakeApi.snapshotResult = SnapshotData(bytes: Uint8List.fromList(<int>[1, 2, 3, 4]));
-      final snap = await backend.takeSnapshot(savePath: snapPath);
-      expect(snap.path, snapPath);
-      expect(await snap.readAsBytes(), <int>[1, 2, 3, 4]);
-    } finally {
-      await tempDir.delete(recursive: true);
-    }
+      final tempDir = await Directory.systemTemp.createTemp('pigeon_snapshot_test_');
+      try {
+        final snapPath = '${tempDir.path}/snap.png';
+        fakeApi.snapshotResult = SnapshotData(bytes: Uint8List.fromList(<int>[1, 2, 3, 4]));
+        final snap = await backend.takeSnapshot(savePath: snapPath);
+        expect(snap.path, snapPath);
+        expect(await snap.readAsBytes(), <int>[1, 2, 3, 4]);
+      } finally {
+        await tempDir.delete(recursive: true);
+      }
 
-    await sub.cancel();
-    await backend.dispose();
-    expect(fakeApi.disposeCount, 1);
-    expect(backend.textureId.value, isNull);
-  });
+      await sub.cancel();
+      await backend.dispose();
+      expect(fakeApi.disposeCount, 1);
+      expect(backend.textureId.value, isNull);
+    },
+  );
 
   test('MediaProbe.probeDuration returns null when the bridge hangs past timeout', () async {
     fakeBridge.onGetDuration = (request) async {

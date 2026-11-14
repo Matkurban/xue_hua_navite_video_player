@@ -106,7 +106,7 @@ A cross-platform Flutter audio/video player plugin. Dart exposes a unified contr
 │  └── PlaybackSession (state machine + Signals)           │
 │       └── PlayerBackend / ChannelPlayerBackend           │
 └───────────────────────────┬─────────────────────────────┘
-                            │ MethodChannel / EventChannel
+                            │ Pigeon (FFI / JNI / Channel)
 ┌───────────────────────────▼─────────────────────────────┐
 │  Native: ExoPlayer / AVPlayer / libmpv / HTML5           │
 └─────────────────────────────────────────────────────────┘
@@ -132,7 +132,7 @@ See [CONTEXT.md](CONTEXT.md) for domain notes.
 
 ```yaml
 dependencies:
-  xue_hua_navite_video_player: ^2.6.8
+  xue_hua_navite_video_player: ^2.8.0
 ```
 
 ```bash
@@ -294,7 +294,7 @@ class _MyAppState extends State<MyApp> {
 
 ## Important: single active session
 
-The plugin hosts **one** native player behind process-wide channels.
+The plugin hosts **one** native player behind a process-wide native bridge.
 
 - Do not treat multiple `VideoPlayerController` instances as independent parallel players
 - A later `open` / `play*` takes over the same native session

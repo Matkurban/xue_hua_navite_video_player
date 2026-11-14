@@ -114,7 +114,7 @@
 │  └── PlaybackSession（状态机 + Signals）                  │
 │       └── PlayerBackend / ChannelPlayerBackend           │
 └───────────────────────────┬─────────────────────────────┘
-                            │ MethodChannel / EventChannel
+                            │ Pigeon（FFI / JNI / Channel）
 ┌───────────────────────────▼─────────────────────────────┐
 │  Native：ExoPlayer / AVPlayer / libmpv / HTML5           │
 └─────────────────────────────────────────────────────────┘
@@ -142,7 +142,7 @@ XueHuaNaviteVideoPlayer.instance
 
 ```yaml
 dependencies:
-  xue_hua_navite_video_player: ^2.6.3
+  xue_hua_navite_video_player: ^2.8.0
 ```
 
 然后执行：
@@ -310,7 +310,7 @@ class _MyAppState extends State<MyApp> {
 
 ## 重要约束：单一活跃会话
 
-插件在进程内通过全局 MethodChannel / EventChannel **只挂载一个原生播放器**。
+插件在进程内通过全局原生桥接（Pigeon FFI / JNI / Channel）**只挂载一个原生播放器**。
 
 这意味着：
 

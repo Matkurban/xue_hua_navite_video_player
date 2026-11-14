@@ -46,12 +46,9 @@ class DefaultBrowserFullscreenApplier implements BrowserFullscreenApplier {
 /// Default coordinator: SystemChrome on mobile, window fullscreen on desktop,
 /// browser Fullscreen API on web.
 class SystemChromeFullscreenCoordinator implements FullscreenCoordinator {
-  SystemChromeFullscreenCoordinator({
-    this._bridge,
-    BrowserFullscreenApplier? browser,
-    bool? isWeb,
-  }) : _browser = browser ?? const DefaultBrowserFullscreenApplier(),
-       _isWeb = isWeb ?? kIsWeb {
+  SystemChromeFullscreenCoordinator({this._bridge, BrowserFullscreenApplier? browser, bool? isWeb})
+    : _browser = browser ?? const DefaultBrowserFullscreenApplier(),
+      _isWeb = isWeb ?? kIsWeb {
     if (!_isWeb) {
       _bridgeSub = _resolvedBridge.fullscreenEvents.listen(_external.add);
     }

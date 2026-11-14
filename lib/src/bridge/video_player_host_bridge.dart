@@ -94,8 +94,9 @@ class PigeonVideoPlayerHostBridge implements VideoPlayerHostBridge, PlayerFlutte
 
   late final StreamController<PlayerEventData> _eventController =
       StreamController<PlayerEventData>.broadcast(onListen: _ensureFlutterApiSetUp);
-  late final StreamController<bool> _fullscreenController =
-      StreamController<bool>.broadcast(onListen: _ensureFlutterApiSetUp);
+  late final StreamController<bool> _fullscreenController = StreamController<bool>.broadcast(
+    onListen: _ensureFlutterApiSetUp,
+  );
 
   bool get _usesNativeInterop =>
       !kIsWeb &&

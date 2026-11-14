@@ -14,7 +14,7 @@ class XueHuaNaviteVideoPlayer {
 
 `XueHuaNaviteVideoPlayer()` and `.instance` are the same singleton.
 
-Probe work shares the player MethodChannel (`xue_hua_navite_video_player/player`) but does **not** call native `create()`. Do not run heavy probe work concurrently with an active playback session (process-wide native engine).
+Probe work shares the Pigeon `PlayerHostApi` bridge but does **not** call native `create()`. Do not run heavy probe work concurrently with an active playback session (process-wide native engine).
 
 ### `bool get isInitialized`
 

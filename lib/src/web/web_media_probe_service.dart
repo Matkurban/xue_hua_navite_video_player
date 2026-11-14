@@ -77,11 +77,7 @@ abstract final class WebMediaProbeService {
           if (brightness < minBrightness) continue;
           final dataUrl = canvas.toDataURL('image/png');
           frames.add(
-            CoverFrameData(
-              path: dataUrl,
-              positionMs: (t * 1000).toInt(),
-              brightness: brightness,
-            ),
+            CoverFrameData(path: dataUrl, positionMs: (t * 1000).toInt(), brightness: brightness),
           );
         } catch (_) {
           continue;

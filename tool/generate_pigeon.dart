@@ -74,8 +74,7 @@ void _syncAppleObjcGen() {
 
   final validNames = <String>{};
   for (final entity in iosGenDir.listSync()) {
-    if (entity is File &&
-        (entity.path.endsWith('.h') || entity.path.endsWith('.m'))) {
+    if (entity is File && (entity.path.endsWith('.h') || entity.path.endsWith('.m'))) {
       final name = entity.uri.pathSegments.last;
       validNames.add(name);
       entity.copySync('${macosGenDir.path}/$name');
