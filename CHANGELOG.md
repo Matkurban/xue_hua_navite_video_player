@@ -1,3 +1,18 @@
+## 2.8.0
+
+- **Pigeon Cross-Platform Native Communication (`pigeons/player_api.dart`)**:
+  - Replaced legacy `MethodChannel` / `EventChannel` string calls with type-safe **Pigeon (`^30.0.2`)** `PlayerHostApi` and `PlayerFlutterApi` contracts generated via `tool/generate_pigeon.dart`.
+  - **Android**: Switched to Kotlin JNI interop (`useJni: true`, `jni: ^1.1.2`), added `consumer-rules.pro` and `kotlinx-coroutines-android`, and updated `mediarouter` (`1.8.1`), `appcompat` (`1.8.0`), and `play-services-cast-framework` (`23.0.0`).
+  - **iOS & macOS**: Switched to Swift FFI interop (`useFfi: true`, `ffi: ^2.2.0`, `objective_c: ^9.6.4`) with Objective-C bridge headers, SwiftPM `Package.swift`, and updated `.podspec` `source_files`.
+  - **Windows & Linux**: Switched to generated Pigeon C++ (`player_api.g.cpp/.h`) and GObject (`player_api.g.c/.h`) host bindings wired into CMake.
+  - **Dart & Web**: Unified platform calls behind `VideoPlayerHostBridge` (`PigeonVideoPlayerHostBridge` on IO; direct Dart registration in `XueHuaNaviteVideoPlayerWeb`).
+- **Thread-Safe Initialization & Cache Offloading**:
+  - **Android**: Pre-warm `SimpleCache` on `Dispatchers.IO` before player initialization, validate `openGeneration` / `engineGeneration` to drop stale `open` completions, and deliver `PlayerEventData` in strict FIFO order via a coroutine `Channel`.
+  - **iOS & macOS**: Pre-resolve cached URLs and file readability off the main thread (`beginOpen` → background resolve → `finishOpen` with generation guards), avoid `DispatchQueue.main.sync` deadlocks in `getBrightness()` under merged UI/platform FFI calls, and hold macOS `fullscreenWindow` as a weak reference.
+- **Dependencies & Tests**:
+  - Updated dependencies (`cupertino_ui: ^1.1.6`, `material_ui: ^1.11.0`, `meta: ^1.19.0`) and FFI/JNI Pigeon codegen dev dependencies (`pigeon: ^30.0.2`, `ffigen: ^22.0.0`, `swift2objc: ^0.3.1`, `swiftgen: ^0.2.0`, `jnigen: ^1.0.1`).
+  - Replaced legacy method-channel unit tests with `test/video_player_host_bridge_test.dart`, updated C++/GObject plugin tests, and added Kotlin unit tests for FIFO event ordering and stale `openGeneration` cancellation.
+
 ## 2.7.0
 
 - Unified Dart Cache Management and Public API
