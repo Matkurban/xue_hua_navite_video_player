@@ -13,7 +13,7 @@ A cross-platform Flutter audio/video player plugin powered by native players (Ex
   s.license          = { :file => '../LICENSE' }
   s.author           = { 'Matkurban' => '3496354336@qq.com' }
   s.source           = { :path => '.' }
-  s.source_files = 'xue_hua_navite_video_player/Sources/xue_hua_navite_video_player/**/*'
+  s.source_files = 'xue_hua_navite_video_player/Sources/**/*.{swift,m,h}'
   s.dependency 'Flutter'
   s.platform = :ios, '13.0'
 

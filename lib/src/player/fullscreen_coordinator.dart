@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
+import '../bridge/video_player_host_bridge.dart';
 import 'browser_fullscreen.dart';
 
 /// Applies / restores system UI, window, or browser fullscreen.
@@ -46,21 +47,25 @@ class DefaultBrowserFullscreenApplier implements BrowserFullscreenApplier {
 /// browser Fullscreen API on web.
 class SystemChromeFullscreenCoordinator implements FullscreenCoordinator {
   SystemChromeFullscreenCoordinator({
-    MethodChannel? channel,
+    this._bridge,
     BrowserFullscreenApplier? browser,
     bool? isWeb,
-  }) : _channel = channel ?? const MethodChannel('xue_hua_navite_video_player/player'),
-       _browser = browser ?? const DefaultBrowserFullscreenApplier(),
+  }) : _browser = browser ?? const DefaultBrowserFullscreenApplier(),
        _isWeb = isWeb ?? kIsWeb {
-    _channel.setMethodCallHandler(_onMethodCall);
+    if (!_isWeb) {
+      _bridgeSub = _resolvedBridge.fullscreenEvents.listen(_external.add);
+    }
     _browserSub = _browser.changes.listen(_external.add);
   }
 
-  final MethodChannel _channel;
+  final VideoPlayerHostBridge? _bridge;
   final BrowserFullscreenApplier _browser;
   final bool _isWeb;
   final StreamController<bool> _external = StreamController<bool>.broadcast();
+  StreamSubscription<bool>? _bridgeSub;
   StreamSubscription<bool>? _browserSub;
+
+  VideoPlayerHostBridge get _resolvedBridge => _bridge ?? VideoPlayerHostBridge.instance;
 
   @override
   Stream<bool> get externalChanges => _external.stream;
@@ -68,15 +73,6 @@ class SystemChromeFullscreenCoordinator implements FullscreenCoordinator {
   bool get _isMobile =>
       defaultTargetPlatform == TargetPlatform.iOS ||
       defaultTargetPlatform == TargetPlatform.android;
-
-  Future<dynamic> _onMethodCall(MethodCall call) async {
-    if (call.method == 'onWindowFullscreen') {
-      final value = call.arguments;
-      if (value is bool) {
-        _external.add(value);
-      }
-    }
-  }
 
   @override
   Future<void> enter({required bool landscapeVideo}) async {
@@ -102,7 +98,7 @@ class SystemChromeFullscreenCoordinator implements FullscreenCoordinator {
     }
 
     try {
-      await _channel.invokeMethod<void>('setWindowFullscreen', {'value': true});
+      await _resolvedBridge.setWindowFullscreen(true);
     } catch (_) {}
   }
 
@@ -120,15 +116,16 @@ class SystemChromeFullscreenCoordinator implements FullscreenCoordinator {
     }
 
     try {
-      await _channel.invokeMethod<void>('setWindowFullscreen', {'value': false});
+      await _resolvedBridge.setWindowFullscreen(false);
     } catch (_) {}
   }
 
   @override
   void dispose() {
+    _bridgeSub?.cancel();
+    _bridgeSub = null;
     _browserSub?.cancel();
     _browserSub = null;
-    _channel.setMethodCallHandler(null);
     if (!_external.isClosed) {
       _external.close();
     }

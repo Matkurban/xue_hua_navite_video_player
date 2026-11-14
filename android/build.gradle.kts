@@ -48,6 +48,7 @@ android {
 
     defaultConfig {
         minSdk = 24
+        consumerProguardFiles("consumer-rules.pro")
     }
 
     testOptions {
@@ -81,13 +82,14 @@ dependencies {
     implementation("androidx.media3:media3-common:1.11.1")
     implementation("androidx.media3:media3-ui:1.11.1")
     implementation("androidx.media3:media3-cast:1.11.1")
-    implementation("androidx.mediarouter:mediarouter:1.7.0")
+    implementation("androidx.mediarouter:mediarouter:1.8.1")
     // Chooser/controller dialogs extend AppCompat types, but mediarouter publishes
     // appcompat as runtime-only. A direct dependency is required to compile show().
-    // Version matches media3-cast 1.11.1.
-    implementation("androidx.appcompat:appcompat:1.6.1")
-    implementation("com.google.android.gms:play-services-cast-framework:21.5.0")
+    implementation("androidx.appcompat:appcompat:1.8.0")
+    implementation("com.google.android.gms:play-services-cast-framework:23.0.0")
     implementation("androidx.lifecycle:lifecycle-common:2.11.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
     testImplementation("org.jetbrains.kotlin:kotlin-test")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
     testImplementation("org.mockito:mockito-core:5.24.0")
 }

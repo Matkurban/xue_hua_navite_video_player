@@ -5,11 +5,13 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:signals_flutter/signals_flutter.dart';
+import 'package:xue_hua_navite_video_player/src/bridge/video_player_host_bridge.dart';
 import 'package:xue_hua_navite_video_player/src/data/enums/aspect_ratio_mode.dart';
 import 'package:xue_hua_navite_video_player/src/data/enums/cast_state.dart';
 import 'package:xue_hua_navite_video_player/src/data/enums/play_state.dart';
 import 'package:xue_hua_navite_video_player/src/data/enums/skip_second_type.dart';
 import 'package:xue_hua_navite_video_player/src/data/models/navite_file.dart';
+import 'package:xue_hua_navite_video_player/src/pigeon/player_api.g.dart';
 import 'package:xue_hua_navite_video_player/src/player/brightness_controller.dart';
 import 'package:xue_hua_navite_video_player/src/player/channel_player_backend.dart';
 import 'package:xue_hua_navite_video_player/src/player/fullscreen_coordinator.dart';
@@ -486,85 +488,94 @@ void main() {
   });
 
   group('ChannelBrightnessController', () {
-    const channel = MethodChannel('xue_hua_navite_video_player/player');
-
-    tearDown(() {
-      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
-        channel,
-        null,
-      );
-    });
-
-    test('reads and writes via MethodChannel', () async {
-      double? lastSet;
-      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
-        channel,
-        (call) async {
-          if (call.method == 'getBrightness') return 0.4;
-          if (call.method == 'setBrightness') {
-            lastSet = (call.arguments as Map)['value'] as double;
-            return null;
-          }
-          return null;
-        },
-      );
-
-      final brightness = ChannelBrightnessController();
+    test('reads and writes via VideoPlayerHostBridge', () async {
+      final bridge = _FakeBrightnessBridge(initialValue: 0.4);
+      final brightness = ChannelBrightnessController(bridge: bridge);
       expect(await brightness.current, 0.4);
       await brightness.setBrightness(0.2);
-      expect(lastSet, 0.2);
+      expect(bridge.lastSet, 0.2);
     });
 
-    test('no-ops when the channel is unimplemented', () async {
-      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
-        channel,
-        (call) async => throw MissingPluginException('none'),
-      );
-
-      final brightness = ChannelBrightnessController();
+    test('no-ops when the bridge is unimplemented', () async {
+      final brightness = ChannelBrightnessController(bridge: _ThrowingBrightnessBridge());
       expect(await brightness.current, 1.0);
       await brightness.setBrightness(0.2);
     });
   });
 
   group('ChannelPlayerBackend.decodeEventForTest', () {
-    test('accepts num payloads for position and duration', () {
-      final position = ChannelPlayerBackend.decodeEventForTest({
-        'event': 'position',
-        'value': 1500.0,
-      });
+    test('accepts int payloads for position, duration, and buffered', () {
+      final position = ChannelPlayerBackend.decodeEventForTest(
+        PlayerEventData(kind: NativePlayerEventType.position, intValue: 1500),
+      );
       expect(position, isA<PlayerPositionEvent>());
       expect((position as PlayerPositionEvent).position, const Duration(milliseconds: 1500));
 
-      final duration = ChannelPlayerBackend.decodeEventForTest({
-        'event': 'duration',
-        'value': 9000,
-      });
+      final duration = ChannelPlayerBackend.decodeEventForTest(
+        PlayerEventData(kind: NativePlayerEventType.duration, intValue: 9000),
+      );
       expect(duration, isA<PlayerDurationEvent>());
+
+      final buffered = ChannelPlayerBackend.decodeEventForTest(
+        PlayerEventData(kind: NativePlayerEventType.buffered, intValue: -50),
+      );
+      expect(buffered, isA<PlayerBufferedEvent>());
+      expect((buffered as PlayerBufferedEvent).bufferedPosition, Duration.zero);
     });
 
-    test('decodes castState map and string payloads', () {
-      final connected = ChannelPlayerBackend.decodeEventForTest({
-        'event': 'castState',
-        'value': {'state': 'connected', 'deviceName': 'Living Room TV'},
-      });
+    test('decodes castState payloads and normalizes videoSize rotation', () {
+      final connected = ChannelPlayerBackend.decodeEventForTest(
+        PlayerEventData(
+          kind: NativePlayerEventType.castState,
+          castState: NativeCastState.connected,
+          castDeviceName: ' Living Room TV ',
+        ),
+      );
       expect(connected, isA<PlayerCastStateEvent>());
       final castEvent = connected as PlayerCastStateEvent;
       expect(castEvent.state, CastState.connected);
       expect(castEvent.deviceName, 'Living Room TV');
 
-      final notConnected = ChannelPlayerBackend.decodeEventForTest({
-        'event': 'castState',
-        'value': 'notConnected',
-      });
+      final notConnected = ChannelPlayerBackend.decodeEventForTest(
+        PlayerEventData(
+          kind: NativePlayerEventType.castState,
+          castState: NativeCastState.notConnected,
+        ),
+      );
       expect(notConnected, isA<PlayerCastStateEvent>());
       expect((notConnected as PlayerCastStateEvent).state, CastState.notConnected);
+
+      final sized = ChannelPlayerBackend.decodeEventForTest(
+        PlayerEventData(
+          kind: NativePlayerEventType.videoSize,
+          width: 1920,
+          height: 1080,
+          rotationDegrees: 450,
+        ),
+      );
+      expect(sized, isA<PlayerVideoSizeEvent>());
+      final sizeEvent = sized as PlayerVideoSizeEvent;
+      expect(sizeEvent.size, const Size(1920, 1080));
+      expect(sizeEvent.rotationDegrees, 90);
     });
 
-    test('skips malformed payloads instead of throwing', () {
-      expect(ChannelPlayerBackend.decodeEventForTest({'event': 'playing', 'value': 'yes'}), isNull);
+    test('skips incomplete payloads instead of throwing', () {
       expect(
-        ChannelPlayerBackend.decodeEventForTest({'event': 'position', 'value': 'bad'}),
+        ChannelPlayerBackend.decodeEventForTest(
+          PlayerEventData(kind: NativePlayerEventType.playing),
+        ),
+        isNull,
+      );
+      expect(
+        ChannelPlayerBackend.decodeEventForTest(
+          PlayerEventData(kind: NativePlayerEventType.position),
+        ),
+        isNull,
+      );
+      expect(
+        ChannelPlayerBackend.decodeEventForTest(
+          PlayerEventData(kind: NativePlayerEventType.castState),
+        ),
         isNull,
       );
     });
@@ -800,4 +811,33 @@ class _FakeBrightness implements BrightnessController {
   Future<void> setBrightness(double v) async {
     value = v.clamp(0.0, 1.0);
   }
+}
+
+class _FakeBrightnessBridge implements VideoPlayerHostBridge {
+  _FakeBrightnessBridge({this.initialValue = 1.0});
+
+  final double initialValue;
+  double? lastSet;
+
+  @override
+  Future<double> getBrightness() async => initialValue;
+
+  @override
+  Future<void> setBrightness(double value) async {
+    lastSet = value;
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _ThrowingBrightnessBridge implements VideoPlayerHostBridge {
+  @override
+  Future<double> getBrightness() async => throw MissingPluginException('none');
+
+  @override
+  Future<void> setBrightness(double value) async => throw MissingPluginException('none');
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

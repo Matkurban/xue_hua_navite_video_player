@@ -40,3 +40,5 @@ migrate_working_dir/
 
 # Android emulator screenshots (local)
 android_shots/
+pigeon/
+**/*_objc_gen/*.o

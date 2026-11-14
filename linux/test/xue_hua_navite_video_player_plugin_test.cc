@@ -1,30 +1,43 @@
 #include <flutter_linux/flutter_linux.h>
-#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
 #include "include/xue_hua_navite_video_player/xue_hua_navite_video_player_plugin.h"
+#include "player_api.g.h"
 #include "xue_hua_navite_video_player_plugin_private.h"
-
-// This demonstrates a simple unit test of the C portion of this plugin's
-// implementation.
-//
-// Once you have built the plugin's example app, you can run these tests
-// from the command line. For instance, for a plugin called my_plugin
-// built for x64 debug, run:
-// $ build/linux/x64/debug/plugins/my_plugin/my_plugin_test
 
 namespace xue_hua_navite_video_player {
 namespace test {
 
-TEST(XueHuaNaviteVideoPlayerPlugin, GetPlatformVersion) {
-  g_autoptr(FlMethodResponse) response = get_platform_version();
-  ASSERT_NE(response, nullptr);
-  ASSERT_TRUE(FL_IS_METHOD_SUCCESS_RESPONSE(response));
-  FlValue* result = fl_method_success_response_get_result(
-      FL_METHOD_SUCCESS_RESPONSE(response));
-  ASSERT_EQ(fl_value_get_type(result), FL_VALUE_TYPE_STRING);
-  // The full string varies, so just validate that it has the right format.
-  EXPECT_THAT(fl_value_get_string(result), testing::StartsWith("Linux "));
+TEST(XueHuaNaviteVideoPlayerPlugin, AspectRatioModesMapToMpvNames) {
+  EXPECT_STREQ(
+      xue_hua_navite_video_player_aspect_ratio_mode_to_string(
+          XUE_HUA_NAVITE_VIDEO_PLAYER_NATIVE_ASPECT_RATIO_MODE_FIT),
+      "fit");
+  EXPECT_STREQ(
+      xue_hua_navite_video_player_aspect_ratio_mode_to_string(
+          XUE_HUA_NAVITE_VIDEO_PLAYER_NATIVE_ASPECT_RATIO_MODE_FILL),
+      "fill");
+  EXPECT_STREQ(
+      xue_hua_navite_video_player_aspect_ratio_mode_to_string(
+          XUE_HUA_NAVITE_VIDEO_PLAYER_NATIVE_ASPECT_RATIO_MODE_STRETCH),
+      "stretch");
+}
+
+TEST(XueHuaNaviteVideoPlayerPlugin, PlayerEventDataCarriesCastState) {
+  XueHuaNaviteVideoPlayerNativeCastState state =
+      XUE_HUA_NAVITE_VIDEO_PLAYER_NATIVE_CAST_STATE_CONNECTED;
+  g_autoptr(XueHuaNaviteVideoPlayerPlayerEventData) event =
+      xue_hua_navite_video_player_player_event_data_new(
+          XUE_HUA_NAVITE_VIDEO_PLAYER_NATIVE_PLAYER_EVENT_TYPE_CAST_STATE,
+          nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, &state, "Linux Cast");
+  ASSERT_NE(event, nullptr);
+  EXPECT_EQ(xue_hua_navite_video_player_player_event_data_get_kind(event),
+            XUE_HUA_NAVITE_VIDEO_PLAYER_NATIVE_PLAYER_EVENT_TYPE_CAST_STATE);
+  ASSERT_NE(xue_hua_navite_video_player_player_event_data_get_cast_state(event), nullptr);
+  EXPECT_EQ(*xue_hua_navite_video_player_player_event_data_get_cast_state(event),
+            XUE_HUA_NAVITE_VIDEO_PLAYER_NATIVE_CAST_STATE_CONNECTED);
+  EXPECT_STREQ(xue_hua_navite_video_player_player_event_data_get_cast_device_name(event),
+               "Linux Cast");
 }
 
 }  // namespace test

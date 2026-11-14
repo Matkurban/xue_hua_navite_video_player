@@ -1,23 +1,24 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
 
+import '../bridge/video_player_host_bridge.dart';
 import '../cache/video_cache_manager.dart';
 import '../core/video_source.dart';
 import '../data/models/navite_file.dart';
 import '../data/models/video_cover_frame.dart';
+import '../pigeon/player_api.g.dart';
 import '../utils/temp_paths.dart';
 
 /// Probe duration / cover frames without a live playback session.
 ///
-/// Uses the same MethodChannel wire methods as playback transport, but is a
-/// separate module from [PlayerBackend].
+/// Uses [VideoPlayerHostBridge] for host interop, independent from [PlayerBackend].
 class MediaProbe {
-  MediaProbe({MethodChannel? channel})
-    : _channel = channel ?? const MethodChannel('xue_hua_navite_video_player/player');
+  MediaProbe({this._bridge});
 
-  final MethodChannel _channel;
+  final VideoPlayerHostBridge? _bridge;
+
+  VideoPlayerHostBridge get _resolvedBridge => _bridge ?? VideoPlayerHostBridge.instance;
 
   /// Probe total duration for [source]. Returns `null` on failure / timeout.
   Future<Duration?> probeDuration(
@@ -41,20 +42,16 @@ class MediaProbe {
       } else {
         mediaUrl = await source.resolveToNativeUrl();
       }
-      final raw = await _channel
-          .invokeMethod<dynamic>('getDuration', {
-            'url': mediaUrl,
-            'timeoutMs': timeout.inMilliseconds,
-            'cacheKey': ?cacheKey,
-            'headers': ?headers,
-          })
+      final ms = await _resolvedBridge
+          .getDuration(
+            DurationProbeRequest(
+              url: mediaUrl,
+              timeoutMs: timeout.inMilliseconds,
+              cacheKey: cacheKey,
+              headers: headers,
+            ),
+          )
           .timeout(timeout);
-      if (raw == null) return null;
-      final ms = switch (raw) {
-        final int v => v,
-        final num v => v.toInt(),
-        _ => null,
-      };
       if (ms == null || ms <= 0) return null;
       return Duration(milliseconds: ms);
     } catch (_) {
@@ -94,24 +91,20 @@ class MediaProbe {
         resolved = await source.resolveToNativeUrl();
       }
       final dir = kIsWeb ? '' : (outputDir ?? await pluginCoverDir());
-      final raw = await _channel
-          .invokeMethod<dynamic>('extractCovers', {
-            'url': resolved,
-            'count': count,
-            'candidates': candidateCount,
-            'minBrightness': minBrightness,
-            'outputDir': dir,
-            'cacheKey': ?cacheKey,
-            'headers': ?headers,
-          })
+      final raw = await _resolvedBridge
+          .extractCovers(
+            CoverExtractRequest(
+              url: resolved,
+              count: count,
+              candidates: candidateCount,
+              minBrightness: minBrightness,
+              outputDir: dir,
+              cacheKey: cacheKey,
+              headers: headers,
+            ),
+          )
           .timeout(const Duration(seconds: 60));
-      if (raw is! List) return const <VideoCoverFrame>[];
-      final list = raw
-          .whereType<Map<Object?, Object?>>()
-          .map(Map<String, dynamic>.from)
-          .map(_frameFromMap)
-          .whereType<VideoCoverFrame>()
-          .toList();
+      final list = raw.map(_frameFromData).whereType<VideoCoverFrame>().toList();
       list.sort((a, b) => b.brightness.compareTo(a.brightness));
       return list;
     } catch (_) {
@@ -123,15 +116,13 @@ class MediaProbe {
     }
   }
 
-  static VideoCoverFrame? _frameFromMap(Map<String, dynamic> map) {
-    final path = map['path'] as String?;
-    final positionMs = (map['positionMs'] as num?)?.toInt() ?? 0;
-    final brightness = (map['brightness'] as num?)?.toDouble() ?? 0.0;
-    if (path == null || path.isEmpty) return null;
+  static VideoCoverFrame? _frameFromData(CoverFrameData data) {
+    final path = data.path;
+    if (path.isEmpty) return null;
     return VideoCoverFrame(
       image: NaviteFile.fromLocation(path),
-      position: Duration(milliseconds: positionMs),
-      brightness: brightness.clamp(0.0, 1.0),
+      position: Duration(milliseconds: data.positionMs),
+      brightness: data.brightness.clamp(0.0, 1.0),
     );
   }
 }

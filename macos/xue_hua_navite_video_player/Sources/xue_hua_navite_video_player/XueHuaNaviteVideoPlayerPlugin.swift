@@ -42,38 +42,41 @@ private enum DisplayBrightnessAPI {
     }
 }
 
-/// macOS 插件主类，基于 AVPlayer 实现原生视频播放，通过 AVPlayerLayer（PlatformView）渲染。
-/// macOS plugin: AVPlayer displayed via AVPlayerLayer PlatformView.
-public class XueHuaNaviteVideoPlayerPlugin: NSObject, FlutterPlugin {
-    private var methodChannel: FlutterMethodChannel?
-    private var eventChannel: FlutterEventChannel?
+private enum MacOutboundEvent {
+    case player(PlayerEventData)
+    case fullscreen(Bool)
+}
+
+/// macOS 插件主类，基于 AVPlayer + AVPlayerLayer（PlatformView）+ Pigeon Swift FFI。
+/// macOS plugin: AVPlayer displayed via AVPlayerLayer PlatformView and Pigeon FFI.
+public class XueHuaNaviteVideoPlayerPlugin: NSObject, FlutterPlugin, PlayerHostApi {
     private var registrar: FlutterPluginRegistrar?
     private var videoPlayer: NativeVideoPlayer?
     private var savedBrightness: Float?
     private var enterFullscreenObserver: NSObjectProtocol?
     private var exitFullscreenObserver: NSObjectProtocol?
     private var windowFullscreen = false
+    private var eventContinuation: AsyncStream<MacOutboundEvent>.Continuation?
+    private var eventPumpTask: Task<Void, Never>?
+
+    deinit {
+        cleanupLifecycle()
+    }
 
     public static func register(with registrar: FlutterPluginRegistrar) {
         let instance = XueHuaNaviteVideoPlayerPlugin()
         instance.registrar = registrar
+        registrar.publish(instance)
+        instance.startEventPump()
 
-        let methodChannel = FlutterMethodChannel(
-            name: "xue_hua_navite_video_player/player",
-            binaryMessenger: registrar.messenger
+        let player = NativeVideoPlayer(
+            windowProvider: { [weak instance] in instance?.hostWindow() },
+            eventEmitter: { [weak instance] event in
+                instance?.enqueueOutbound(.player(event))
+            }
         )
-        instance.methodChannel = methodChannel
-        registrar.addMethodCallDelegate(instance, channel: methodChannel)
-
-        let eventChannel = FlutterEventChannel(
-            name: "xue_hua_navite_video_player/player/events",
-            binaryMessenger: registrar.messenger
-        )
-        instance.eventChannel = eventChannel
-        instance.videoPlayer = NativeVideoPlayer(
-            windowProvider: { [weak instance] in instance?.hostWindow() }
-        )
-        eventChannel.setStreamHandler(instance.videoPlayer)
+        instance.videoPlayer = player
+        PlayerHostApiSetup.register(api: instance, registrar: registrar)
 
         registrar.register(
             PlayerPlatformViewFactory(
@@ -84,315 +87,325 @@ public class XueHuaNaviteVideoPlayerPlugin: NSObject, FlutterPlugin {
         instance.startObservingWindowFullscreen()
     }
 
-    public func detachFromEngine(for _: FlutterPluginRegistrar) {
+    public func detachFromEngine(for registrar: FlutterPluginRegistrar) {
+        PlayerHostApiSetup.unregister(api: self, registrar: registrar)
+        cleanupLifecycle()
+        self.registrar = nil
+    }
+
+    private func cleanupLifecycle() {
         restoreWindowFullscreen()
         stopObservingWindowFullscreen()
         restoreBrightness()
         videoPlayer?.dispose()
-        methodChannel?.setMethodCallHandler(nil)
-        eventChannel?.setStreamHandler(nil)
+        eventContinuation?.finish()
+        eventContinuation = nil
+        eventPumpTask?.cancel()
+        eventPumpTask = nil
     }
 
-    public func handle(
-        _ call: FlutterMethodCall,
-        result: @escaping FlutterResult
-    ) {
+    private func startEventPump() {
+        var continuation: AsyncStream<MacOutboundEvent>.Continuation!
+        let stream = AsyncStream<MacOutboundEvent>(bufferingPolicy: .unbounded) {
+            continuation = $0
+        }
+        eventContinuation = continuation
+        eventPumpTask = Task { [weak self] in
+            for await item in stream {
+                if Task.isCancelled {
+                    break
+                }
+                guard let self, let registrar = self.registrar else {
+                    break
+                }
+                guard let flutterApi = PlayerFlutterApiRegistrar.getInstance(registrar: registrar) else {
+                    continue
+                }
+                switch item {
+                case .player(let event):
+                    try? await flutterApi.onPlayerEvent(event: event)
+                case .fullscreen(let isFullscreen):
+                    try? await flutterApi.onWindowFullscreen(isFullscreen: isFullscreen)
+                }
+            }
+        }
+    }
+
+    private func enqueueOutbound(_ event: MacOutboundEvent) {
+        eventContinuation?.yield(event)
+    }
+
+    private func requirePlayer() throws -> NativeVideoPlayer {
         guard let player = videoPlayer else {
-            result(
-                FlutterError(
-                    code: "NO_PLAYER",
-                    message: "Player not initialized",
-                    details: nil
-                )
+            throw PigeonError(
+                code: "NO_PLAYER",
+                message: "Player not initialized",
+                details: nil
             )
-            return
         }
+        return player
+    }
 
-        switch call.method {
-        case "create":
-            let textureId = player.create()
-            result(textureId)
-        case "open":
-            guard let args = call.arguments as? [String: Any],
-                  let url = args["url"] as? String
-            else {
-                result(
-                    FlutterError(
-                        code: "INVALID_ARG",
-                        message: "url is required",
-                        details: nil
-                    )
-                )
-                return
-            }
-            let castUrl = args["castUrl"] as? String
-            let cacheKey = args["cacheKey"] as? String
-            let headers = Self.extractHeaders(args)
-            let enableCache = args["enableCache"] as? Bool
-            player.open(
-                url: url,
-                castUrl: castUrl,
-                cacheKey: cacheKey,
-                headers: headers,
-                enableCache: enableCache
-            )
-            result(nil)
-        case "play":
-            player.play()
-            result(nil)
-        case "pause":
-            player.pause()
-            result(nil)
-        case "seek":
-            guard let args = call.arguments as? [String: Any],
-                  let position = args["position"] as? Int
-            else {
-                result(
-                    FlutterError(
-                        code: "INVALID_ARG",
-                        message: "position is required",
-                        details: nil
-                    )
-                )
-                return
-            }
-            player.seek(positionMs: position)
-            result(nil)
-        case "setVolume":
-            guard let args = call.arguments as? [String: Any],
-                  let volume = args["volume"] as? Double
-            else {
-                result(
-                    FlutterError(
-                        code: "INVALID_ARG",
-                        message: "volume is required",
-                        details: nil
-                    )
-                )
-                return
-            }
-            player.setVolume(volume: Float(volume))
-            result(nil)
-        case "setSpeed":
-            guard let args = call.arguments as? [String: Any],
-                  let speed = args["speed"] as? Double
-            else {
-                result(
-                    FlutterError(
-                        code: "INVALID_ARG",
-                        message: "speed is required",
-                        details: nil
-                    )
-                )
-                return
-            }
-            player.setSpeed(speed: Float(speed))
-            result(nil)
-        case "setAspectRatioMode":
-            guard let args = call.arguments as? [String: Any],
-                  let mode = args["mode"] as? String
-            else {
-                result(
-                    FlutterError(
-                        code: "INVALID_ARG",
-                        message: "mode is required",
-                        details: nil
-                    )
-                )
-                return
-            }
-            player.setAspectRatioMode(mode)
-            result(nil)
-        case "setVideoViewSize":
-            result(nil)
-        case "showCastPicker":
-            player.showCastPicker()
-            result(nil)
-        case "stopCasting":
-            player.stopCasting()
-            result(nil)
-        case "dispose":
-            restoreBrightness()
-            player.dispose()
-            result(nil)
-        case "getBrightness":
-            result(currentBrightness())
-        case "setBrightness":
-            guard let args = call.arguments as? [String: Any],
-                  let value = args["value"] as? Double
-            else {
-                result(
-                    FlutterError(
-                        code: "INVALID_ARG",
-                        message: "value is required",
-                        details: nil
-                    )
-                )
-                return
-            }
-            applyBrightness(value)
-            result(nil)
-        case "setWindowFullscreen":
-            let value = (call.arguments as? [String: Any])?["value"] as? Bool ?? false
-            setWindowFullscreen(value)
-            result(nil)
-        case "takeSnapshot":
-            player.takeSnapshot(result: result)
-        case "extractCovers":
-            guard let args = call.arguments as? [String: Any],
-                  let url = args["url"] as? String
-            else {
-                result(
-                    FlutterError(
-                        code: "INVALID_ARG",
-                        message: "url is required",
-                        details: nil
-                    )
-                )
-                return
-            }
-            let count = (args["count"] as? Int) ?? 5
-            let candidates = (args["candidates"] as? Int) ?? (count * 3)
-            let minBrightness = (args["minBrightness"] as? Double) ?? 0.08
-            let outputDir =
-                (args["outputDir"] as? String) ?? NSTemporaryDirectory()
-            let cacheKey = args["cacheKey"] as? String
-            let headers = Self.extractHeaders(args)
-            NativeVideoPlayer.extractCovers(
-                url: url,
-                count: count,
-                candidates: candidates,
-                minBrightness: minBrightness,
-                outputDir: outputDir,
-                cacheKey: cacheKey,
-                headers: headers,
-                result: result
-            )
-        case "getDuration":
-            guard let args = call.arguments as? [String: Any],
-                  let url = args["url"] as? String
-            else {
-                result(
-                    FlutterError(
-                        code: "INVALID_ARG",
-                        message: "url is required",
-                        details: nil
-                    )
-                )
-                return
-            }
-            let timeoutMs = (args["timeoutMs"] as? Int) ?? 15000
-            let cacheKey = args["cacheKey"] as? String
-            let headers = Self.extractHeaders(args)
-            NativeVideoPlayer.getDuration(
-                url: url,
-                timeoutMs: timeoutMs,
-                cacheKey: cacheKey,
-                headers: headers,
-                result: result
-            )
-        case "configureCache":
-            let args = call.arguments as? [String: Any]
-            let enabled = (args?["enabled"] as? Bool) ?? true
-            let maxCacheBytes = (args?["maxCacheBytes"] as? NSNumber)?.int64Value ?? (512 * 1024 * 1024)
-            let maxSingleFileBytes = (args?["maxSingleFileBytes"] as? NSNumber)?.int64Value ?? (256 * 1024 * 1024)
-            let cacheDir = args?["cacheDir"] as? String
-            MediaCacheManager.shared.configure(
-                enabled: enabled,
-                maxCacheBytes: maxCacheBytes,
-                maxSingleFileBytes: maxSingleFileBytes,
-                cacheDir: cacheDir
-            )
-            result(nil)
-        case "precache":
-            let args = call.arguments as? [String: Any]
-            guard let url = args?["url"] as? String, !url.isEmpty else {
-                result(nil)
-                return
-            }
-            let cacheKey = (args?["cacheKey"] as? String).flatMap { $0.isEmpty ? nil : $0 }
-                ?? MediaCacheManager.sha1Hex(url)
-            let cacheDir = args?["cacheDir"] as? String
-            let headers = Self.extractHeaders(args)
-            let preloadBytes = (args?["preloadBytes"] as? NSNumber)?.int64Value
-            MediaCacheManager.shared.precache(
-                url: url,
-                cacheKey: cacheKey,
-                cacheDir: cacheDir,
-                headers: headers,
-                preloadBytes: preloadBytes
-            ) {
-                DispatchQueue.main.async { result(nil) }
-            }
-        case "cancelPrecache":
-            if let args = call.arguments as? [String: Any],
-               let cacheKey = args["cacheKey"] as? String,
-               !cacheKey.isEmpty
-            {
-                MediaCacheManager.shared.cancelPrecache(cacheKey: cacheKey)
-            }
-            result(nil)
-        case "isCached":
-            let args = call.arguments as? [String: Any]
-            let rawKey = (args?["cacheKey"] as? String).flatMap { $0.isEmpty ? nil : $0 }
-                ?? (args?["url"] as? String).map { MediaCacheManager.sha1Hex($0) }
-            guard let key = rawKey, !key.isEmpty else {
-                result(false)
-                return
-            }
-            let cacheDir = args?["cacheDir"] as? String
-            result(MediaCacheManager.shared.isCached(cacheKey: key, cacheDir: cacheDir))
-        case "getCacheSize":
-            let args = call.arguments as? [String: Any]
-            let cacheDir = args?["cacheDir"] as? String
-            MediaCacheManager.shared.getCacheSizeAsync(cacheDir: cacheDir) { bytes in
-                DispatchQueue.main.async { result(bytes) }
-            }
-        case "removeCache":
-            let args = call.arguments as? [String: Any]
-            let rawKey = (args?["cacheKey"] as? String).flatMap { $0.isEmpty ? nil : $0 }
-                ?? (args?["url"] as? String).map { MediaCacheManager.sha1Hex($0) }
-            guard let key = rawKey, !key.isEmpty else {
-                result(nil)
-                return
-            }
-            let cacheDir = args?["cacheDir"] as? String
-            MediaCacheManager.shared.removeCacheAsync(cacheKey: key, cacheDir: cacheDir) {
-                DispatchQueue.main.async { result(nil) }
-            }
-        case "clearCache":
-            let args = call.arguments as? [String: Any]
-            let cacheDir = args?["cacheDir"] as? String
-            MediaCacheManager.shared.clearCacheAsync(cacheDir: cacheDir) {
-                DispatchQueue.main.async { result(nil) }
-            }
-        case "pinCacheKey":
-            let args = call.arguments as? [String: Any]
-            MediaCacheManager.shared.pin(args?["cacheKey"] as? String)
-            result(nil)
-        case "unpinCacheKey":
-            let args = call.arguments as? [String: Any]
-            MediaCacheManager.shared.unpin(args?["cacheKey"] as? String)
-            result(nil)
-        case "getPlatformVersion":
-            result(
-                "macOS " + ProcessInfo.processInfo.operatingSystemVersionString
-            )
-        default:
-            result(FlutterMethodNotImplemented)
+    // MARK: - PlayerHostApi
+
+    func create() async throws -> Int64 {
+        let player = try requirePlayer()
+        return await MainActor.run {
+            player.create()
         }
     }
 
-    private static func extractHeaders(_ args: [String: Any]?) -> [String: String]? {
-        guard let raw = args?["headers"] as? [AnyHashable: Any] else { return nil }
+    func open(request: OpenMediaRequest) async throws {
+        let player = try requirePlayer()
+        let normalizedHeaders = Self.normalizeHeaders(request.headers)
+        await MainActor.run {
+            player.open(
+                url: request.url,
+                castUrl: request.castUrl,
+                cacheKey: request.cacheKey,
+                headers: normalizedHeaders,
+                enableCache: request.enableCache
+            )
+        }
+    }
+
+    func play() throws {
+        let player = try requirePlayer()
+        runOnMainThread {
+            player.play()
+        }
+    }
+
+    func pause() throws {
+        let player = try requirePlayer()
+        runOnMainThread {
+            player.pause()
+        }
+    }
+
+    func seek(positionMs: Int64) throws {
+        let player = try requirePlayer()
+        runOnMainThread {
+            player.seek(positionMs: Int(positionMs))
+        }
+    }
+
+    func setVolume(volume: Double) throws {
+        let player = try requirePlayer()
+        runOnMainThread {
+            player.setVolume(volume: Float(volume))
+        }
+    }
+
+    func setSpeed(speed: Double) throws {
+        let player = try requirePlayer()
+        runOnMainThread {
+            player.setSpeed(speed: Float(speed))
+        }
+    }
+
+    func setAspectRatioMode(mode: NativeAspectRatioMode) throws {
+        let player = try requirePlayer()
+        runOnMainThread {
+            player.setAspectRatioMode(mode)
+        }
+    }
+
+    func setVideoViewSize(width: Double, height: Double, devicePixelRatio: Double) throws {
+        // AVPlayerLayer PlatformView auto-resizes via layout().
+    }
+
+    func showCastPicker() throws {
+        let player = try requirePlayer()
+        runOnMainThread {
+            player.showCastPicker()
+        }
+    }
+
+    func stopCasting() throws {
+        let player = try requirePlayer()
+        runOnMainThread {
+            player.stopCasting()
+        }
+    }
+
+    func dispose() throws {
+        let player = try requirePlayer()
+        runOnMainThread { [weak self] in
+            self?.restoreBrightness()
+            player.dispose()
+        }
+    }
+
+    func getBrightness() throws -> Double {
+        if Thread.isMainThread {
+            return currentBrightness()
+        }
+        var value = 1.0
+        DispatchQueue.main.sync {
+            value = self.currentBrightness()
+        }
+        return value
+    }
+
+    func setBrightness(value: Double) throws {
+        runOnMainThread { [weak self] in
+            self?.applyBrightness(value)
+        }
+    }
+
+    func setWindowFullscreen(value: Bool) throws {
+        runOnMainThread { [weak self] in
+            self?.applyWindowFullscreen(value)
+        }
+    }
+
+    func takeSnapshot() async throws -> SnapshotData? {
+        let player = try requirePlayer()
+        return try await player.takeSnapshot()
+    }
+
+    func getDuration(request: DurationProbeRequest) async throws -> Int64? {
+        let headers = Self.normalizeHeaders(request.headers)
+        return await NativeVideoPlayer.getDuration(
+            url: request.url,
+            timeoutMs: Int(request.timeoutMs),
+            cacheKey: request.cacheKey,
+            headers: headers
+        )
+    }
+
+    func extractCovers(request: CoverExtractRequest) async throws -> [CoverFrameData] {
+        let headers = Self.normalizeHeaders(request.headers)
+        let outputDir = request.outputDir.isEmpty ? NSTemporaryDirectory() : request.outputDir
+        return await NativeVideoPlayer.extractCovers(
+            url: request.url,
+            count: Int(request.count),
+            candidates: Int(request.candidates),
+            minBrightness: request.minBrightness,
+            outputDir: outputDir,
+            cacheKey: request.cacheKey,
+            headers: headers
+        )
+    }
+
+    func configureCache(request: CacheConfigRequest) async throws {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                MediaCacheManager.shared.configure(
+                    enabled: request.enabled,
+                    maxCacheBytes: request.maxCacheBytes,
+                    maxSingleFileBytes: request.maxSingleFileBytes,
+                    cacheDir: request.cacheDir
+                )
+                continuation.resume()
+            }
+        }
+    }
+
+    func precache(request: PrecacheRequest) async throws {
+        guard !request.url.isEmpty else { return }
+        let cacheKey = (request.cacheKey?.isEmpty == false)
+            ? request.cacheKey!
+            : MediaCacheManager.sha1Hex(request.url)
+        let headers = Self.normalizeHeaders(request.headers)
+        await withCheckedContinuation { continuation in
+            let gate = OneShotGate()
+            MediaCacheManager.shared.precache(
+                url: request.url,
+                cacheKey: cacheKey,
+                cacheDir: request.cacheDir,
+                headers: headers,
+                preloadBytes: request.preloadBytes
+            ) {
+                if gate.tryEnter() {
+                    continuation.resume()
+                }
+            }
+        }
+    }
+
+    func cancelPrecache(cacheKey: String) throws {
+        if !cacheKey.isEmpty {
+            MediaCacheManager.shared.cancelPrecache(cacheKey: cacheKey)
+        }
+    }
+
+    func isCached(request: CacheEntryRequest) async throws -> Bool {
+        let rawKey = (request.cacheKey?.isEmpty == false)
+            ? request.cacheKey!
+            : MediaCacheManager.sha1Hex(request.url)
+        guard !rawKey.isEmpty else { return false }
+        return await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let cached = MediaCacheManager.shared.isCached(
+                    cacheKey: rawKey,
+                    cacheDir: request.cacheDir
+                )
+                continuation.resume(returning: cached)
+            }
+        }
+    }
+
+    func getCacheSize(cacheDir: String?) async throws -> Int64 {
+        await withCheckedContinuation { continuation in
+            MediaCacheManager.shared.getCacheSizeAsync(cacheDir: cacheDir) { bytes in
+                continuation.resume(returning: bytes)
+            }
+        }
+    }
+
+    func removeCache(request: CacheEntryRequest) async throws {
+        let rawKey = (request.cacheKey?.isEmpty == false)
+            ? request.cacheKey!
+            : MediaCacheManager.sha1Hex(request.url)
+        guard !rawKey.isEmpty else { return }
+        await withCheckedContinuation { continuation in
+            MediaCacheManager.shared.removeCacheAsync(
+                cacheKey: rawKey,
+                cacheDir: request.cacheDir
+            ) {
+                continuation.resume()
+            }
+        }
+    }
+
+    func clearCache(cacheDir: String?) async throws {
+        await withCheckedContinuation { continuation in
+            MediaCacheManager.shared.clearCacheAsync(cacheDir: cacheDir) {
+                continuation.resume()
+            }
+        }
+    }
+
+    func pinCacheKey(cacheKey: String) throws {
+        MediaCacheManager.shared.pin(cacheKey)
+    }
+
+    func unpinCacheKey(cacheKey: String) throws {
+        MediaCacheManager.shared.unpin(cacheKey)
+    }
+
+    // MARK: - Helpers
+
+    private static func normalizeHeaders(_ raw: [String: String]?) -> [String: String]? {
+        guard let raw, !raw.isEmpty else { return nil }
         var out: [String: String] = [:]
         for (k, v) in raw {
-            let key = String(describing: k).trimmingCharacters(in: .whitespacesAndNewlines)
+            let key = k.trimmingCharacters(in: .whitespacesAndNewlines)
             if !key.isEmpty {
-                out[key] = String(describing: v)
+                out[key] = v
             }
         }
         return out.isEmpty ? nil : out
+    }
+
+    private func runOnMainThread(_ block: @escaping () -> Void) {
+        if Thread.isMainThread {
+            block()
+        } else {
+            DispatchQueue.main.async(execute: block)
+        }
     }
 
     private func currentBrightness() -> Double {
@@ -407,29 +420,17 @@ public class XueHuaNaviteVideoPlayerPlugin: NSObject, FlutterPlugin {
 
     private func applyBrightness(_ value: Double) {
         let clamped = Float(min(max(value, 0), 1))
-        let apply = {
-            if self.savedBrightness == nil {
-                self.savedBrightness = Float(self.currentBrightness())
-            }
-            _ = self.setDisplayBrightness(clamped)
+        if savedBrightness == nil {
+            savedBrightness = Float(currentBrightness())
         }
-        if Thread.isMainThread {
-            apply()
-        } else {
-            DispatchQueue.main.sync(execute: apply)
-        }
+        _ = setDisplayBrightness(clamped)
     }
 
     private func restoreBrightness() {
         guard let original = savedBrightness else { return }
         savedBrightness = nil
-        let restore = {
-            _ = self.setDisplayBrightness(original)
-        }
-        if Thread.isMainThread {
-            restore()
-        } else {
-            DispatchQueue.main.sync(execute: restore)
+        runOnMainThread { [weak self] in
+            _ = self?.setDisplayBrightness(original)
         }
     }
 
@@ -438,10 +439,10 @@ public class XueHuaNaviteVideoPlayerPlugin: NSObject, FlutterPlugin {
     }
 
     private func notifyWindowFullscreen(_ value: Bool) {
-        methodChannel?.invokeMethod("onWindowFullscreen", arguments: value)
+        enqueueOutbound(.fullscreen(value))
     }
 
-    private func setWindowFullscreen(_ enable: Bool) {
+    private func applyWindowFullscreen(_ enable: Bool) {
         guard let window = hostWindow() else { return }
         window.collectionBehavior.insert(.fullScreenPrimary)
         let isFs = window.styleMask.contains(.fullScreen)
@@ -452,12 +453,14 @@ public class XueHuaNaviteVideoPlayerPlugin: NSObject, FlutterPlugin {
     }
 
     private func restoreWindowFullscreen() {
-        guard let window = hostWindow(), window.styleMask.contains(.fullScreen) else {
-            windowFullscreen = false
-            return
+        runOnMainThread { [weak self] in
+            guard let self, let window = self.hostWindow(), window.styleMask.contains(.fullScreen) else {
+                self?.windowFullscreen = false
+                return
+            }
+            window.toggleFullScreen(nil)
+            self.windowFullscreen = false
         }
-        window.toggleFullScreen(nil)
-        windowFullscreen = false
     }
 
     private func startObservingWindowFullscreen() {
@@ -546,12 +549,27 @@ public class XueHuaNaviteVideoPlayerPlugin: NSObject, FlutterPlugin {
     }
 }
 
+private final class OneShotGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var entered = false
+
+    func tryEnter() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        if entered {
+            return false
+        }
+        entered = true
+        return true
+    }
+}
+
 /// AVPlayer 封装：画面由 PlatformView 上的 AVPlayerLayer 显示（videoGravity）。
 /// AVPlayer wrapper: frames shown via AVPlayerLayer on a PlatformView.
-class NativeVideoPlayer: NSObject, FlutterStreamHandler {
+class NativeVideoPlayer: NSObject {
+    private let eventEmitter: (PlayerEventData) -> Void
     private var player: AVPlayer?
     private var playerItem: AVPlayerItem?
-    private var eventSink: FlutterEventSink?
     private var timeObserver: Any?
     private var desiredRate: Float = 1.0
     private var waitingForRate = false
@@ -577,12 +595,19 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler {
     private var currentEnableCache: Bool?
     private var lastReportedBufferedMs: Int = -1
     private var snapshotGeneration = 0
+    private var openGeneration = 0
+    private var activeSnapshotGenerator: AVAssetImageGenerator?
     private var wantsToPlay = false
     private weak var hostedPlayerLayer: AVPlayerLayer?
     private var videoGravity: AVLayerVideoGravity = .resizeAspect
+    private var securityScopedURLs = Set<URL>()
 
-    init(windowProvider: (() -> NSWindow?)? = nil) {
+    init(
+        windowProvider: (() -> NSWindow?)? = nil,
+        eventEmitter: @escaping (PlayerEventData) -> Void
+    ) {
         self.windowProvider = windowProvider
+        self.eventEmitter = eventEmitter
         super.init()
     }
 
@@ -601,30 +626,16 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler {
         }
     }
 
-    func setAspectRatioMode(_ mode: String) {
+    func setAspectRatioMode(_ mode: NativeAspectRatioMode) {
         switch mode {
-        case "fill":
+        case .fill:
             videoGravity = .resizeAspectFill
-        case "stretch":
+        case .stretch:
             videoGravity = .resize
-        default:
+        case .fit:
             videoGravity = .resizeAspect
         }
         hostedPlayerLayer?.videoGravity = videoGravity
-    }
-
-    func onListen(
-        withArguments _: Any?,
-        eventSink events: @escaping FlutterEventSink
-    ) -> FlutterError? {
-        eventSink = events
-        emitCastState()
-        return nil
-    }
-
-    func onCancel(withArguments _: Any?) -> FlutterError? {
-        eventSink = nil
-        return nil
     }
 
     /// Returns 0 — display uses PlatformView, not Flutter Texture.
@@ -640,12 +651,17 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler {
         headers: [String: String]? = nil,
         enableCache: Bool? = nil
     ) {
+        openGeneration += 1
+        let targetOpenGen = openGeneration
+
         let keepCastPlayer = (player?.isExternalPlaybackActive == true)
         if keepCastPlayer {
             cleanupPlayerItemObservers()
         } else {
             cleanupPlayer()
         }
+        guard targetOpenGen == openGeneration else { return }
+
         currentUrl = url
         currentCastUrl = castUrl
         currentCacheKey = cacheKey
@@ -663,8 +679,6 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler {
         }
         openInternal(url: targetUrlString, keepCastPlayer: keepCastPlayer)
     }
-
-    private var securityScopedURLs = Set<URL>()
 
     private static func mediaURL(from raw: String) -> URL? {
         if let url = URL(string: raw), url.scheme != nil {
@@ -727,7 +741,7 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler {
 
     private func openInternal(url: String, keepCastPlayer: Bool) {
         guard let mediaUrl = Self.mediaURL(from: url) else {
-            sendEvent(event: "error", value: "Invalid URL: \(url)")
+            emitError("Invalid URL: \(url)")
             return
         }
 
@@ -739,9 +753,7 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler {
         }
 
         if mediaUrl.isFileURL, !FileManager.default.isReadableFile(atPath: mediaUrl.path) {
-            sendEvent(
-                event: "error",
-                value:
+            emitError(
                 "The file couldn’t be opened because you don’t have permission to view it. "
                     + "On macOS App Sandbox, open files via a user-selected bookmark "
                     + "or place them in the app container (e.g. temporary directory)."
@@ -778,7 +790,7 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler {
                 queue: .main
             ) { [weak self] time in
                 if let ms = self?.milliseconds(from: time) {
-                    self?.sendEvent(event: "position", value: ms)
+                    self?.emitPosition(Int64(ms))
                 }
             }
 
@@ -819,8 +831,8 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler {
         }
 
         emitCastState()
-        sendEvent(event: "playing", value: false)
-        sendEvent(event: "buffering", value: true)
+        emitPlaying(false)
+        emitBuffering(true)
     }
 
     private func switchItemForAirPlay(
@@ -860,19 +872,16 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler {
             switch item.status {
             case .readyToPlay:
                 if let durationMs = self.milliseconds(from: item.duration) {
-                    self.sendEvent(event: "duration", value: durationMs)
+                    self.emitDuration(Int64(durationMs))
                     if (item.asset as? AVURLAsset)?.url.isFileURL == true {
                         self.lastReportedBufferedMs = durationMs
-                        self.sendEvent(event: "buffered", value: durationMs)
+                        self.emitBuffered(Int64(durationMs))
                     }
                 }
                 self.publishBufferedRanges(item: item)
                 self.publishBuffering()
             case .failed:
-                self.sendEvent(
-                    event: "error",
-                    value: item.error?.localizedDescription ?? "Unknown error"
-                )
+                self.emitError(item.error?.localizedDescription ?? "Unknown error")
             default:
                 break
             }
@@ -880,13 +889,7 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler {
 
         let reportSize: (CGSize) -> Void = { [weak self] size in
             guard size.width > 0, size.height > 0 else { return }
-            self?.sendEvent(
-                event: "videoSize",
-                value: [
-                    "width": Int(size.width),
-                    "height": Int(size.height),
-                ]
-            )
+            self?.emitVideoSize(width: Double(size.width), height: Double(size.height))
         }
         if item.presentationSize.width > 0,
            item.presentationSize.height > 0
@@ -928,8 +931,8 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler {
             queue: .main
         ) { [weak self] _ in
             self?.wantsToPlay = false
-            self?.sendEvent(event: "playing", value: false)
-            self?.sendEvent(event: "completed", value: nil)
+            self?.emitPlaying(false)
+            self?.emitCompleted()
         }
 
         failedToPlayToEndObserver = NotificationCenter.default.addObserver(
@@ -939,10 +942,7 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler {
         ) { [weak self] notification in
             let error = notification.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error
             self?.wantsToPlay = false
-            self?.sendEvent(
-                event: "error",
-                value: error?.localizedDescription ?? "Unknown error"
-            )
+            self?.emitError(error?.localizedDescription ?? "Unknown error")
         }
     }
 
@@ -959,7 +959,7 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler {
         let ms = Int((maxEndSeconds * 1000).rounded())
         if ms != lastReportedBufferedMs {
             lastReportedBufferedMs = ms
-            sendEvent(event: "buffered", value: ms)
+            emitBuffered(Int64(ms))
         }
     }
 
@@ -1003,33 +1003,29 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler {
     }
 
     func showCastPicker() {
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self, let picker = self.ensureRoutePickerView() else { return }
-            picker.player = self.player
-            if let button = Self.findButton(in: picker) {
-                button.performClick(nil)
-            }
+        guard let picker = ensureRoutePickerView() else { return }
+        picker.player = player
+        if let button = Self.findButton(in: picker) {
+            button.performClick(nil)
         }
     }
 
     func stopCasting() {
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self, let player = self.player else { return }
-            let currentTime = player.currentTime()
-            self.wantsToPlay = false
-            player.pause()
-            if player.isExternalPlaybackActive {
-                player.allowsExternalPlayback = false
-                DispatchQueue.main.async { [weak self] in
-                    guard let self = self, let player = self.player else { return }
-                    player.allowsExternalPlayback = true
-                    player.seek(to: currentTime, toleranceBefore: .zero, toleranceAfter: .zero)
-                    self.wasExternalPlaybackActive = false
-                    self.emitCastState()
-                }
-            } else {
+        guard let player else { return }
+        let currentTime = player.currentTime()
+        wantsToPlay = false
+        player.pause()
+        if player.isExternalPlaybackActive {
+            player.allowsExternalPlayback = false
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self, let player = self.player else { return }
+                player.allowsExternalPlayback = true
+                player.seek(to: currentTime, toleranceBefore: .zero, toleranceAfter: .zero)
+                self.wasExternalPlaybackActive = false
                 self.emitCastState()
             }
+        } else {
+            emitCastState()
         }
     }
 
@@ -1078,25 +1074,60 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler {
 
     private func emitCastState() {
         if player?.isExternalPlaybackActive == true {
-            sendEvent(
-                event: "castState",
-                value: [
-                    "state": "connected",
-                    "deviceName": "AirPlay",
-                ]
+            eventEmitter(
+                PlayerEventData(
+                    kind: .castState,
+                    castState: .connected,
+                    castDeviceName: "AirPlay"
+                )
             )
         } else {
-            sendEvent(
-                event: "castState",
-                value: [
-                    "state": "notConnected",
-                ]
+            eventEmitter(
+                PlayerEventData(
+                    kind: .castState,
+                    castState: .notConnected
+                )
             )
         }
     }
 
+    private func emitPosition(_ positionMs: Int64) {
+        eventEmitter(PlayerEventData(kind: .position, intValue: positionMs))
+    }
+
+    private func emitBuffered(_ bufferedMs: Int64) {
+        eventEmitter(PlayerEventData(kind: .buffered, intValue: bufferedMs))
+    }
+
+    private func emitDuration(_ durationMs: Int64) {
+        eventEmitter(PlayerEventData(kind: .duration, intValue: durationMs))
+    }
+
+    private func emitPlaying(_ isPlaying: Bool) {
+        eventEmitter(PlayerEventData(kind: .playing, boolValue: isPlaying))
+    }
+
+    private func emitBuffering(_ isBuffering: Bool) {
+        eventEmitter(PlayerEventData(kind: .buffering, boolValue: isBuffering))
+    }
+
+    private func emitError(_ message: String) {
+        eventEmitter(PlayerEventData(kind: .error, message: message))
+    }
+
+    private func emitCompleted() {
+        eventEmitter(PlayerEventData(kind: .completed))
+    }
+
+    private func emitVideoSize(width: Double, height: Double) {
+        eventEmitter(PlayerEventData(kind: .videoSize, width: width, height: height))
+    }
+
     func dispose() {
+        openGeneration += 1
         snapshotGeneration += 1
+        activeSnapshotGenerator?.cancelAllCGImageGeneration()
+        activeSnapshotGenerator = nil
         cleanupPlayer()
         routePickerView?.removeFromSuperview()
         routePickerView = nil
@@ -1117,17 +1148,17 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler {
         switch status {
         case .playing:
             waitingForRate = false
-            sendEvent(event: "playing", value: true)
+            emitPlaying(true)
             publishBuffering()
         case .waitingToPlayAtSpecifiedRate:
             waitingForRate = true
             if wantsToPlay {
-                sendEvent(event: "playing", value: true)
+                emitPlaying(true)
             }
             publishBuffering()
         case .paused:
             waitingForRate = false
-            sendEvent(event: "playing", value: false)
+            emitPlaying(false)
             publishBuffering()
         @unknown default:
             break
@@ -1135,13 +1166,12 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler {
     }
 
     private func publishBuffering() {
-        let buffering =
-            waitingForRate || !playbackLikelyToKeepUp || playbackBufferEmpty
+        let buffering = waitingForRate || !playbackLikelyToKeepUp || playbackBufferEmpty
         if !wantsToPlay, !waitingForRate {
-            sendEvent(event: "buffering", value: false)
+            emitBuffering(false)
             return
         }
-        sendEvent(event: "buffering", value: buffering)
+        emitBuffering(buffering)
     }
 
     private func cleanupPlayerItemObservers() {
@@ -1189,74 +1219,103 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler {
         player = nil
     }
 
-    private func sendEvent(event: String, value: Any?) {
-        DispatchQueue.main.async { [weak self] in
-            self?.eventSink?(["event": event, "value": value as Any])
-        }
-    }
-
     /// Snapshot via AVAssetImageGenerator at the current playhead.
-    func takeSnapshot(result: @escaping FlutterResult) {
-        guard currentUrl != nil else {
-            result(
-                FlutterError(
-                    code: "NO_MEDIA",
-                    message: "No media loaded",
-                    details: nil
-                )
-            )
-            return
-        }
-        snapshotGeneration += 1
-        let generation = snapshotGeneration
-        let time = player?.currentTime() ?? .zero
-        let asset: AVAsset
-        if let cachedFileURL = MediaCacheManager.shared.completeFileURL(cacheKey: currentCacheKey) {
-            asset = AVURLAsset(url: cachedFileURL)
-        } else if let itemAsset = playerItem?.asset {
-            asset = itemAsset
-        } else if let urlString = currentUrl, let mediaUrl = URL(string: urlString) {
-            asset = Self.makeProbeAsset(mediaURL: mediaUrl, cacheKey: currentCacheKey, headers: currentHeaders)
-        } else {
-            result(
-                FlutterError(
-                    code: "NO_MEDIA",
-                    message: "No media loaded",
-                    details: nil
-                )
-            )
-            return
-        }
-        let generator = AVAssetImageGenerator(asset: asset)
-        generator.appliesPreferredTrackTransform = true
-        generator.requestedTimeToleranceBefore = .zero
-        generator.requestedTimeToleranceAfter = .zero
-        generator.generateCGImagesAsynchronously(forTimes: [NSValue(time: time)]) {
-            [weak self] _, cgImage, _, status, error in
-            DispatchQueue.main.async {
-                guard let self, generation == self.snapshotGeneration else { return }
-                guard status == .succeeded, let cgImage = cgImage else {
-                    result(
-                        FlutterError(
-                            code: "NO_FRAME",
-                            message: error?.localizedDescription ?? "Failed to capture frame",
-                            details: nil
-                        )
+    func takeSnapshot() async throws -> SnapshotData? {
+        let (generation, time, asset, generator): (Int, CMTime, AVAsset, AVAssetImageGenerator) =
+            try await MainActor.run {
+                guard currentUrl != nil else {
+                    throw PigeonError(
+                        code: "NO_MEDIA",
+                        message: "No media loaded",
+                        details: nil
                     )
-                    return
                 }
-                let rep = NSBitmapImageRep(cgImage: cgImage)
-                guard let data = rep.representation(using: .png, properties: [:]) else {
-                    result(
-                        FlutterError(
-                            code: "ENCODE_FAIL",
-                            message: "Failed to encode PNG",
-                            details: nil
-                        )
+                snapshotGeneration += 1
+                let gen = snapshotGeneration
+                let playhead = player?.currentTime() ?? .zero
+                let resolvedAsset: AVAsset
+                if let cachedFileURL = MediaCacheManager.shared.completeFileURL(cacheKey: currentCacheKey) {
+                    resolvedAsset = AVURLAsset(url: cachedFileURL)
+                } else if let itemAsset = playerItem?.asset {
+                    resolvedAsset = itemAsset
+                } else if let urlString = currentUrl, let mediaUrl = URL(string: urlString) {
+                    resolvedAsset = Self.makeProbeAsset(
+                        mediaURL: mediaUrl,
+                        cacheKey: currentCacheKey,
+                        headers: currentHeaders
                     )
-                    return
+                } else {
+                    throw PigeonError(
+                        code: "NO_MEDIA",
+                        message: "No media loaded",
+                        details: nil
+                    )
                 }
-                result(FlutterStandardTypedData(bytes: data))
+                let genInstance = AVAssetImageGenerator(asset: resolvedAsset)
+                genInstance.appliesPreferredTrackTransform = true
+                genInstance.requestedTimeToleranceBefore = .zero
+                genInstance.requestedTimeToleranceAfter = .zero
+                activeSnapshotGenerator = genInstance
+                return (gen, playhead, resolvedAsset, genInstance)
+            }
+        _ = asset
+
+        return try await withCheckedThrowingContinuation { continuation in
+            let gate = OneShotGate()
+            generator.generateCGImagesAsynchronously(forTimes: [NSValue(time: time)]) {
+                [weak self] _, cgImage, _, status, error in
+                guard gate.tryEnter() else { return }
+                Task { @MainActor [weak self] in
+                    guard let self else {
+                        continuation.resume(
+                            throwing: PigeonError(
+                                code: "CANCELLED",
+                                message: "Player deallocated",
+                                details: nil
+                            )
+                        )
+                        return
+                    }
+                    if self.activeSnapshotGenerator === generator {
+                        self.activeSnapshotGenerator = nil
+                    }
+                    guard generation == self.snapshotGeneration else {
+                        continuation.resume(
+                            throwing: PigeonError(
+                                code: "CANCELLED",
+                                message: "Snapshot superseded by dispose",
+                                details: nil
+                            )
+                        )
+                        return
+                    }
+                    guard status == .succeeded, let cgImage else {
+                        continuation.resume(
+                            throwing: PigeonError(
+                                code: "NO_FRAME",
+                                message: error?.localizedDescription ?? "Failed to capture frame",
+                                details: nil
+                            )
+                        )
+                        return
+                    }
+                    DispatchQueue.global(qos: .userInitiated).async {
+                        let rep = NSBitmapImageRep(cgImage: cgImage)
+                        guard let data = rep.representation(using: .png, properties: [:]) else {
+                            continuation.resume(
+                                throwing: PigeonError(
+                                    code: "ENCODE_FAIL",
+                                    message: "Failed to encode PNG",
+                                    details: nil
+                                )
+                            )
+                            return
+                        }
+                        continuation.resume(
+                            returning: SnapshotData(bytes: Array(data), dataUri: nil)
+                        )
+                    }
+                }
             }
         }
     }
@@ -1289,140 +1348,140 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler {
         minBrightness: Double,
         outputDir: String,
         cacheKey: String? = nil,
-        headers: [String: String]? = nil,
-        result: @escaping FlutterResult
-    ) {
-        DispatchQueue.global(qos: .userInitiated).async {
-            guard let mediaURL = Self.mediaURL(from: url) else {
-                DispatchQueue.main.async { result([]) }
-                return
-            }
-            let asset = Self.makeProbeAsset(mediaURL: mediaURL, cacheKey: cacheKey, headers: headers)
-            guard let durationSeconds = loadDurationSeconds(asset: asset, timeoutMs: 15000)
-            else {
-                DispatchQueue.main.async { result([]) }
-                return
-            }
+        headers: [String: String]? = nil
+    ) async -> [CoverFrameData] {
+        guard count > 0, let mediaURL = Self.mediaURL(from: url) else {
+            return []
+        }
+        let asset = Self.makeProbeAsset(mediaURL: mediaURL, cacheKey: cacheKey, headers: headers)
+        guard let durationSeconds = await loadDurationSeconds(asset: asset, timeoutMs: 15000) else {
+            return []
+        }
 
-            let fm = FileManager.default
-            try? fm.createDirectory(
-                atPath: outputDir,
-                withIntermediateDirectories: true,
-                attributes: nil
-            )
+        let fm = FileManager.default
+        try? fm.createDirectory(
+            atPath: outputDir,
+            withIntermediateDirectories: true,
+            attributes: nil
+        )
 
-            let generator = AVAssetImageGenerator(asset: asset)
-            generator.appliesPreferredTrackTransform = true
-            generator.requestedTimeToleranceBefore = CMTime(
-                seconds: 0.5,
-                preferredTimescale: 600
-            )
-            generator.requestedTimeToleranceAfter = CMTime(
-                seconds: 0.5,
-                preferredTimescale: 600
-            )
-            generator.maximumSize = CGSize(width: 1280, height: 720)
+        let generator = AVAssetImageGenerator(asset: asset)
+        generator.appliesPreferredTrackTransform = true
+        generator.requestedTimeToleranceBefore = CMTime(seconds: 0.5, preferredTimescale: 600)
+        generator.requestedTimeToleranceAfter = CMTime(seconds: 0.5, preferredTimescale: 600)
+        generator.maximumSize = CGSize(width: 1280, height: 720)
 
-            let lower = durationSeconds * 0.05
-            let upper = durationSeconds * 0.95
-            let span = max(upper - lower, 0.1)
-            let n = max(candidates, count)
-            var times: [NSValue] = []
-            for i in 0 ..< n {
-                let t = lower + span * (Double(i) + 0.5) / Double(n)
-                times.append(
-                    NSValue(time: CMTime(seconds: t, preferredTimescale: 600))
-                )
-            }
+        let lower = durationSeconds * 0.05
+        let upper = durationSeconds * 0.95
+        let span = max(upper - lower, 0.1)
+        let n = max(candidates, count)
+        var times: [NSValue] = []
+        times.reserveCapacity(n)
+        for i in 0 ..< n {
+            let t = lower + span * (Double(i) + 0.5) / Double(n)
+            times.append(NSValue(time: CMTime(seconds: t, preferredTimescale: 600)))
+        }
+        if times.isEmpty {
+            return []
+        }
 
-            var frames: [[String: Any]] = []
-            let group = DispatchGroup()
-            let sync = DispatchQueue(label: "xue_hua_navite_video_player.covers")
-            for _ in times {
-                group.enter()
-            }
-
+        return await withCheckedContinuation { continuation in
+            let lock = NSLock()
+            var remaining = times.count
+            var frames: [CoverFrameData] = []
             generator.generateCGImagesAsynchronously(forTimes: times) {
                 requestedTime,
                 cgImage,
                 _,
                 status,
                 _ in
-                defer { group.leave() }
-                guard status == .succeeded, let cg = cgImage else { return }
-                let brightness = Self.averageBrightness(cgImage: cg)
-                if brightness < minBrightness {
-                    return
-                }
-                let ms = Int(CMTimeGetSeconds(requestedTime) * 1000)
-                let name = "cover-\(abs(url.hashValue))-\(ms).png"
-                let outPath = (outputDir as NSString).appendingPathComponent(
-                    name
-                )
-                if Self.writePNG(cgImage: cg, to: outPath) {
-                    sync.sync {
-                        frames.append([
-                            "path": outPath,
-                            "positionMs": ms,
-                            "brightness": brightness,
-                        ])
+                var captured: CoverFrameData?
+                if status == .succeeded, let cg = cgImage {
+                    let brightness = Self.averageBrightness(cgImage: cg)
+                    if brightness >= minBrightness {
+                        let ms = Int64(CMTimeGetSeconds(requestedTime) * 1000)
+                        let name = "cover-\(abs(url.hashValue))-\(ms).png"
+                        let outPath = (outputDir as NSString).appendingPathComponent(name)
+                        if Self.writePNG(cgImage: cg, to: outPath) {
+                            captured = CoverFrameData(
+                                path: outPath,
+                                positionMs: ms,
+                                brightness: brightness
+                            )
+                        }
                     }
                 }
-            }
 
-            group.notify(queue: .main) {
-                Self.trimCoverCache(in: outputDir)
-                let sorted = frames.sorted { a, b -> Bool in
-                    let ab = (a["brightness"] as? Double) ?? 0
-                    let bb = (b["brightness"] as? Double) ?? 0
-                    return ab > bb
+                lock.lock()
+                if let captured {
+                    frames.append(captured)
                 }
-                let trimmed = Array(sorted.prefix(count))
-                result(trimmed)
+                remaining -= 1
+                let done = (remaining == 0)
+                let snapshot = done ? frames : []
+                lock.unlock()
+
+                if done {
+                    Self.trimCoverCache(in: outputDir)
+                    let sorted = snapshot.sorted { $0.brightness > $1.brightness }
+                    continuation.resume(returning: Array(sorted.prefix(count)))
+                }
             }
         }
     }
 
     /// 读取媒体总时长（毫秒）。失败 / 超时 / 非有限值返回 `nil`。
-    /// Probe media total duration (ms). Returns `nil` on failure / timeout /
-    /// non-finite duration (live / HLS).
     static func getDuration(
         url: String,
         timeoutMs: Int,
         cacheKey: String? = nil,
-        headers: [String: String]? = nil,
-        result: @escaping FlutterResult
-    ) {
-        DispatchQueue.global(qos: .userInitiated).async {
-            guard let mediaURL = Self.mediaURL(from: url) else {
-                DispatchQueue.main.async { result(nil) }
-                return
-            }
-            let asset = Self.makeProbeAsset(mediaURL: mediaURL, cacheKey: cacheKey, headers: headers)
-            guard let seconds = loadDurationSeconds(asset: asset, timeoutMs: timeoutMs) else {
-                DispatchQueue.main.async { result(nil) }
-                return
-            }
-            let ms = Int((seconds * 1000).rounded())
-            DispatchQueue.main.async { result(ms) }
+        headers: [String: String]? = nil
+    ) async -> Int64? {
+        guard let mediaURL = Self.mediaURL(from: url) else {
+            return nil
         }
+        let asset = Self.makeProbeAsset(mediaURL: mediaURL, cacheKey: cacheKey, headers: headers)
+        guard let seconds = await loadDurationSeconds(asset: asset, timeoutMs: timeoutMs) else {
+            return nil
+        }
+        return Int64((seconds * 1000).rounded())
     }
 
-    static func loadDurationSeconds(asset: AVURLAsset, timeoutMs: Int) -> Double? {
-        let semaphore = DispatchSemaphore(value: 0)
-        var finished = false
-        asset.loadValuesAsynchronously(forKeys: ["duration"]) {
-            finished = true
-            semaphore.signal()
+    static func loadDurationSeconds(asset: AVURLAsset, timeoutMs: Int) async -> Double? {
+        let timeoutNs = UInt64(max(timeoutMs, 1)) * 1_000_000
+        return await withCheckedContinuation { continuation in
+            let gate = OneShotGate()
+            var timeoutTask: Task<Void, Never>?
+
+            func finish(with value: Double?) {
+                if gate.tryEnter() {
+                    timeoutTask?.cancel()
+                    continuation.resume(returning: value)
+                }
+            }
+
+            timeoutTask = Task {
+                try? await Task.sleep(nanoseconds: timeoutNs)
+                guard !Task.isCancelled else { return }
+                asset.cancelLoading()
+                finish(with: nil)
+            }
+
+            asset.loadValuesAsynchronously(forKeys: ["duration"]) {
+                var error: NSError?
+                let status = asset.statusOfValue(forKey: "duration", error: &error)
+                guard status == .loaded else {
+                    finish(with: nil)
+                    return
+                }
+                let seconds = CMTimeGetSeconds(asset.duration)
+                guard seconds.isFinite, seconds > 0 else {
+                    finish(with: nil)
+                    return
+                }
+                finish(with: seconds)
+            }
         }
-        let waitResult = semaphore.wait(timeout: .now() + .milliseconds(timeoutMs))
-        guard waitResult == .success, finished else { return nil }
-        var error: NSError?
-        let status = asset.statusOfValue(forKey: "duration", error: &error)
-        guard status == .loaded else { return nil }
-        let seconds = CMTimeGetSeconds(asset.duration)
-        guard seconds.isFinite, seconds > 0 else { return nil }
-        return seconds
     }
 
     static func trimCoverCache(in outputDir: String, keep: Int = 40) {
@@ -1449,16 +1508,6 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler {
     }
 
     // MARK: - Image helpers
-
-    private static func pngData(from buffer: CVPixelBuffer) -> Data? {
-        let ci = CIImage(cvPixelBuffer: buffer)
-        let ctx = CIContext(options: nil)
-        guard let cg = ctx.createCGImage(ci, from: ci.extent) else {
-            return nil
-        }
-        let rep = NSBitmapImageRep(cgImage: cg)
-        return rep.representation(using: .png, properties: [:])
-    }
 
     private static func writePNG(cgImage: CGImage, to path: String) -> Bool {
         let rep = NSBitmapImageRep(cgImage: cgImage)

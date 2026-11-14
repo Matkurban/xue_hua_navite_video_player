@@ -43,48 +43,56 @@ import com.google.android.gms.cast.framework.SessionManagerListener
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.embedding.engine.plugins.activity.ActivityAware
 import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
-import io.flutter.plugin.common.EventChannel
-import io.flutter.plugin.common.MethodCall
-import io.flutter.plugin.common.MethodChannel
-import io.flutter.plugin.common.MethodChannel.MethodCallHandler
-import io.flutter.plugin.common.MethodChannel.Result
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.coroutines.resume
 import kotlin.math.abs
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 
 private const val TAG = "XueHuaNaviteVideoPlayer"
 
-/// 插件主类：ExoPlayer + CastPlayer（Google Cast）+ PlatformView（PlayerView.resizeMode）。
+/// 插件主类：ExoPlayer + CastPlayer（Google Cast）+ PlatformView + Pigeon JNI 宿主接口。
 @UnstableApi
 class XueHuaNaviteVideoPlayerPlugin :
     FlutterPlugin,
-    MethodCallHandler,
-    EventChannel.StreamHandler,
+    PlayerHostApi,
     ActivityAware,
     DefaultLifecycleObserver {
 
-    private lateinit var methodChannel: MethodChannel
-    private lateinit var eventChannel: EventChannel
     private var exoPlayer: ExoPlayer? = null
     private var castPlayer: CastPlayer? = null
     private var castContext: CastContext? = null
     private var activePlayer: Player? = null
-    private var eventSink: EventChannel.EventSink? = null
-    private val mainHandler = Handler(Looper.getMainLooper())
+    private val mainHandler by lazy { Handler(Looper.getMainLooper()) }
     private var workerExecutor = Executors.newCachedThreadPool()
     private val engineGeneration = AtomicInteger(0)
+    private val openGeneration = AtomicInteger(0)
     private var currentUrl: String? = null
     private var currentCastUrl: String? = null
     private var currentCacheKey: String? = null
     private var currentHeaders: Map<String, String>? = null
-    private var lastCastState: String = "unavailable"
+    private var lastCastState: NativeCastState = NativeCastState.UNAVAILABLE
     private var lastCastDeviceName: String? = null
     private var flutterPluginBinding: FlutterPlugin.FlutterPluginBinding? = null
+    private var pluginScope: CoroutineScope? = null
+    private var eventQueue: Channel<PlayerEventData>? = null
+    private var eventConsumerJob: Job? = null
     private var playerView: PlayerView? = null
     private var resizeMode: Int = AspectRatioFrameLayout.RESIZE_MODE_FIT
     private var activity: Activity? = null
@@ -95,7 +103,6 @@ class XueHuaNaviteVideoPlayerPlugin :
     private var lastReportedBuffered: Long = -1L
 
     private var isPollingPosition = false
-
 
     fun attachPlayerView(view: PlayerView) {
         playerView = view
@@ -109,19 +116,13 @@ class XueHuaNaviteVideoPlayerPlugin :
         }
     }
 
-
     override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         flutterPluginBinding = binding
         if (workerExecutor.isShutdown || workerExecutor.isTerminated) {
             workerExecutor = Executors.newCachedThreadPool()
         }
-
-        methodChannel = MethodChannel(binding.binaryMessenger, "xue_hua_navite_video_player/player")
-        methodChannel.setMethodCallHandler(this)
-
-        eventChannel =
-            EventChannel(binding.binaryMessenger, "xue_hua_navite_video_player/player/events")
-        eventChannel.setStreamHandler(this)
+        startEventConsumer(binding)
+        PlayerHostApiRegistrar().register(this, binding)
 
         binding.platformViewRegistry.registerViewFactory(
             PLAYER_PLATFORM_VIEW_TYPE,
@@ -131,8 +132,9 @@ class XueHuaNaviteVideoPlayerPlugin :
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         engineGeneration.incrementAndGet()
-        methodChannel.setMethodCallHandler(null)
-        eventChannel.setStreamHandler(null)
+        openGeneration.incrementAndGet()
+        PlayerHostApiRegistrar().unregister(this, binding)
+        stopEventConsumer()
         restoreBrightness()
         releasePlayer()
         flutterPluginBinding = null
@@ -168,6 +170,42 @@ class XueHuaNaviteVideoPlayerPlugin :
         }
     }
 
+    private fun startEventConsumer(binding: FlutterPlugin.FlutterPluginBinding) {
+        stopEventConsumer()
+        val queue = Channel<PlayerEventData>(Channel.UNLIMITED)
+        eventQueue = queue
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        pluginScope = scope
+        eventConsumerJob = scope.launch {
+            val registrar = PlayerFlutterApiRegistrar()
+            for (event in queue) {
+                if (!isActive || flutterPluginBinding == null) break
+                try {
+                    registrar.getInstance(binding)?.onPlayerEvent(event)
+                } catch (t: Throwable) {
+                    Log.w(TAG, "Failed to dispatch PlayerFlutterApi event: ${event.kind}", t)
+                }
+            }
+        }
+    }
+
+    private fun stopEventConsumer() {
+        eventConsumerJob?.cancel()
+        eventConsumerJob = null
+        pluginScope?.cancel()
+        pluginScope = null
+        eventQueue?.close()
+        eventQueue = null
+    }
+
+    private inline fun runOnMainThread(crossinline block: () -> Unit) {
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            block()
+        } else {
+            mainHandler.post { block() }
+        }
+    }
+
     private fun bindActivity(act: Activity) {
         activity = act
         val owner = act as? LifecycleOwner
@@ -184,136 +222,84 @@ class XueHuaNaviteVideoPlayerPlugin :
         activity = null
     }
 
-    override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
-        eventSink = events
-        sendCastState(lastCastState, lastCastDeviceName)
-        activePlayer?.let { player ->
-            val dur = player.duration
-            if (dur != C.TIME_UNSET && dur > 0L) {
-                lastReportedDuration = dur
-                sendEvent("duration", dur)
+    private fun requirePlayer(): Player {
+        return activePlayer ?: exoPlayer ?: throw FlutterError(
+            code = "NO_PLAYER",
+            message = "Player not initialized",
+        )
+    }
+
+    override suspend fun create(): Long {
+        val generation = engineGeneration.get()
+        return withContext(Dispatchers.Main.immediate) {
+            val binding = flutterPluginBinding ?: throw FlutterError(
+                code = "NO_ENGINE",
+                message = "Flutter engine not attached",
+            )
+            if (generation != engineGeneration.get()) {
+                throw FlutterError(
+                    code = "CANCELLED",
+                    message = "Engine detached before player creation completed",
+                )
             }
-            val buffered = player.bufferedPosition.coerceAtLeast(0L)
-            lastReportedBuffered = buffered
-            sendEvent("buffered", buffered)
-            sendEvent("position", player.currentPosition)
-            sendEvent("playing", player.isPlaying)
-            sendEvent("buffering", player.playbackState == Player.STATE_BUFFERING)
-        }
-    }
 
+            releasePlayer()
 
-    override fun onCancel(arguments: Any?) {
-        eventSink = null
-    }
+            val context = binding.applicationContext
+            val defaultAdapterFactory = DefaultMediaCodecAdapterFactory(context)
 
-    override fun onMethodCall(call: MethodCall, result: Result) {
-        when (call.method) {
-            "create" -> handleCreate(result)
-            "open" -> handleOpen(call, result)
-            "play" -> handlePlay(result)
-            "pause" -> handlePause(result)
-            "seek" -> handleSeek(call, result)
-            "setVolume" -> handleSetVolume(call, result)
-            "setSpeed" -> handleSetSpeed(call, result)
-            "setAspectRatioMode" -> handleSetAspectRatioMode(call, result)
-            "setVideoViewSize" -> result.success(null)
-            "showCastPicker" -> handleShowCastPicker(result)
-            "stopCasting" -> handleStopCasting(result)
-            "dispose" -> handleDispose(result)
-            "takeSnapshot" -> handleTakeSnapshot(result)
-            "extractCovers" -> handleExtractCovers(call, result)
-            "getDuration" -> handleGetDuration(call, result)
-            "getBrightness" -> handleGetBrightness(result)
-            "setBrightness" -> handleSetBrightness(call, result)
-            "configureCache" -> handleConfigureCache(call, result)
-            "precache" -> handlePrecache(call, result)
-            "cancelPrecache" -> handleCancelPrecache(call, result)
-            "isCached" -> handleIsCached(call, result)
-            "getCacheSize" -> handleGetCacheSize(call, result)
-            "removeCache" -> handleRemoveCache(call, result)
-            "clearCache" -> handleClearCache(call, result)
-            "pinCacheKey" -> handlePinCacheKey(call, result)
-            "unpinCacheKey" -> handleUnpinCacheKey(call, result)
-            "getPlatformVersion" -> result.success("Android ${android.os.Build.VERSION.RELEASE}")
-            else -> result.notImplemented()
-        }
-    }
+            // Align odd dimensions before MediaCodec configuration to avoid green stripes/failures.
+            val renderersFactory = object : DefaultRenderersFactory(context) {
+                override fun getCodecAdapterFactory(): MediaCodecAdapter.Factory {
+                    return MediaCodecAdapter.Factory { configuration ->
+                        val mediaFormat = configuration.mediaFormat
 
-    private fun requirePlayer(result: Result): Player? {
-        val player = activePlayer ?: exoPlayer
-        if (player == null) {
-            result.error("NO_PLAYER", "Player not initialized", null)
-            return null
-        }
-        return player
-    }
-
-    private fun handleCreate(result: Result) {
-        val binding = flutterPluginBinding ?: run {
-            result.error("NO_ENGINE", "Flutter engine not attached", null)
-            return
-        }
-
-        releasePlayer()
-
-        val context = binding.applicationContext
-        val defaultAdapterFactory = DefaultMediaCodecAdapterFactory(context)
-
-        // 1. 动态对齐奇数分辨率
-        val renderersFactory = object : DefaultRenderersFactory(context) {
-            override fun getCodecAdapterFactory(): MediaCodecAdapter.Factory {
-                return MediaCodecAdapter.Factory { configuration ->
-                    val mediaFormat = configuration.mediaFormat
-
-                    fun makeEven(key: String) {
-                        if (mediaFormat.containsKey(key)) {
-                            val value = mediaFormat.getInteger(key)
-                            if (value % 2 != 0) {
-                                mediaFormat.setInteger(key, value + 1)
+                        fun makeEven(key: String) {
+                            if (mediaFormat.containsKey(key)) {
+                                val value = mediaFormat.getInteger(key)
+                                if (value % 2 != 0) {
+                                    mediaFormat.setInteger(key, value + 1)
+                                }
                             }
                         }
+
+                        makeEven(MediaFormat.KEY_WIDTH)
+                        makeEven(MediaFormat.KEY_MAX_WIDTH)
+                        makeEven(MediaFormat.KEY_HEIGHT)
+                        makeEven(MediaFormat.KEY_MAX_HEIGHT)
+
+                        defaultAdapterFactory.createAdapter(configuration)
                     }
-
-                    makeEven(MediaFormat.KEY_WIDTH)
-                    makeEven(MediaFormat.KEY_MAX_WIDTH)
-                    makeEven(MediaFormat.KEY_HEIGHT)
-                    makeEven(MediaFormat.KEY_MAX_HEIGHT)
-
-                    defaultAdapterFactory.createAdapter(configuration)
                 }
+            }.apply {
+                setEnableDecoderFallback(true)
             }
-        }.apply {
-            setEnableDecoderFallback(true)
+
+            val dataSourceFactory = AndroidMediaCacheManager.buildDataSourceFactory(context)
+            val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory)
+
+            val player = ExoPlayer.Builder(context)
+                .setRenderersFactory(renderersFactory)
+                .setMediaSourceFactory(mediaSourceFactory)
+                .build()
+
+            player.setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(C.USAGE_MEDIA)
+                    .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
+                    .build(),
+                /* handleAudioFocus= */ true,
+            )
+            player.addListener(exoPlayerListener)
+            exoPlayer = player
+            activePlayer = player
+            playerView?.player = player
+            playerView?.resizeMode = resizeMode
+
+            initCastSupport(context)
+
+            0L
         }
-
-        // 2. 配置带 SimpleCache 的 DataSourceFactory（支持边播边存、302 重定向、标准浏览器 UA）
-        val dataSourceFactory = AndroidMediaCacheManager.buildDataSourceFactory(context)
-        val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory)
-
-        // 3. 构建 ExoPlayer
-        val player = ExoPlayer.Builder(context)
-            .setRenderersFactory(renderersFactory)
-            .setMediaSourceFactory(mediaSourceFactory)
-            .build()
-
-        player.setAudioAttributes(
-            AudioAttributes.Builder()
-                .setUsage(C.USAGE_MEDIA)
-                .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
-                .build(),
-            /* handleAudioFocus= */ true,
-        )
-        player.addListener(exoPlayerListener)
-        exoPlayer = player
-        activePlayer = player
-        playerView?.player = player
-        playerView?.resizeMode = resizeMode
-
-        // 4. 初始化 Google Cast (Media3 CastPlayer)，无 GMS 环境安全降级
-        initCastSupport(context)
-
-        result.success(0)
     }
 
     private fun initCastSupport(context: android.content.Context) {
@@ -321,8 +307,8 @@ class XueHuaNaviteVideoPlayerPlugin :
         try {
             val task = CastContext.getSharedInstance(context, workerExecutor)
             task.addOnSuccessListener { ctx ->
-                mainHandler.post {
-                    if (generation != engineGeneration.get() || exoPlayer == null) return@post
+                runOnMainThread {
+                    if (generation != engineGeneration.get() || exoPlayer == null) return@runOnMainThread
                     try {
                         castContext = ctx
                         ctx.sessionManager.addSessionManagerListener(
@@ -335,22 +321,22 @@ class XueHuaNaviteVideoPlayerPlugin :
                         castPlayer = cp
                         if (cp.isCastSessionAvailable) {
                             activePlayer = cp
-                            sendCastState("connected", currentCastDeviceName())
+                            sendCastState(NativeCastState.CONNECTED, currentCastDeviceName())
                         } else {
-                            sendCastState("notConnected", null)
+                            sendCastState(NativeCastState.NOT_CONNECTED, null)
                         }
                     } catch (_: Throwable) {
-                        sendCastState("unavailable", null)
+                        sendCastState(NativeCastState.UNAVAILABLE, null)
                     }
                 }
             }.addOnFailureListener {
-                mainHandler.post {
-                    if (generation != engineGeneration.get()) return@post
-                    sendCastState("unavailable", null)
+                runOnMainThread {
+                    if (generation != engineGeneration.get()) return@runOnMainThread
+                    sendCastState(NativeCastState.UNAVAILABLE, null)
                 }
             }
         } catch (_: Throwable) {
-            sendCastState("unavailable", null)
+            sendCastState(NativeCastState.UNAVAILABLE, null)
         }
     }
 
@@ -364,35 +350,35 @@ class XueHuaNaviteVideoPlayerPlugin :
 
     private val castSessionManagerListener = object : SessionManagerListener<CastSession> {
         override fun onSessionStarting(session: CastSession) {
-            sendCastState("connecting", session.castDevice?.friendlyName)
+            sendCastState(NativeCastState.CONNECTING, session.castDevice?.friendlyName)
         }
 
         override fun onSessionStarted(session: CastSession, sessionId: String) {
-            sendCastState("connected", session.castDevice?.friendlyName)
+            sendCastState(NativeCastState.CONNECTED, session.castDevice?.friendlyName)
         }
 
         override fun onSessionStartFailed(session: CastSession, error: Int) {
-            sendCastState("notConnected", null)
+            sendCastState(NativeCastState.NOT_CONNECTED, null)
         }
 
         override fun onSessionEnding(session: CastSession) {
-            sendCastState("disconnecting", session.castDevice?.friendlyName)
+            sendCastState(NativeCastState.DISCONNECTING, session.castDevice?.friendlyName)
         }
 
         override fun onSessionEnded(session: CastSession, error: Int) {
-            sendCastState("notConnected", null)
+            sendCastState(NativeCastState.NOT_CONNECTED, null)
         }
 
         override fun onSessionResuming(session: CastSession, sessionId: String) {
-            sendCastState("connecting", session.castDevice?.friendlyName)
+            sendCastState(NativeCastState.CONNECTING, session.castDevice?.friendlyName)
         }
 
         override fun onSessionResumed(session: CastSession, wasSuspended: Boolean) {
-            sendCastState("connected", session.castDevice?.friendlyName)
+            sendCastState(NativeCastState.CONNECTED, session.castDevice?.friendlyName)
         }
 
         override fun onSessionResumeFailed(session: CastSession, error: Int) {
-            sendCastState("notConnected", null)
+            sendCastState(NativeCastState.NOT_CONNECTED, null)
         }
 
         override fun onSessionSuspended(session: CastSession, reason: Int) {}
@@ -408,7 +394,7 @@ class XueHuaNaviteVideoPlayerPlugin :
 
             local?.pause()
             activePlayer = remote
-            sendCastState("connected", currentCastDeviceName() ?: "Cast Device")
+            sendCastState(NativeCastState.CONNECTED, currentCastDeviceName() ?: "Cast Device")
 
             val targetUrl = currentCastUrl ?: currentUrl
             if (!targetUrl.isNullOrEmpty()) {
@@ -434,10 +420,10 @@ class XueHuaNaviteVideoPlayerPlugin :
                     player.seekTo(pos)
                 }
             }
-            sendCastState("notConnected", null)
-            sendEvent("playing", false)
+            sendCastState(NativeCastState.NOT_CONNECTED, null)
+            sendPlayingEvent(false)
             if (pos > 0L) {
-                sendEvent("position", pos)
+                sendPositionEvent(pos)
             }
         }
     }
@@ -464,155 +450,143 @@ class XueHuaNaviteVideoPlayerPlugin :
             .build()
     }
 
-
-    private fun extractHeaders(call: MethodCall): Map<String, String>? {
-        val raw = call.argument<Map<*, *>>("headers") ?: return null
+    private fun normalizeHeaders(raw: Map<String, String>?): Map<String, String>? {
+        if (raw.isNullOrEmpty()) return null
         val out = HashMap<String, String>()
         for ((k, v) in raw) {
-            val key = k?.toString()?.trim()
-            val value = v?.toString()
-            if (!key.isNullOrEmpty() && value != null) {
-                out[key] = value
+            val key = k.trim()
+            if (key.isNotEmpty()) {
+                out[key] = v
             }
         }
         return out.takeIf { it.isNotEmpty() }
     }
 
-    /// 打开媒体 URL。
-    private fun handleOpen(call: MethodCall, result: Result) {
-        val url = call.argument<String>("url") ?: run {
-            result.error("INVALID_ARG", "url is required", null)
-            return
-        }
-        val local = exoPlayer ?: run {
-            result.error("NO_PLAYER", "Player not initialized", null)
-            return
-        }
-        val appContext = flutterPluginBinding?.applicationContext
-        val cacheKey = call.argument<String>("cacheKey")
-        val headers = extractHeaders(call)
-        val enableCache = call.argument<Boolean>("enableCache")
-
-        lastReportedDuration = -1L
-        lastReportedBuffered = -1L
-        currentUrl = url
-        currentCastUrl = call.argument<String>("castUrl")
-        currentCacheKey = cacheKey
-        currentHeaders = headers
-
-        val mediaItem = MediaItem.Builder()
-            .setUri(url)
-            .apply {
-                if (!cacheKey.isNullOrBlank()) {
-                    setCustomCacheKey(cacheKey)
-                }
+    override suspend fun open(request: OpenMediaRequest) {
+        val targetOpenGen = openGeneration.incrementAndGet()
+        val targetEngineGen = engineGeneration.get()
+        withContext(Dispatchers.Main.immediate) {
+            if (targetOpenGen != openGeneration.get() || targetEngineGen != engineGeneration.get()) {
+                return@withContext
             }
-            .build()
-
-        if (appContext != null) {
-            val dsFactory = AndroidMediaCacheManager.buildDataSourceFactory(
-                context = appContext,
-                headers = headers,
-                enableCacheOverride = enableCache,
+            val local = exoPlayer ?: throw FlutterError(
+                code = "NO_PLAYER",
+                message = "Player not initialized",
             )
-            val mediaSource = DefaultMediaSourceFactory(dsFactory).createMediaSource(mediaItem)
-            local.setMediaSource(mediaSource)
-        } else {
-            local.setMediaItem(mediaItem)
-        }
-        local.playWhenReady = false
-        local.prepare()
+            val url = request.url
+            if (url.isEmpty()) {
+                throw FlutterError(
+                    code = "INVALID_ARG",
+                    message = "url is required",
+                )
+            }
+            val appContext = flutterPluginBinding?.applicationContext
+            val cacheKey = request.cacheKey
+            val headers = normalizeHeaders(request.headers)
 
-        // If currently casting, also load the new source onto the remote CastPlayer
-        // without dropping the active Cast session.
-        val remote = castPlayer
-        if (activePlayer === remote && remote != null) {
-            val targetUrl = currentCastUrl ?: url
-            remote.setMediaItem(buildCastMediaItem(targetUrl))
-            remote.playWhenReady = false
-            remote.prepare()
-        }
+            lastReportedDuration = -1L
+            lastReportedBuffered = -1L
+            currentUrl = url
+            currentCastUrl = request.castUrl
+            currentCacheKey = cacheKey
+            currentHeaders = headers
 
-        result.success(null)
+            val mediaItem = MediaItem.Builder()
+                .setUri(url)
+                .apply {
+                    if (!cacheKey.isNullOrBlank()) {
+                        setCustomCacheKey(cacheKey)
+                    }
+                }
+                .build()
+
+            if (appContext != null) {
+                val dsFactory = AndroidMediaCacheManager.buildDataSourceFactory(
+                    context = appContext,
+                    headers = headers,
+                    enableCacheOverride = request.enableCache,
+                )
+                val mediaSource = DefaultMediaSourceFactory(dsFactory).createMediaSource(mediaItem)
+                local.setMediaSource(mediaSource)
+            } else {
+                local.setMediaItem(mediaItem)
+            }
+            local.playWhenReady = false
+            local.prepare()
+
+            val remote = castPlayer
+            if (activePlayer === remote && remote != null) {
+                val targetUrl = currentCastUrl ?: url
+                remote.setMediaItem(buildCastMediaItem(targetUrl))
+                remote.playWhenReady = false
+                remote.prepare()
+            }
+        }
     }
 
-    private fun handlePlay(result: Result) {
-        val player = requirePlayer(result) ?: return
+    override fun play() {
+        val player = requirePlayer()
         if (player.playbackState == Player.STATE_ENDED) {
             player.seekTo(0)
         }
         player.play()
-        result.success(null)
     }
 
-    private fun handlePause(result: Result) {
-        val player = requirePlayer(result) ?: return
+    override fun pause() {
+        val player = requirePlayer()
         player.pause()
-        result.success(null)
     }
 
-    private fun handleSeek(call: MethodCall, result: Result) {
-        val player = requirePlayer(result) ?: return
-        val position = call.argument<Number>("position")?.toLong() ?: 0L
-        player.seekTo(position)
-        // 拖动时直接主动发一次
-        sendEvent("position", position)
-        result.success(null)
+    override fun seek(positionMs: Long) {
+        val player = requirePlayer()
+        player.seekTo(positionMs)
+        sendPositionEvent(positionMs)
     }
 
-
-    private fun handleSetVolume(call: MethodCall, result: Result) {
-        val player = requirePlayer(result) ?: return
-        val volume = call.argument<Double>("volume") ?: 1.0
+    override fun setVolume(volume: Double) {
+        val player = requirePlayer()
         val clamped = volume.toFloat().coerceIn(0f, 1f)
         exoPlayer?.volume = clamped
         try {
             player.volume = clamped
         } catch (_: Throwable) {
         }
-        result.success(null)
     }
 
-    private fun handleSetSpeed(call: MethodCall, result: Result) {
-        val player = requirePlayer(result) ?: return
-        val speed = (call.argument<Double>("speed") ?: 1.0).toFloat()
-        exoPlayer?.setPlaybackSpeed(speed)
+    override fun setSpeed(speed: Double) {
+        val player = requirePlayer()
+        val playbackSpeed = speed.toFloat()
+        exoPlayer?.setPlaybackSpeed(playbackSpeed)
         try {
-            player.setPlaybackSpeed(speed)
+            player.setPlaybackSpeed(playbackSpeed)
         } catch (_: Throwable) {
         }
-        result.success(null)
     }
 
-    private fun handleSetAspectRatioMode(call: MethodCall, result: Result) {
-        val mode = call.argument<String>("mode") ?: "fit"
+    override fun setAspectRatioMode(mode: NativeAspectRatioMode) {
         resizeMode = when (mode) {
-            "fill" -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
-            "stretch" -> AspectRatioFrameLayout.RESIZE_MODE_FILL
-            else -> AspectRatioFrameLayout.RESIZE_MODE_FIT
+            NativeAspectRatioMode.FILL -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+            NativeAspectRatioMode.STRETCH -> AspectRatioFrameLayout.RESIZE_MODE_FILL
+            NativeAspectRatioMode.FIT -> AspectRatioFrameLayout.RESIZE_MODE_FIT
         }
         playerView?.resizeMode = resizeMode
-        result.success(null)
     }
 
-    private fun handleShowCastPicker(result: Result) {
-        val act = activity
-        val ctx = castContext
-        if (act == null || ctx == null) {
-            result.success(null)
-            return
-        }
+    override fun setVideoViewSize(width: Double, height: Double, devicePixelRatio: Double) {
+        // Android PlatformView (PlayerView) resizes automatically with Flutter layout.
+    }
+
+    override fun showCastPicker() {
+        val act = activity ?: return
+        val ctx = castContext ?: return
         val selector = try {
             ctx.mergedSelector
         } catch (error: Throwable) {
             Log.e(TAG, "Cast route selector unavailable", error)
             null
-        }
-        if (selector == null) {
-            result.success(null)
-            return
-        }
-        act.runOnUiThread {
+        } ?: return
+
+        runOnMainThread {
             try {
                 // FlutterActivity uses a platform theme. MediaRoute dialogs extend
                 // AppCompatDialog and require windowActionBar on the context theme.
@@ -628,7 +602,6 @@ class XueHuaNaviteVideoPlayerPlugin :
                 Log.e(TAG, "Failed to show cast route dialog", error)
             }
         }
-        result.success(null)
     }
 
     private fun castDialogContext(activity: Activity): ContextThemeWrapper {
@@ -638,159 +611,27 @@ class XueHuaNaviteVideoPlayerPlugin :
         )
     }
 
-    private fun handleStopCasting(result: Result) {
-        val ctx = castContext
-        if (ctx == null) {
-            result.success(null)
-            return
-        }
-        mainHandler.post {
+    override fun stopCasting() {
+        val ctx = castContext ?: return
+        runOnMainThread {
             try {
                 ctx.sessionManager.endCurrentSession(true)
             } catch (_: Throwable) {
             }
         }
-        result.success(null)
     }
 
-    private fun handleDispose(result: Result) {
+    override fun dispose() {
+        openGeneration.incrementAndGet()
         restoreBrightness()
         releasePlayer()
-        result.success(null)
     }
 
-    private fun handleConfigureCache(call: MethodCall, result: Result) {
-        val appContext = flutterPluginBinding?.applicationContext ?: run {
-            result.success(null)
-            return
-        }
-        val enabled = call.argument<Boolean>("enabled") ?: true
-        val maxCacheBytes = call.argument<Number>("maxCacheBytes")?.toLong() ?: (512L * 1024L * 1024L)
-        val maxSingleFileBytes =
-            call.argument<Number>("maxSingleFileBytes")?.toLong() ?: (256L * 1024L * 1024L)
-        val cacheDir = call.argument<String>("cacheDir")
-        val generation = engineGeneration.get()
-        workerExecutor.execute {
-            AndroidMediaCacheManager.configure(
-                context = appContext,
-                enabled = enabled,
-                maxCacheBytes = maxCacheBytes,
-                maxSingleFileBytes = maxSingleFileBytes,
-                cacheDir = cacheDir,
-            )
-            postWorkerResult(generation) { result.success(null) }
-        }
-    }
-
-    private fun handlePrecache(call: MethodCall, result: Result) {
-        val appContext = flutterPluginBinding?.applicationContext
-        val url = call.argument<String>("url")
-        if (appContext == null || url.isNullOrBlank()) {
-            result.success(null)
-            return
-        }
-        val cacheKey = call.argument<String>("cacheKey")?.takeIf { it.isNotBlank() } ?: url
-        val cacheDir = call.argument<String>("cacheDir")
-        val headers = extractHeaders(call)
-        val preloadBytes = call.argument<Number>("preloadBytes")?.toLong()
-        val generation = engineGeneration.get()
-        AndroidMediaCacheManager.precache(
-            context = appContext,
-            executor = workerExecutor,
-            url = url,
-            cacheKey = cacheKey,
-            cacheDir = cacheDir,
-            headers = headers,
-            preloadBytes = preloadBytes,
-        ) {
-            postWorkerResult(generation) { result.success(null) }
-        }
-    }
-
-    private fun handleCancelPrecache(call: MethodCall, result: Result) {
-        val cacheKey = call.argument<String>("cacheKey")
-        if (!cacheKey.isNullOrBlank()) {
-            AndroidMediaCacheManager.cancelPrecache(cacheKey)
-        }
-        result.success(null)
-    }
-
-    private fun handleIsCached(call: MethodCall, result: Result) {
-        val appContext = flutterPluginBinding?.applicationContext
-        val cacheKey = call.argument<String>("cacheKey") ?: call.argument<String>("url")
-        val cacheDir = call.argument<String>("cacheDir")
-        if (appContext == null || cacheKey.isNullOrBlank()) {
-            result.success(false)
-            return
-        }
-        val generation = engineGeneration.get()
-        workerExecutor.execute {
-            val cached = AndroidMediaCacheManager.isCached(appContext, cacheDir, cacheKey)
-            postWorkerResult(generation) { result.success(cached) }
-        }
-    }
-
-    private fun handleGetCacheSize(call: MethodCall, result: Result) {
-        val appContext = flutterPluginBinding?.applicationContext ?: run {
-            result.success(0L)
-            return
-        }
-        val cacheDir = call.argument<String>("cacheDir")
-        val generation = engineGeneration.get()
-        workerExecutor.execute {
-            val size = AndroidMediaCacheManager.getCacheSize(appContext, cacheDir)
-            postWorkerResult(generation) { result.success(size) }
-        }
-    }
-
-    private fun handleRemoveCache(call: MethodCall, result: Result) {
-        val appContext = flutterPluginBinding?.applicationContext
-        val cacheKey = call.argument<String>("cacheKey") ?: call.argument<String>("url")
-        val cacheDir = call.argument<String>("cacheDir")
-        if (appContext == null || cacheKey.isNullOrBlank()) {
-            result.success(null)
-            return
-        }
-        val generation = engineGeneration.get()
-        workerExecutor.execute {
-            AndroidMediaCacheManager.removeCache(appContext, cacheDir, cacheKey)
-            postWorkerResult(generation) { result.success(null) }
-        }
-    }
-
-    private fun handleClearCache(call: MethodCall, result: Result) {
-        val appContext = flutterPluginBinding?.applicationContext ?: run {
-            result.success(null)
-            return
-        }
-        val cacheDir = call.argument<String>("cacheDir")
-        val generation = engineGeneration.get()
-        workerExecutor.execute {
-            AndroidMediaCacheManager.clearCache(appContext, cacheDir)
-            postWorkerResult(generation) { result.success(null) }
-        }
-    }
-
-    private fun handlePinCacheKey(call: MethodCall, result: Result) {
-        AndroidMediaCacheManager.pin(call.argument<String>("cacheKey"))
-        result.success(null)
-    }
-
-    private fun handleUnpinCacheKey(call: MethodCall, result: Result) {
-        AndroidMediaCacheManager.unpin(call.argument<String>("cacheKey"))
-        result.success(null)
-    }
-
-    private fun handleGetBrightness(result: Result) {
-        val window = activity?.window
-        if (window == null) {
-            result.success(1.0)
-            return
-        }
+    override fun getBrightness(): Double {
+        val window = activity?.window ?: return 1.0
         val override = window.attributes.screenBrightness
         if (override >= 0f) {
-            result.success(override.toDouble())
-            return
+            return override.toDouble()
         }
         val system = try {
             val resolver = activity?.contentResolver
@@ -802,22 +643,14 @@ class XueHuaNaviteVideoPlayerPlugin :
         } catch (_: Exception) {
             1.0
         }
-        result.success(system.coerceIn(0.0, 1.0))
+        return system.coerceIn(0.0, 1.0)
     }
 
-    private fun handleSetBrightness(call: MethodCall, result: Result) {
-        val value = call.argument<Double>("value") ?: run {
-            result.error("INVALID_ARG", "value is required", null)
-            return
-        }
-        val act = activity
-        val window = act?.window
-        if (act == null || window == null) {
-            result.success(null)
-            return
-        }
+    override fun setBrightness(value: Double) {
+        val act = activity ?: return
+        val window = act.window ?: return
         val clamped = value.toFloat().coerceIn(0f, 1f)
-        act.runOnUiThread {
+        runOnMainThread {
             val lp = window.attributes
             if (savedBrightness == null) {
                 savedBrightness = lp.screenBrightness
@@ -825,15 +658,104 @@ class XueHuaNaviteVideoPlayerPlugin :
             lp.screenBrightness = clamped
             window.attributes = lp
         }
-        result.success(null)
+    }
+
+    override fun setWindowFullscreen(value: Boolean) {
+        // Android window fullscreen is managed via SystemChrome on the Dart side.
+    }
+
+    override suspend fun configureCache(request: CacheConfigRequest) {
+        val appContext = flutterPluginBinding?.applicationContext ?: return
+        withContext(Dispatchers.IO) {
+            AndroidMediaCacheManager.configure(
+                context = appContext,
+                enabled = request.enabled,
+                maxCacheBytes = request.maxCacheBytes,
+                maxSingleFileBytes = request.maxSingleFileBytes,
+                cacheDir = request.cacheDir,
+            )
+        }
+    }
+
+    override suspend fun precache(request: PrecacheRequest) {
+        val appContext = flutterPluginBinding?.applicationContext ?: return
+        val url = request.url
+        if (url.isBlank()) return
+        val cacheKey = request.cacheKey?.takeIf { it.isNotBlank() } ?: url
+        val headers = normalizeHeaders(request.headers)
+        suspendCancellableCoroutine { cont ->
+            val resumed = AtomicBoolean(false)
+            AndroidMediaCacheManager.precache(
+                context = appContext,
+                executor = workerExecutor,
+                url = url,
+                cacheKey = cacheKey,
+                cacheDir = request.cacheDir,
+                headers = headers,
+                preloadBytes = request.preloadBytes,
+            ) {
+                if (resumed.compareAndSet(false, true) && cont.isActive) {
+                    cont.resume(Unit)
+                }
+            }
+            cont.invokeOnCancellation {
+                AndroidMediaCacheManager.cancelPrecache(cacheKey)
+            }
+        }
+    }
+
+    override fun cancelPrecache(cacheKey: String) {
+        if (cacheKey.isNotBlank()) {
+            AndroidMediaCacheManager.cancelPrecache(cacheKey)
+        }
+    }
+
+    override suspend fun isCached(request: CacheEntryRequest): Boolean {
+        val appContext = flutterPluginBinding?.applicationContext ?: return false
+        val cacheKey = request.cacheKey?.takeIf { it.isNotBlank() } ?: request.url
+        if (cacheKey.isBlank()) return false
+        return withContext(Dispatchers.IO) {
+            AndroidMediaCacheManager.isCached(appContext, request.cacheDir, cacheKey)
+        }
+    }
+
+    override suspend fun getCacheSize(cacheDir: String?): Long {
+        val appContext = flutterPluginBinding?.applicationContext ?: return 0L
+        return withContext(Dispatchers.IO) {
+            AndroidMediaCacheManager.getCacheSize(appContext, cacheDir)
+        }
+    }
+
+    override suspend fun removeCache(request: CacheEntryRequest) {
+        val appContext = flutterPluginBinding?.applicationContext ?: return
+        val cacheKey = request.cacheKey?.takeIf { it.isNotBlank() } ?: request.url
+        if (cacheKey.isBlank()) return
+        withContext(Dispatchers.IO) {
+            AndroidMediaCacheManager.removeCache(appContext, request.cacheDir, cacheKey)
+        }
+    }
+
+    override suspend fun clearCache(cacheDir: String?) {
+        val appContext = flutterPluginBinding?.applicationContext ?: return
+        withContext(Dispatchers.IO) {
+            AndroidMediaCacheManager.clearCache(appContext, cacheDir)
+        }
+    }
+
+    override fun pinCacheKey(cacheKey: String) {
+        AndroidMediaCacheManager.pin(cacheKey)
+    }
+
+    override fun unpinCacheKey(cacheKey: String) {
+        AndroidMediaCacheManager.unpin(cacheKey)
     }
 
     private fun restoreBrightness() {
         val original = savedBrightness ?: return
         savedBrightness = null
-        val act = activity
-        val window = act?.window ?: return
-        act.runOnUiThread {
+        val act = activity ?: return
+        val window = act.window ?: return
+        runOnMainThread {
             val lp = window.attributes
             lp.screenBrightness = original
             window.attributes = lp
@@ -870,32 +792,89 @@ class XueHuaNaviteVideoPlayerPlugin :
         currentHeaders = null
     }
 
-    private fun sendCastState(state: String, deviceName: String?) {
+    private fun emitEvent(event: PlayerEventData) {
+        eventQueue?.trySend(event)
+    }
+
+    private fun sendCastState(state: NativeCastState, deviceName: String?) {
         lastCastState = state
         lastCastDeviceName = deviceName
-        val payload = HashMap<String, Any?>()
-        payload["state"] = state
-        if (!deviceName.isNullOrBlank()) {
-            payload["deviceName"] = deviceName
-        }
-        sendEvent("castState", payload)
+        emitEvent(
+            PlayerEventData(
+                kind = NativePlayerEventType.CAST_STATE,
+                castState = state,
+                castDeviceName = deviceName?.takeIf { it.isNotBlank() },
+            )
+        )
     }
 
-    private fun sendEvent(event: String, value: Any?) {
-        mainHandler.post {
-            val data = HashMap<String, Any?>()
-            data["event"] = event
-            data["value"] = value
-            eventSink?.success(data)
-        }
+    private fun sendPositionEvent(positionMs: Long) {
+        emitEvent(
+            PlayerEventData(
+                kind = NativePlayerEventType.POSITION,
+                intValue = positionMs,
+            )
+        )
     }
 
-    private fun postWorkerResult(generation: Int, block: () -> Unit) {
-        mainHandler.post {
-            if (generation != engineGeneration.get()) return@post
-            if (flutterPluginBinding == null) return@post
-            block()
-        }
+    private fun sendBufferedEvent(bufferedMs: Long) {
+        emitEvent(
+            PlayerEventData(
+                kind = NativePlayerEventType.BUFFERED,
+                intValue = bufferedMs,
+            )
+        )
+    }
+
+    private fun sendDurationEvent(durationMs: Long) {
+        emitEvent(
+            PlayerEventData(
+                kind = NativePlayerEventType.DURATION,
+                intValue = durationMs,
+            )
+        )
+    }
+
+    private fun sendPlayingEvent(isPlaying: Boolean) {
+        emitEvent(
+            PlayerEventData(
+                kind = NativePlayerEventType.PLAYING,
+                boolValue = isPlaying,
+            )
+        )
+    }
+
+    private fun sendBufferingEvent(isBuffering: Boolean) {
+        emitEvent(
+            PlayerEventData(
+                kind = NativePlayerEventType.BUFFERING,
+                boolValue = isBuffering,
+            )
+        )
+    }
+
+    private fun sendErrorEvent(message: String) {
+        emitEvent(
+            PlayerEventData(
+                kind = NativePlayerEventType.ERROR,
+                message = message,
+            )
+        )
+    }
+
+    private fun sendCompletedEvent() {
+        emitEvent(PlayerEventData(kind = NativePlayerEventType.COMPLETED))
+    }
+
+    private fun sendVideoSizeEvent(width: Double, height: Double, rotationDegrees: Int) {
+        emitEvent(
+            PlayerEventData(
+                kind = NativePlayerEventType.VIDEO_SIZE,
+                width = width,
+                height = height,
+                rotationDegrees = rotationDegrees.toLong(),
+            )
+        )
     }
 
     private fun checkAndSendDuration(sourcePlayer: Player?) {
@@ -904,7 +883,7 @@ class XueHuaNaviteVideoPlayerPlugin :
         val dur = player.duration
         if (dur != C.TIME_UNSET && dur > 0L && dur != lastReportedDuration) {
             lastReportedDuration = dur
-            sendEvent("duration", dur)
+            sendDurationEvent(dur)
         }
     }
 
@@ -914,7 +893,7 @@ class XueHuaNaviteVideoPlayerPlugin :
         val buffered = player.bufferedPosition.coerceAtLeast(0L)
         if (buffered != lastReportedBuffered) {
             lastReportedBuffered = buffered
-            sendEvent("buffered", buffered)
+            sendBufferedEvent(buffered)
         }
     }
 
@@ -928,12 +907,12 @@ class XueHuaNaviteVideoPlayerPlugin :
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 if (!isCurrentActive()) return
                 val player = playerProvider() ?: return
-                sendEvent("playing", isPlaying)
+                sendPlayingEvent(isPlaying)
                 if (isPlaying) {
-                    sendEvent("position", player.currentPosition)
+                    sendPositionEvent(player.currentPosition)
                     startPositionPolling()
                 } else {
-                    sendEvent("position", player.currentPosition)
+                    sendPositionEvent(player.currentPosition)
                     stopPositionPolling()
                 }
             }
@@ -943,12 +922,12 @@ class XueHuaNaviteVideoPlayerPlugin :
                 val player = playerProvider() ?: return
                 when (playbackState) {
                     Player.STATE_BUFFERING -> {
-                        sendEvent("buffering", true)
+                        sendBufferingEvent(true)
                         stopPositionPolling()
                     }
 
                     Player.STATE_READY -> {
-                        sendEvent("buffering", false)
+                        sendBufferingEvent(false)
                         checkAndSendDuration(player)
                         checkAndSendBuffered(player)
                         if (player.isPlaying) {
@@ -958,18 +937,18 @@ class XueHuaNaviteVideoPlayerPlugin :
 
                     Player.STATE_ENDED -> {
                         stopPositionPolling()
-                        sendEvent("buffering", false)
+                        sendBufferingEvent(false)
                         player.duration.takeIf { it > 0 }?.let {
-                            sendEvent("position", it)
+                            sendPositionEvent(it)
                             lastReportedBuffered = it
-                            sendEvent("buffered", it)
+                            sendBufferedEvent(it)
                         }
-                        sendEvent("completed", null)
+                        sendCompletedEvent()
                     }
 
                     Player.STATE_IDLE -> {
                         stopPositionPolling()
-                        sendEvent("buffering", false)
+                        sendBufferingEvent(false)
                     }
                 }
             }
@@ -990,14 +969,14 @@ class XueHuaNaviteVideoPlayerPlugin :
                 reason: Int
             ) {
                 if (!isCurrentActive()) return
-                sendEvent("position", newPosition.positionMs)
+                sendPositionEvent(newPosition.positionMs)
             }
 
             override fun onPlayerError(error: PlaybackException) {
                 if (!isCurrentActive()) return
                 stopPositionPolling()
-                sendEvent("buffering", false)
-                sendEvent("error", error.message ?: "Unknown playback error")
+                sendBufferingEvent(false)
+                sendErrorEvent(error.message ?: "Unknown playback error")
             }
 
             override fun onVideoSizeChanged(videoSize: VideoSize) {
@@ -1008,12 +987,8 @@ class XueHuaNaviteVideoPlayerPlugin :
                 val par =
                     if (videoSize.pixelWidthHeightRatio > 0f) videoSize.pixelWidthHeightRatio else 1f
                 val displayW = (rawW * par).toInt().coerceAtLeast(1)
-
-                val size = HashMap<String, Any>()
-                size["width"] = displayW
-                size["height"] = rawH
-                size["rotationDegrees"] = exoPlayer?.videoFormat?.rotationDegrees ?: 0
-                sendEvent("videoSize", size)
+                val rotationDegrees = exoPlayer?.videoFormat?.rotationDegrees ?: 0
+                sendVideoSizeEvent(displayW.toDouble(), rawH.toDouble(), rotationDegrees)
             }
         }
     }
@@ -1021,86 +996,69 @@ class XueHuaNaviteVideoPlayerPlugin :
     private val exoPlayerListener = createPlayerListener { exoPlayer }
     private val castPlayerListener = createPlayerListener { castPlayer }
 
-
-    // region Snapshot / Covers
-
-    private fun handleTakeSnapshot(result: Result) {
+    override suspend fun takeSnapshot(): SnapshotData? {
         val generation = engineGeneration.get()
-        // When casting remotely, local surface has no live frame; extract via retriever at remote playhead.
-        if (activePlayer === castPlayer && castPlayer != null) {
-            snapshotViaRetriever(result, generation)
-            return
+        // When casting remotely, capture frame context + active playhead on Main first, then decode off-UI.
+        val snapshotInput = withContext(Dispatchers.Main.immediate) {
+            val isRemoteCasting = activePlayer === castPlayer && castPlayer != null
+            val positionUs = ((activePlayer ?: exoPlayer)?.currentPosition ?: 0L) * 1000L
+            val surface = if (isRemoteCasting) null else playerView?.videoSurfaceView
+            SnapshotInput(
+                surface = surface,
+                positionUs = positionUs,
+                url = currentUrl,
+                cacheKey = currentCacheKey,
+                headers = currentHeaders,
+            )
         }
-        when (val surface = playerView?.videoSurfaceView) {
+
+        when (val surface = snapshotInput.surface) {
             is TextureView -> {
-                val bmp = surface.bitmap
+                val bmp = withContext(Dispatchers.Main.immediate) { surface.bitmap }
                 if (bmp != null) {
-                    val baos = ByteArrayOutputStream()
-                    bmp.compress(Bitmap.CompressFormat.PNG, 100, baos)
-                    bmp.recycle()
-                    result.success(baos.toByteArray())
-                    return
+                    val bytes = compressBitmapPng(bmp)
+                    return SnapshotData(bytes = bytes)
                 }
             }
 
             is SurfaceView -> {
-                val w = surface.width
-                val h = surface.height
-                if (w > 0 && h > 0 && surface.holder.surface?.isValid == true) {
-                    val bmp = createBitmap(w, h)
-                    PixelCopy.request(surface, bmp, { copyResult ->
-                        if (generation != engineGeneration.get() || flutterPluginBinding == null) {
-                            bmp.recycle()
-                            return@request
-                        }
-                        if (copyResult == PixelCopy.SUCCESS) {
-                            val baos = ByteArrayOutputStream()
-                            bmp.compress(Bitmap.CompressFormat.PNG, 100, baos)
-                            bmp.recycle()
-                            result.success(baos.toByteArray())
-                        } else {
-                            bmp.recycle()
-                            snapshotViaRetriever(result, generation)
-                        }
-                    }, mainHandler)
-                    return
+                val bytes = captureSurfaceView(surface, generation)
+                if (bytes != null) {
+                    return SnapshotData(bytes = bytes)
                 }
             }
         }
-        snapshotViaRetriever(result, generation)
-    }
 
-    private fun snapshotViaRetriever(result: Result, generation: Int) {
-        val url = currentUrl
-        val cacheKey = currentCacheKey
-        val headers = currentHeaders
-        val positionUs = ((activePlayer ?: exoPlayer)?.currentPosition ?: 0L) * 1000L
+        val url = snapshotInput.url ?: throw FlutterError(
+            code = "NO_MEDIA",
+            message = "No media loaded",
+        )
         val appContext = flutterPluginBinding?.applicationContext
-        if (url == null) {
-            result.error("NO_MEDIA", "No media loaded", null)
-            return
-        }
-        workerExecutor.execute {
+        val bytes = withContext(Dispatchers.IO) {
             val retriever = MediaMetadataRetriever()
             try {
-                setDataSourceForUrl(retriever, url, appContext, cacheKey, headers)
-                val bmp =
-                    retriever.getFrameAtTime(positionUs, MediaMetadataRetriever.OPTION_CLOSEST)
-                if (bmp == null) {
-                    postWorkerResult(generation) {
-                        result.error("NO_FRAME", "Failed to extract frame", null)
-                    }
-                    return@execute
-                }
-                val baos = ByteArrayOutputStream()
-                bmp.compress(Bitmap.CompressFormat.PNG, 100, baos)
-                bmp.recycle()
-                val bytes = baos.toByteArray()
-                postWorkerResult(generation) { result.success(bytes) }
+                setDataSourceForUrl(
+                    retriever,
+                    url,
+                    appContext,
+                    snapshotInput.cacheKey,
+                    snapshotInput.headers,
+                )
+                val bmp = retriever.getFrameAtTime(
+                    snapshotInput.positionUs,
+                    MediaMetadataRetriever.OPTION_CLOSEST,
+                ) ?: throw FlutterError(
+                    code = "NO_FRAME",
+                    message = "Failed to extract frame",
+                )
+                compressBitmapPngSync(bmp)
+            } catch (error: FlutterError) {
+                throw error
             } catch (t: Throwable) {
-                postWorkerResult(generation) {
-                    result.error("SNAPSHOT_FAIL", t.message ?: "snapshot failed", null)
-                }
+                throw FlutterError(
+                    code = "SNAPSHOT_FAIL",
+                    message = t.message ?: "snapshot failed",
+                )
             } finally {
                 try {
                     retriever.release()
@@ -1108,87 +1066,127 @@ class XueHuaNaviteVideoPlayerPlugin :
                 }
             }
         }
+        return SnapshotData(bytes = bytes)
     }
 
-    private fun handleGetDuration(call: MethodCall, result: Result) {
-        val url = call.argument<String>("url")
-        val cacheKey = call.argument<String>("cacheKey")
-        val headers = extractHeaders(call)
-        val timeoutMs = call.argument<Number>("timeoutMs")?.toLong() ?: 15_000L
-        val appContext = flutterPluginBinding?.applicationContext
-        if (url.isNullOrEmpty()) {
-            result.success(null)
-            return
-        }
-        val generation = engineGeneration.get()
-        workerExecutor.execute {
-            val future = workerExecutor.submit<Long?> {
-                val retriever = MediaMetadataRetriever()
+    private suspend fun captureSurfaceView(surface: SurfaceView, generation: Int): ByteArray? {
+        val bmp = withContext(Dispatchers.Main.immediate) {
+            val w = surface.width
+            val h = surface.height
+            if (w <= 0 || h <= 0 || surface.holder.surface?.isValid != true) {
+                return@withContext null
+            }
+            val target = createBitmap(w, h)
+            val copied = suspendCancellableCoroutine { cont ->
                 try {
-                    setDataSourceForUrl(retriever, url, appContext, cacheKey, headers)
-                    retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
-                        ?.toLongOrNull()
-                } finally {
-                    try {
-                        retriever.release()
-                    } catch (_: Throwable) {
+                    PixelCopy.request(surface, target, { copyResult ->
+                        if (!cont.isActive) {
+                            target.recycle()
+                            return@request
+                        }
+                        cont.resume(copyResult == PixelCopy.SUCCESS)
+                    }, mainHandler)
+                } catch (_: Throwable) {
+                    if (cont.isActive) {
+                        cont.resume(false)
+                    } else {
+                        target.recycle()
                     }
                 }
             }
-            val durMs = try {
-                future.get(timeoutMs.coerceAtLeast(1L), TimeUnit.MILLISECONDS)
-            } catch (_: TimeoutException) {
-                future.cancel(true)
-                null
-            } catch (_: Throwable) {
-                null
+            if (!copied || generation != engineGeneration.get() || flutterPluginBinding == null) {
+                target.recycle()
+                return@withContext null
             }
-            postWorkerResult(generation) {
-                if (durMs == null || durMs <= 0) result.success(null)
-                else result.success(durMs)
-            }
+            target
+        } ?: return null
+
+        return compressBitmapPng(bmp)
+    }
+
+    private suspend fun compressBitmapPng(bmp: Bitmap): ByteArray =
+        withContext(Dispatchers.Default) {
+            compressBitmapPngSync(bmp)
+        }
+
+    private fun compressBitmapPngSync(bmp: Bitmap): ByteArray {
+        val baos = ByteArrayOutputStream()
+        try {
+            bmp.compress(Bitmap.CompressFormat.PNG, 100, baos)
+            return baos.toByteArray()
+        } finally {
+            bmp.recycle()
         }
     }
 
-    private fun handleExtractCovers(call: MethodCall, result: Result) {
-        val url = call.argument<String>("url")
-        val cacheKey = call.argument<String>("cacheKey")
-        val headers = extractHeaders(call)
-        val count = call.argument<Int>("count") ?: 5
-        val candidates = call.argument<Int>("candidates") ?: (count * 3)
-        val minBrightness = call.argument<Double>("minBrightness") ?: 0.08
-        val outputDir = call.argument<String>("outputDir") ?: ""
+    override suspend fun getDuration(request: DurationProbeRequest): Long? {
+        val url = request.url
+        if (url.isEmpty()) return null
         val appContext = flutterPluginBinding?.applicationContext
-        if (url == null) {
-            result.success(emptyList<Any>())
-            return
-        }
-        val generation = engineGeneration.get()
-        workerExecutor.execute {
-            val frames = ArrayList<Map<String, Any>>()
+        val headers = normalizeHeaders(request.headers)
+        val timeoutMs = request.timeoutMs.coerceAtLeast(1L)
+        val future = workerExecutor.submit<Long?> {
             val retriever = MediaMetadataRetriever()
             try {
-                setDataSourceForUrl(retriever, url, appContext, cacheKey, headers)
+                setDataSourceForUrl(retriever, url, appContext, request.cacheKey, headers)
+                retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                    ?.toLongOrNull()
+            } finally {
+                try {
+                    retriever.release()
+                } catch (_: Throwable) {
+                }
+            }
+        }
+        return try {
+            withContext(Dispatchers.IO) {
+                future.get(timeoutMs, TimeUnit.MILLISECONDS)
+            }?.takeIf { it > 0L }
+        } catch (_: TimeoutException) {
+            future.cancel(true)
+            null
+        } catch (e: CancellationException) {
+            future.cancel(true)
+            throw e
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    override suspend fun extractCovers(request: CoverExtractRequest): List<CoverFrameData> {
+        val url = request.url
+        if (url.isEmpty()) return emptyList()
+        val appContext = flutterPluginBinding?.applicationContext
+        val headers = normalizeHeaders(request.headers)
+        val count = request.count.toInt().coerceAtLeast(0)
+        val candidates = request.candidates.toInt().coerceAtLeast(count)
+        if (count == 0 || candidates == 0) return emptyList()
+
+        return withContext(Dispatchers.IO) {
+            val frames = ArrayList<CoverFrameData>()
+            val retriever = MediaMetadataRetriever()
+            try {
+                setDataSourceForUrl(retriever, url, appContext, request.cacheKey, headers)
                 val durMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
                     ?.toLongOrNull() ?: 0L
-                if (durMs <= 0) {
-                    postWorkerResult(generation) { result.success(emptyList<Any>()) }
-                    return@execute
-                }
-                val dir = File(outputDir.ifEmpty { appContext?.cacheDir?.absolutePath ?: "/tmp" })
+                if (durMs <= 0L) return@withContext emptyList()
+
+                val dir = File(
+                    request.outputDir.ifEmpty { appContext?.cacheDir?.absolutePath ?: "/tmp" }
+                )
                 if (!dir.exists()) dir.mkdirs()
 
                 val lower = (durMs * 0.05).toLong()
                 val upper = (durMs * 0.95).toLong()
                 val span = (upper - lower).coerceAtLeast(1L)
-                val n = maxOf(candidates, count)
-                for (i in 0 until n) {
-                    val t = lower + (span * (i + 0.5) / n).toLong()
+                for (i in 0 until candidates) {
+                    if (!isActive) break
+                    val t = lower + (span * (i + 0.5) / candidates).toLong()
                     val bmp =
                         retriever.getFrameAtTime(t * 1000L, MediaMetadataRetriever.OPTION_CLOSEST)
                             ?: continue
                     val brightness = averageBrightness(bmp)
-                    if (brightness < minBrightness) {
+                    if (brightness < request.minBrightness) {
                         bmp.recycle()
                         continue
                     }
@@ -1198,24 +1196,25 @@ class XueHuaNaviteVideoPlayerPlugin :
                             bmp.compress(Bitmap.CompressFormat.PNG, 100, fos)
                         }
                         frames.add(
-                            mapOf(
-                                "path" to outFile.absolutePath,
-                                "positionMs" to t,
-                                "brightness" to brightness
+                            CoverFrameData(
+                                path = outFile.absolutePath,
+                                positionMs = t,
+                                brightness = brightness,
                             )
                         )
                     } catch (_: Throwable) {
-                        // skip
+                        // Skip individual frame write failures.
                     } finally {
                         bmp.recycle()
                     }
                 }
                 trimCoverCache(dir)
-                frames.sortByDescending { (it["brightness"] as? Double) ?: 0.0 }
-                val trimmed = frames.take(count)
-                postWorkerResult(generation) { result.success(trimmed) }
+                frames.sortByDescending { it.brightness }
+                frames.take(count)
+            } catch (e: CancellationException) {
+                throw e
             } catch (_: Throwable) {
-                postWorkerResult(generation) { result.success(emptyList<Any>()) }
+                emptyList()
             } finally {
                 try {
                     retriever.release()
@@ -1294,7 +1293,7 @@ class XueHuaNaviteVideoPlayerPlugin :
         override fun run() {
             val player = activePlayer
             if (player != null && player.isPlaying) {
-                sendEvent("position", player.currentPosition)
+                sendPositionEvent(player.currentPosition)
                 checkAndSendBuffered(player)
                 mainHandler.postDelayed(this, 200)
             } else {
@@ -1315,4 +1314,12 @@ class XueHuaNaviteVideoPlayerPlugin :
         isPollingPosition = false
         mainHandler.removeCallbacks(positionRunnable)
     }
+
+    private data class SnapshotInput(
+        val surface: android.view.View?,
+        val positionUs: Long,
+        val url: String?,
+        val cacheKey: String?,
+        val headers: Map<String, String>?,
+    )
 }

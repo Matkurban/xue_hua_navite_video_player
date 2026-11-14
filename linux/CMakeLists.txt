@@ -13,10 +13,14 @@ set(PLUGIN_NAME "xue_hua_navite_video_player_plugin")
 
 # Any new source files that you add to the plugin should be added here.
 list(APPEND PLUGIN_SOURCES
+  "player_api.g.c"
+  "player_api.g.h"
   "xue_hua_navite_video_player_plugin.cc"
   "mpv_player.cc"
   "mpv_player.h"
 )
+# Pigeon's GObject generator emits C++ helpers (<cmath>, static_cast) even when named .c.
+set_source_files_properties("player_api.g.c" PROPERTIES LANGUAGE CXX)
 
 # Define the plugin library target. Its name must not be changed (see comment
 # on PLUGIN_NAME above).

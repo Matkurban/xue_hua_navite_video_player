@@ -1,9 +1,12 @@
+import '../bridge/video_player_host_bridge.dart';
 import '../core/video_source.dart';
 import '../data/models/video_cache_config.dart';
 import 'video_cache_types.dart';
 
 /// 平台缓存引擎抽象基类（非 IO / 非 Web 兜底实现）。
 class PlatformVideoCacheEngine {
+  PlatformVideoCacheEngine({VideoPlayerHostBridge? bridge});
+
   VideoCacheConfig _config = const VideoCacheConfig();
 
   VideoCacheConfig get config => _config;

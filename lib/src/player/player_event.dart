@@ -4,8 +4,7 @@ import '../data/enums/cast_state.dart';
 
 /// Typed transport events from [PlayerBackend].
 ///
-/// Wire format remains MethodChannel `{event, value}` maps; encoding lives in
-/// [ChannelPlayerBackend].
+/// Decoded from Pigeon [PlayerEventData] payloads by [PlayerEventDecoder].
 sealed class PlayerEvent {
   const PlayerEvent();
 

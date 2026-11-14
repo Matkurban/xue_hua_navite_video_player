@@ -8,6 +8,7 @@ analyzer:
     - windows/**
     - macos/**
     - linux/**
+    - lib/src/pigeon/**
 
 formatter: 
   page_width: 100

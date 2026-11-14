@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -5,8 +6,11 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
+import '../bridge/bridge_env.dart';
+import '../bridge/video_player_host_bridge.dart';
 import '../core/video_source.dart';
 import '../data/models/video_cache_config.dart';
+import '../pigeon/player_api.g.dart';
 import '../utils/temp_paths.dart';
 import 'local_video_cache_server_io.dart';
 import 'video_cache_types.dart';
@@ -16,13 +20,13 @@ import 'video_cache_types.dart';
 /// - **iOS / macOS**：完整文件直通 `file://` 快路径，未完成流委托给 Swift `AVAssetResourceLoaderDelegate`；
 /// - **Windows / Linux**：完整文件直通 `file://` 快路径，未完成流使用 Dart `LocalVideoCacheEngine` 回环 Range 代理。
 class PlatformVideoCacheEngine {
-  static const MethodChannel _defaultChannel = MethodChannel('xue_hua_navite_video_player/player');
+  PlatformVideoCacheEngine({this._bridge});
 
-  final MethodChannel _channel;
+  final VideoPlayerHostBridge? _bridge;
   final LocalVideoCacheEngine _localEngine = LocalVideoCacheEngine();
   bool _nativeConfigSynced = false;
 
-  PlatformVideoCacheEngine({MethodChannel? channel}) : _channel = channel ?? _defaultChannel;
+  VideoPlayerHostBridge get _resolvedBridge => _bridge ?? VideoPlayerHostBridge.instance;
 
   /// 暴露内部纯 Dart 稀疏分片缓存引擎（便于桌面端与单元测试直接校验）。
   @visibleForTesting
@@ -42,6 +46,10 @@ class PlatformVideoCacheEngine {
     return p == TargetPlatform.iOS || p == TargetPlatform.macOS;
   }
 
+  bool _isMissingNativeBinding(Object error) {
+    return error is MissingPluginException || (isFlutterTestEnvironment && _bridge == null);
+  }
+
   Future<void> configure(VideoCacheConfig config) async {
     _nativeConfigSynced = false;
     await _localEngine.configure(config);
@@ -58,15 +66,21 @@ class PlatformVideoCacheEngine {
   Future<void> _syncConfigToNative() async {
     final cacheDir = await _localEngine.resolveCacheDir();
     try {
-      await _channel.invokeMethod<void>(
-        'configureCache',
-        config.toChannelMap(resolvedCacheDir: cacheDir),
+      await _resolvedBridge.configureCache(
+        CacheConfigRequest(
+          enabled: config.enabled,
+          maxCacheBytes: config.maxCacheBytes,
+          maxSingleFileBytes: config.maxSingleFileBytes,
+          cacheDir: cacheDir,
+        ),
       );
       _nativeConfigSynced = true;
-    } on MissingPluginException {
-      // Safe no-op in Dart VM unit tests without native channel handler.
     } on PlatformException {
       // Safe fallback if platform does not implement native cache governance.
+    } catch (error) {
+      if (!_isMissingNativeBinding(error)) {
+        rethrow;
+      }
     }
   }
 
@@ -121,12 +135,9 @@ class PlatformVideoCacheEngine {
     var isCompleteHit = false;
     if (enabled) {
       try {
-        final cached = await _channel.invokeMethod<bool>('isCached', <String, dynamic>{
-          'url': source.url,
-          'cacheKey': cacheKey,
-          'cacheDir': cacheDir,
-        });
-        isCompleteHit = cached == true;
+        isCompleteHit = await _resolvedBridge.isCached(
+          CacheEntryRequest(url: source.url, cacheKey: cacheKey, cacheDir: cacheDir),
+        );
       } catch (_) {}
     }
 
@@ -175,14 +186,14 @@ class PlatformVideoCacheEngine {
   void pin(String cacheKey) {
     _localEngine.pin(cacheKey);
     if (!_usesDesktopDartProxy) {
-      _invokeBestEffort('pinCacheKey', <String, dynamic>{'cacheKey': cacheKey});
+      _ignoreBestEffort(() => _resolvedBridge.pinCacheKey(cacheKey));
     }
   }
 
   void unpin(String cacheKey) {
     _localEngine.unpin(cacheKey);
     if (!_usesDesktopDartProxy) {
-      _invokeBestEffort('unpinCacheKey', <String, dynamic>{'cacheKey': cacheKey});
+      _ignoreBestEffort(() => _resolvedBridge.unpinCacheKey(cacheKey));
     }
   }
 
@@ -203,19 +214,25 @@ class PlatformVideoCacheEngine {
     final cacheKey = VideoCacheKeyUtils.computeSha1Key(rawId);
     final cacheDir = await _localEngine.resolveCacheDir();
     try {
-      await _channel.invokeMethod<void>('precache', <String, dynamic>{
-        'url': source.url,
-        'cacheKey': cacheKey,
-        'cacheDir': cacheDir,
-        'headers': ?source.headers,
-        'preloadBytes': ?preloadBytes,
-        'maxSingleFileBytes': config.maxSingleFileBytes,
-        'maxCacheBytes': config.maxCacheBytes,
-      });
-    } on MissingPluginException {
-      await _localEngine.precache(source, preloadBytes: preloadBytes);
+      await _resolvedBridge.precache(
+        PrecacheRequest(
+          url: source.url,
+          cacheKey: cacheKey,
+          cacheDir: cacheDir,
+          headers: source.headers,
+          preloadBytes: preloadBytes,
+          maxSingleFileBytes: config.maxSingleFileBytes,
+          maxCacheBytes: config.maxCacheBytes,
+        ),
+      );
     } on PlatformException {
       // Quietly ignore background precache failures.
+    } catch (error) {
+      if (_isMissingNativeBinding(error)) {
+        await _localEngine.precache(source, preloadBytes: preloadBytes);
+      } else {
+        rethrow;
+      }
     }
   }
 
@@ -227,11 +244,15 @@ class PlatformVideoCacheEngine {
     final rawId = VideoCacheKeyUtils.resolveRawIdentity(source, config);
     final cacheKey = VideoCacheKeyUtils.computeSha1Key(rawId);
     try {
-      await _channel.invokeMethod<void>('cancelPrecache', <String, dynamic>{'cacheKey': cacheKey});
-    } on MissingPluginException {
-      await _localEngine.cancelPrecache(source);
+      await _resolvedBridge.cancelPrecache(cacheKey);
     } on PlatformException {
       // Ignore.
+    } catch (error) {
+      if (_isMissingNativeBinding(error)) {
+        await _localEngine.cancelPrecache(source);
+      } else {
+        rethrow;
+      }
     }
   }
 
@@ -254,18 +275,17 @@ class PlatformVideoCacheEngine {
     }
 
     try {
-      final res = await _channel.invokeMethod<bool>('isCached', <String, dynamic>{
-        'url': source.url,
-        'cacheKey': cacheKey,
-        'cacheDir': cacheDir,
-      });
-      if (res != null) return res;
-    } on MissingPluginException {
-      return _localEngine.isCached(source);
+      return await _resolvedBridge.isCached(
+        CacheEntryRequest(url: source.url, cacheKey: cacheKey, cacheDir: cacheDir),
+      );
     } on PlatformException {
       return false;
+    } catch (error) {
+      if (_isMissingNativeBinding(error)) {
+        return _localEngine.isCached(source);
+      }
+      rethrow;
     }
-    return false;
   }
 
   Future<int> getCacheSize() async {
@@ -277,19 +297,18 @@ class PlatformVideoCacheEngine {
     await _ensureNativeConfigured();
     final cacheDir = await _localEngine.resolveCacheDir();
     try {
-      final nativeSize = await _channel.invokeMethod<int>('getCacheSize', <String, dynamic>{
-        'cacheDir': cacheDir,
-      });
-      if (nativeSize != null) {
-        return nativeSize + livePhotoBytes;
-      }
-    } on MissingPluginException {
-      return (await _localEngine.getCacheSize()) + livePhotoBytes;
+      final nativeSize = await _resolvedBridge.getCacheSize(cacheDir);
+      return nativeSize + livePhotoBytes;
     } on PlatformException {
-      // Fallback to directory scan on Apple if channel failed.
+      // Fallback to directory scan on Apple if bridge failed.
       if (!_usesAndroidMedia3Cache) {
         return (await _localEngine.getCacheSize()) + livePhotoBytes;
       }
+    } catch (error) {
+      if (_isMissingNativeBinding(error)) {
+        return (await _localEngine.getCacheSize()) + livePhotoBytes;
+      }
+      rethrow;
     }
     return livePhotoBytes;
   }
@@ -308,16 +327,18 @@ class PlatformVideoCacheEngine {
     final cacheKey = VideoCacheKeyUtils.computeSha1Key(rawId);
     final cacheDir = await _localEngine.resolveCacheDir();
     try {
-      await _channel.invokeMethod<void>('removeCache', <String, dynamic>{
-        'url': source.url,
-        'cacheKey': cacheKey,
-        'cacheDir': cacheDir,
-      });
-    } on MissingPluginException {
-      await _localEngine.removeCache(source);
+      await _resolvedBridge.removeCache(
+        CacheEntryRequest(url: source.url, cacheKey: cacheKey, cacheDir: cacheDir),
+      );
     } on PlatformException {
       if (!_usesAndroidMedia3Cache) {
         await _localEngine.removeCache(source);
+      }
+    } catch (error) {
+      if (_isMissingNativeBinding(error)) {
+        await _localEngine.removeCache(source);
+      } else {
+        rethrow;
       }
     }
   }
@@ -332,12 +353,16 @@ class PlatformVideoCacheEngine {
     await _ensureNativeConfigured();
     final cacheDir = await _localEngine.resolveCacheDir();
     try {
-      await _channel.invokeMethod<void>('clearCache', <String, dynamic>{'cacheDir': cacheDir});
-    } on MissingPluginException {
-      await _localEngine.clearCache();
+      await _resolvedBridge.clearCache(cacheDir);
     } on PlatformException {
       if (!_usesAndroidMedia3Cache) {
         await _localEngine.clearCache();
+      }
+    } catch (error) {
+      if (_isMissingNativeBinding(error)) {
+        await _localEngine.clearCache();
+      } else {
+        rethrow;
       }
     }
   }
@@ -346,8 +371,10 @@ class PlatformVideoCacheEngine {
     await _localEngine.dispose();
   }
 
-  void _invokeBestEffort(String method, Map<String, dynamic> args) {
-    _channel.invokeMethod<void>(method, args).then((_) {}, onError: (_) {});
+  void _ignoreBestEffort(Future<void> Function() action) {
+    try {
+      unawaited(action().then((_) {}, onError: (_) {}));
+    } catch (_) {}
   }
 
   String _networkLivePhotoHash(NetworkVideoSource source) {

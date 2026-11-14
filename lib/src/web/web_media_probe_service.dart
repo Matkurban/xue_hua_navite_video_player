@@ -3,12 +3,14 @@ import 'dart:js_interop';
 
 import 'package:web/web.dart' as html;
 
+import '../pigeon/player_api.g.dart';
+
 /// Handles offscreen HTML5 `<video>` / `<canvas>` operations on Web:
 /// frame snapshots, cover candidate extraction, and metadata duration probing.
 abstract final class WebMediaProbeService {
-  /// Captures the current frame of [video] as a PNG data URL (`data:image/png;base64,...`).
+  /// Captures the current frame of [video] as a PNG data URL inside [SnapshotData].
   /// Returns `null` if [video] is null or if the canvas is tainted by CORS.
-  static String? takeSnapshot(html.HTMLVideoElement? video) {
+  static SnapshotData? takeSnapshot(html.HTMLVideoElement? video) {
     if (video == null) return null;
     try {
       final w = video.videoWidth == 0 ? 640 : video.videoWidth;
@@ -19,19 +21,19 @@ abstract final class WebMediaProbeService {
       final ctx = canvas.getContext('2d') as html.CanvasRenderingContext2D?;
       if (ctx == null) return null;
       ctx.drawImage(video, 0, 0, w.toDouble(), h.toDouble());
-      return canvas.toDataURL('image/png');
+      return SnapshotData(dataUri: canvas.toDataURL('image/png'));
     } catch (_) {
       return null;
     }
   }
 
   /// Extracts candidate cover frames using an offscreen `<video>` element.
-  static Future<List<Map<String, dynamic>>> extractCovers(Map<String, dynamic> args) async {
-    final url = args['url'] as String? ?? '';
-    final count = (args['count'] as int?) ?? 5;
-    final candidates = (args['candidates'] as int?) ?? (count * 3);
-    final minBrightness = (args['minBrightness'] as num?)?.toDouble() ?? 0.08;
-    if (url.isEmpty) return const [];
+  static Future<List<CoverFrameData>> extractCovers(CoverExtractRequest request) async {
+    final url = request.url;
+    final count = request.count;
+    final candidates = request.candidates;
+    final minBrightness = request.minBrightness;
+    if (url.isEmpty || count <= 0) return const [];
 
     final video = html.HTMLVideoElement()
       ..crossOrigin = 'anonymous'
@@ -52,7 +54,7 @@ abstract final class WebMediaProbeService {
       final span = (upper - lower).clamp(0.1, double.infinity);
       final n = candidates > count ? candidates : count;
 
-      final frames = <Map<String, dynamic>>[];
+      final frames = <CoverFrameData>[];
       final canvas = html.HTMLCanvasElement();
       for (var i = 0; i < n; i++) {
         final t = lower + span * (i + 0.5) / n;
@@ -74,15 +76,18 @@ abstract final class WebMediaProbeService {
           final brightness = _canvasAverageBrightness(ctx, w, h);
           if (brightness < minBrightness) continue;
           final dataUrl = canvas.toDataURL('image/png');
-          frames.add({'path': dataUrl, 'positionMs': (t * 1000).toInt(), 'brightness': brightness});
+          frames.add(
+            CoverFrameData(
+              path: dataUrl,
+              positionMs: (t * 1000).toInt(),
+              brightness: brightness,
+            ),
+          );
         } catch (_) {
           continue;
         }
       }
-      frames.sort(
-        (a, b) =>
-            ((b['brightness'] as num).toDouble()).compareTo((a['brightness'] as num).toDouble()),
-      );
+      frames.sort((a, b) => b.brightness.compareTo(a.brightness));
       return frames.take(count).toList();
     } finally {
       try {
@@ -92,9 +97,9 @@ abstract final class WebMediaProbeService {
   }
 
   /// Probes media duration (milliseconds) using a detached offscreen `<video>`.
-  static Future<int?> getDuration(Map<String, dynamic> args) async {
-    final url = args['url'] as String? ?? '';
-    final timeoutMs = (args['timeoutMs'] as int?) ?? 15000;
+  static Future<int?> getDuration(DurationProbeRequest request) async {
+    final url = request.url;
+    final timeoutMs = request.timeoutMs > 0 ? request.timeoutMs : 15000;
     if (url.isEmpty) return null;
 
     final video = html.HTMLVideoElement()

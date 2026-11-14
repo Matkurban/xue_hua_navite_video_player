@@ -4,71 +4,28 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:signals_flutter/signals_flutter.dart';
 
+import '../bridge/video_player_host_bridge.dart';
 import '../data/enums/aspect_ratio_mode.dart';
 import '../data/models/navite_file.dart';
+import '../pigeon/player_api.g.dart';
 import '../utils/temp_paths.dart';
 import 'player_backend.dart';
 import 'player_event.dart';
 import 'player_event_decoder.dart';
 
-/// Process-wide native [EventChannel] listener with ref-counting.
+/// [PlayerBackend] adapter over [VideoPlayerHostBridge].
 ///
-/// Native only allows one active listen on `player/events`. Live Photo (and any
-/// recreate/dispose cycle) must share that single subscription instead of each
-/// [ChannelPlayerBackend] calling [EventChannel.receiveBroadcastStream].
-class _SharedNativeEventHub {
-  static const EventChannel _eventChannel = EventChannel(
-    'xue_hua_navite_video_player/player/events',
-  );
-
-  static final StreamController<dynamic> _raw = StreamController<dynamic>.broadcast();
-  static StreamSubscription<dynamic>? _sub;
-  static int _refs = 0;
-
-  static Stream<dynamic> retain() {
-    if (_refs == 0) {
-      _sub = _eventChannel.receiveBroadcastStream().listen(_raw.add, onError: _raw.addError);
-    }
-    _refs += 1;
-    return _raw.stream;
-  }
-
-  static Future<void> release() async {
-    if (_refs <= 0) {
-      return;
-    }
-    _refs -= 1;
-    if (_refs > 0) {
-      return;
-    }
-    final StreamSubscription<dynamic>? sub = _sub;
-    _sub = null;
-    if (sub == null) {
-      return;
-    }
-    try {
-      await sub.cancel();
-    } on PlatformException catch (error) {
-      // Concurrent dispose / already-cleared native handler.
-      if (error.message != 'No active stream to cancel') {
-        // Same class of cancel races — swallow to avoid failing widget tests.
-      }
-    } catch (_) {
-      // Ignore cancel races on shared channel teardown.
-    }
-  }
-}
-
-/// [PlayerBackend] adapter over MethodChannel / EventChannel.
-///
-/// Wire protocol is unchanged; delegates event map decoding to [PlayerEventDecoder].
+/// Delegates event decoding to [PlayerEventDecoder].
 class ChannelPlayerBackend implements PlayerBackend {
-  static const _methodChannel = MethodChannel('xue_hua_navite_video_player/player');
+  ChannelPlayerBackend({this._bridge});
+
+  final VideoPlayerHostBridge? _bridge;
+
+  VideoPlayerHostBridge get _resolvedBridge => _bridge ?? VideoPlayerHostBridge.instance;
 
   final FlutterSignal<int?> _textureId = signal<int?>(null);
-  StreamSubscription<dynamic>? _eventSubscription;
+  StreamSubscription<PlayerEventData>? _eventSubscription;
   StreamController<PlayerEvent> _events = StreamController<PlayerEvent>.broadcast();
-  bool _holdingSharedEvents = false;
 
   @override
   FlutterSignal<int?> get textureId => _textureId;
@@ -86,24 +43,19 @@ class ChannelPlayerBackend implements PlayerBackend {
     // Subscribe before create() so native ready events are not dropped.
     _listenEvents();
 
-    final id = await _methodChannel.invokeMethod<int>('create');
-    if (id == null) {
-      throw StateError('Native player create() returned a null texture id.');
-    }
+    final id = await _resolvedBridge.create();
     _textureId.value = id;
     return id;
   }
 
   void _listenEvents() {
-    if (_holdingSharedEvents) {
+    if (_eventSubscription != null) {
       return;
     }
-    _holdingSharedEvents = true;
-    _eventSubscription = _SharedNativeEventHub.retain().listen(
-      (dynamic raw) {
+    _eventSubscription = _resolvedBridge.events.listen(
+      (PlayerEventData raw) {
         try {
-          if (raw is! Map) return;
-          final event = PlayerEventDecoder.decode(Map<String, dynamic>.from(raw));
+          final event = PlayerEventDecoder.fromPigeon(raw);
           if (event != null && !_events.isClosed) {
             _events.add(event);
           }
@@ -123,8 +75,8 @@ class ChannelPlayerBackend implements PlayerBackend {
 
   /// Visible for tests.
   @visibleForTesting
-  static PlayerEvent? decodeEventForTest(Map<String, dynamic> event) {
-    return PlayerEventDecoder.decode(event);
+  static PlayerEvent? decodeEventForTest(PlayerEventData event) {
+    return PlayerEventDecoder.fromPigeon(event);
   }
 
   @override
@@ -135,43 +87,45 @@ class ChannelPlayerBackend implements PlayerBackend {
     Map<String, String>? headers,
     bool? enableCache,
   }) async {
-    await _methodChannel.invokeMethod('open', {
-      'url': url,
-      'castUrl': ?castUrl,
-      'cacheKey': ?cacheKey,
-      'headers': ?headers,
-      'enableCache': ?enableCache,
-    });
+    await _resolvedBridge.open(
+      OpenMediaRequest(
+        url: url,
+        castUrl: castUrl,
+        cacheKey: cacheKey,
+        headers: headers,
+        enableCache: enableCache,
+      ),
+    );
   }
 
   @override
   Future<void> play() async {
-    await _methodChannel.invokeMethod('play');
+    await _resolvedBridge.play();
   }
 
   @override
   Future<void> pause() async {
-    await _methodChannel.invokeMethod('pause');
+    await _resolvedBridge.pause();
   }
 
   @override
   Future<void> seek(int positionMs) async {
-    await _methodChannel.invokeMethod('seek', {'position': positionMs});
+    await _resolvedBridge.seek(positionMs);
   }
 
   @override
   Future<void> setVolume(double volume) async {
-    await _methodChannel.invokeMethod('setVolume', {'volume': volume.clamp(0.0, 1.0)});
+    await _resolvedBridge.setVolume(volume.clamp(0.0, 1.0));
   }
 
   @override
   Future<void> setSpeed(double speed) async {
-    await _methodChannel.invokeMethod('setSpeed', {'speed': speed});
+    await _resolvedBridge.setSpeed(speed);
   }
 
   @override
   Future<void> setAspectRatioMode(AspectRatioMode mode) async {
-    await _methodChannel.invokeMethod('setAspectRatioMode', {'mode': mode.wireName});
+    await _resolvedBridge.setAspectRatioMode(_toNativeAspectRatioMode(mode));
   }
 
   @override
@@ -180,17 +134,13 @@ class ChannelPlayerBackend implements PlayerBackend {
     required double height,
     required double devicePixelRatio,
   }) async {
-    await _methodChannel.invokeMethod('setVideoViewSize', {
-      'width': width,
-      'height': height,
-      'devicePixelRatio': devicePixelRatio,
-    });
+    await _resolvedBridge.setVideoViewSize(width, height, devicePixelRatio);
   }
 
   @override
   Future<void> showCastPicker() async {
     try {
-      await _methodChannel.invokeMethod('showCastPicker');
+      await _resolvedBridge.showCastPicker();
     } on MissingPluginException {
       // Safe no-op if platform does not implement casting.
     } on PlatformException {
@@ -201,7 +151,7 @@ class ChannelPlayerBackend implements PlayerBackend {
   @override
   Future<void> stopCasting() async {
     try {
-      await _methodChannel.invokeMethod('stopCasting');
+      await _resolvedBridge.stopCasting();
     } on MissingPluginException {
       // Safe no-op if platform does not implement casting.
     } on PlatformException {
@@ -211,19 +161,15 @@ class ChannelPlayerBackend implements PlayerBackend {
 
   @override
   Future<void> dispose() async {
-    if (_holdingSharedEvents) {
-      _holdingSharedEvents = false;
-      final StreamSubscription<dynamic>? local = _eventSubscription;
-      _eventSubscription = null;
-      try {
-        await local?.cancel();
-      } catch (_) {
-        // Local forwarder cancel should not fail tests.
-      }
-      await _SharedNativeEventHub.release();
+    final local = _eventSubscription;
+    _eventSubscription = null;
+    try {
+      await local?.cancel();
+    } catch (_) {
+      // Local subscription cancel should not fail teardown or tests.
     }
     try {
-      await _methodChannel.invokeMethod('dispose');
+      await _resolvedBridge.dispose();
     } catch (_) {}
     _textureId.value = null;
     // Do not close [_events] — [create] must be able to emit again.
@@ -231,26 +177,35 @@ class ChannelPlayerBackend implements PlayerBackend {
 
   @override
   Future<NaviteFile> takeSnapshot({String? savePath}) async {
-    final raw = await _methodChannel.invokeMethod<dynamic>('takeSnapshot');
-    if (raw == null) {
+    final data = await _resolvedBridge.takeSnapshot();
+    if (data == null) {
       throw StateError('Native player returned no snapshot data.');
     }
+    final dataUri = data.dataUri;
+    final bytes = data.bytes;
     if (kIsWeb) {
-      if (raw is String) {
-        return NaviteFile.fromLocation(raw, name: _defaultSnapshotName());
+      if (dataUri != null && dataUri.isNotEmpty) {
+        return NaviteFile.fromLocation(dataUri, name: _defaultSnapshotName());
       }
-      return NaviteFile.fromBytes(_asUint8List(raw), name: _defaultSnapshotName());
+      if (bytes != null) {
+        return NaviteFile.fromBytes(bytes, name: _defaultSnapshotName());
+      }
+      throw StateError('Native player returned no snapshot data.');
     }
-    final bytes = _asUint8List(raw);
+    if (bytes == null) {
+      throw StateError('Native player returned no snapshot data.');
+    }
     final outPath = savePath ?? await pluginSnapshotPath(_defaultSnapshotName());
     await writeFileBytes(outPath, bytes);
     return NaviteFile.fromLocation(outPath);
   }
 
-  static Uint8List _asUint8List(dynamic raw) {
-    if (raw is Uint8List) return raw;
-    if (raw is List<int>) return Uint8List.fromList(raw);
-    throw StateError('Unsupported snapshot payload: ${raw.runtimeType}');
+  static NativeAspectRatioMode _toNativeAspectRatioMode(AspectRatioMode mode) {
+    return switch (mode) {
+      AspectRatioMode.fit => NativeAspectRatioMode.fit,
+      AspectRatioMode.fill => NativeAspectRatioMode.fill,
+      AspectRatioMode.stretch => NativeAspectRatioMode.stretch,
+    };
   }
 
   static String _defaultSnapshotName() {

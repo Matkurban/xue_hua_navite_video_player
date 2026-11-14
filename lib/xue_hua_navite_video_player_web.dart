@@ -2,166 +2,65 @@ import 'dart:async';
 import 'dart:js_interop';
 import 'dart:ui_web' as ui_web;
 
-import 'package:flutter/services.dart';
 import 'package:flutter_web_plugins/flutter_web_plugins.dart';
 import 'package:web/web.dart' as html;
 
+import 'src/bridge/video_player_host_bridge.dart';
+import 'src/pigeon/player_api.g.dart';
 import 'src/web/web_media_probe_service.dart';
 import 'src/web/web_remote_playback_controller.dart';
 
 /// Web 平台视频播放器插件实现，基于 HTML5 `<video>` 元素与 W3C Remote Playback API。
-/// Web platform video player plugin implementation using HTML5 `<video>` element.
-class XueHuaNaviteVideoPlayerWeb {
+///
+/// Implements [VideoPlayerHostBridge] directly in Dart without platform channels.
+class XueHuaNaviteVideoPlayerWeb implements VideoPlayerHostBridge {
   html.HTMLVideoElement? _videoElement;
   Timer? _positionTimer;
-  final _eventController = StreamController<dynamic>.broadcast();
+  final StreamController<PlayerEventData> _eventController =
+      StreamController<PlayerEventData>.broadcast();
   bool _viewRegistered = false;
 
   late final WebRemotePlaybackController _remotePlayback = WebRemotePlaybackController(
     onStateChanged: (state, {deviceName}) {
-      _sendEvent('castState', <String, dynamic>{'state': state, 'deviceName': ?deviceName});
+      _sendEvent(
+        PlayerEventData(
+          kind: NativePlayerEventType.castState,
+          castState: _toNativeCastState(state),
+          castDeviceName: deviceName,
+        ),
+      );
     },
   );
 
-  /// 注册 Web 插件。 / Registers the web plugin.
+  /// 注册 Web 插件，将 [VideoPlayerHostBridge.instance] 指向当前 Web 实现。
   static void registerWith(Registrar registrar) {
-    final instance = XueHuaNaviteVideoPlayerWeb();
-
-    final methodChannel = MethodChannel(
-      'xue_hua_navite_video_player/player',
-      const StandardMethodCodec(),
-      registrar,
-    );
-    methodChannel.setMethodCallHandler(instance._handleMethodCall);
-
-    // ignore: deprecated_member_use
-    final eventChannel = PluginEventChannel<dynamic>(
-      'xue_hua_navite_video_player/player/events',
-      const StandardMethodCodec(),
-      registrar,
-    );
-    eventChannel.setController(instance._eventController);
+    VideoPlayerHostBridge.instance = XueHuaNaviteVideoPlayerWeb();
   }
 
-  void _sendEvent(String name, dynamic value) {
-    _eventController.add(<String, dynamic>{'event': name, 'value': value});
-  }
+  @override
+  Stream<PlayerEventData> get events => _eventController.stream;
 
-  Future<dynamic> _handleMethodCall(MethodCall call) async {
-    switch (call.method) {
-      case 'create':
-        return _create();
-      case 'open':
-        final args = Map<String, dynamic>.from(call.arguments as Map);
-        _open(args['url'] as String);
-        return null;
-      case 'play':
-        final video = _videoElement;
-        if (video != null) {
-          if (video.ended) {
-            video.currentTime = 0;
-          }
-          video.play().toDart.catchError((Object error) {
-            // If unmuted autoplay (e.g. LivePhoto hover / autoPlayOnce / loop)
-            // is blocked by browser policy, automatically mute and retry so
-            // Live Photos and inline previews still play smoothly on Web.
-            final errStr = error.toString();
-            if (!video.muted &&
-                (errStr.contains('NotAllowedError') || errStr.contains('interact'))) {
-              video.muted = true;
-              return video.play().toDart.catchError((Object retryErr) {
-                _sendEvent('playing', false);
-                _sendEvent('buffering', false);
-                _sendEvent('error', 'Autoplay blocked: $retryErr');
-                return null;
-              });
-            }
-            _sendEvent('playing', false);
-            _sendEvent('buffering', false);
-            _sendEvent('error', 'Autoplay blocked: $error');
-            return null;
-          });
-        }
-        return null;
-      case 'pause':
-        _videoElement?.pause();
-        return null;
-      case 'seek':
-        final args = Map<String, dynamic>.from(call.arguments as Map);
-        final ms = args['position'] as int;
-        if (_videoElement != null) {
-          _videoElement!.currentTime = ms / 1000.0;
-        }
-        return null;
-      case 'setVolume':
-        final args = Map<String, dynamic>.from(call.arguments as Map);
-        final vol = (args['volume'] as num).toDouble().clamp(0.0, 1.0);
-        if (_videoElement != null) {
-          _videoElement!.volume = vol;
-          // Sync the DOM `muted` property so muted playback satisfies browser autoplay policies.
-          _videoElement!.muted = vol <= 0.0;
-        }
-        return null;
-      case 'setSpeed':
-        final args = Map<String, dynamic>.from(call.arguments as Map);
-        final speed = (args['speed'] as num).toDouble();
-        if (_videoElement != null) _videoElement!.playbackRate = speed;
-        return null;
-      case 'setAspectRatioMode':
-        final args = Map<String, dynamic>.from(call.arguments as Map);
-        _setAspectRatioMode(args['mode'] as String?);
-        return null;
-      case 'setVideoViewSize':
-        // Web sizes via CSS 100%; no-op.
-        return null;
-      case 'showCastPicker':
-        await _remotePlayback.showPicker(_videoElement);
-        return null;
-      case 'stopCasting':
-        await _remotePlayback.stopCasting(_videoElement);
-        return null;
-      case 'dispose':
-        _dispose();
-        return null;
-      case 'takeSnapshot':
-        return WebMediaProbeService.takeSnapshot(_videoElement);
-      case 'extractCovers':
-        final args = Map<String, dynamic>.from(call.arguments as Map);
-        return WebMediaProbeService.extractCovers(args);
-      case 'getDuration':
-        final args = Map<String, dynamic>.from(call.arguments as Map);
-        return WebMediaProbeService.getDuration(args);
-      case 'getBrightness':
-        return 1.0;
-      case 'setBrightness':
-        return null;
-      case 'setWindowFullscreen':
-        // Browser fullscreen is applied from Dart via the Fullscreen API.
-        return null;
-      case 'configureCache':
-      case 'precache':
-      case 'cancelPrecache':
-      case 'removeCache':
-      case 'clearCache':
-      case 'pinCacheKey':
-      case 'unpinCacheKey':
-        // Web cache lifecycle is managed in Dart via PlatformVideoCacheEngine (web).
-        return null;
-      case 'isCached':
-        return false;
-      case 'getCacheSize':
-        return 0;
-      case 'getPlatformVersion':
-        return 'Web';
-      default:
-        throw PlatformException(
-          code: 'Unimplemented',
-          details: '${call.method} not implemented on web',
-        );
+  @override
+  Stream<bool> get fullscreenEvents => const Stream<bool>.empty();
+
+  void _sendEvent(PlayerEventData event) {
+    if (!_eventController.isClosed) {
+      _eventController.add(event);
     }
   }
 
-  int _create() {
+  static NativeCastState _toNativeCastState(String raw) {
+    return switch (raw) {
+      'notConnected' => NativeCastState.notConnected,
+      'connecting' => NativeCastState.connecting,
+      'connected' => NativeCastState.connected,
+      'disconnecting' => NativeCastState.disconnecting,
+      _ => NativeCastState.unavailable,
+    };
+  }
+
+  @override
+  Future<int> create() async {
     // Reuse a long-lived <video> so the registered platform-view factory
     // always returns a live element across dispose → create cycles.
     _videoElement ??= html.HTMLVideoElement()
@@ -191,31 +90,194 @@ class XueHuaNaviteVideoPlayerWeb {
     return 0;
   }
 
-  void _setAspectRatioMode(String? mode) {
+  @override
+  Future<void> open(OpenMediaRequest request) async {
+    final video = _videoElement;
+    if (video == null) return;
+    final url = request.url;
+    // Blob URLs and data: URLs do not need anonymous CORS mode, whereas remote
+    // http(s) URLs keep crossOrigin='anonymous' for canvas snapshots.
+    if (url.startsWith('blob:') || url.startsWith('data:')) {
+      video.removeAttribute('crossorigin');
+    } else {
+      video.crossOrigin = 'anonymous';
+    }
+    video.src = url;
+    video.load();
+    _sendEvent(PlayerEventData(kind: NativePlayerEventType.playing, boolValue: false));
+    _sendEvent(PlayerEventData(kind: NativePlayerEventType.buffering, boolValue: true));
+  }
+
+  @override
+  Future<void> play() async {
+    final video = _videoElement;
+    if (video == null) return;
+    if (video.ended) {
+      video.currentTime = 0;
+    }
+    unawaited(
+      video.play().toDart.catchError((Object error) {
+        // If unmuted autoplay (e.g. LivePhoto hover / autoPlayOnce / loop)
+        // is blocked by browser policy, automatically mute and retry so
+        // Live Photos and inline previews still play smoothly on Web.
+        final errStr = error.toString();
+        if (!video.muted && (errStr.contains('NotAllowedError') || errStr.contains('interact'))) {
+          video.muted = true;
+          return video.play().toDart.catchError((Object retryErr) {
+            _emitAutoplayFailure('Autoplay blocked: $retryErr');
+            return null;
+          });
+        }
+        _emitAutoplayFailure('Autoplay blocked: $error');
+        return null;
+      }),
+    );
+  }
+
+  void _emitAutoplayFailure(String message) {
+    _sendEvent(PlayerEventData(kind: NativePlayerEventType.playing, boolValue: false));
+    _sendEvent(PlayerEventData(kind: NativePlayerEventType.buffering, boolValue: false));
+    _sendEvent(PlayerEventData(kind: NativePlayerEventType.error, message: message));
+  }
+
+  @override
+  Future<void> pause() async {
+    _videoElement?.pause();
+  }
+
+  @override
+  Future<void> seek(int positionMs) async {
+    final video = _videoElement;
+    if (video != null) {
+      video.currentTime = positionMs / 1000.0;
+    }
+  }
+
+  @override
+  Future<void> setVolume(double volume) async {
+    final video = _videoElement;
+    if (video != null) {
+      final clamped = volume.clamp(0.0, 1.0);
+      video.volume = clamped;
+      // Sync the DOM `muted` property so muted playback satisfies browser autoplay policies.
+      video.muted = clamped <= 0.0;
+    }
+  }
+
+  @override
+  Future<void> setSpeed(double speed) async {
+    final video = _videoElement;
+    if (video != null) {
+      video.playbackRate = speed;
+    }
+  }
+
+  @override
+  Future<void> setAspectRatioMode(NativeAspectRatioMode mode) async {
     final fit = switch (mode) {
-      'fill' => 'cover',
-      'stretch' => 'fill',
-      _ => 'contain',
+      NativeAspectRatioMode.fill => 'cover',
+      NativeAspectRatioMode.stretch => 'fill',
+      NativeAspectRatioMode.fit => 'contain',
     };
     _videoElement?.style.setProperty('object-fit', fit);
   }
+
+  @override
+  Future<void> setVideoViewSize(double width, double height, double devicePixelRatio) async {}
+
+  @override
+  Future<void> showCastPicker() => _remotePlayback.showPicker(_videoElement);
+
+  @override
+  Future<void> stopCasting() => _remotePlayback.stopCasting(_videoElement);
+
+  @override
+  Future<void> dispose() async {
+    _stopPositionTimer();
+    final video = _videoElement;
+    if (video == null) return;
+    video.pause();
+    video.removeAttribute('src');
+    // Keep the element alive for the registered HtmlElementView factory.
+    try {
+      video.load();
+    } catch (_) {}
+  }
+
+  @override
+  Future<double> getBrightness() async => 1.0;
+
+  @override
+  Future<void> setBrightness(double value) async {}
+
+  @override
+  Future<void> setWindowFullscreen(bool value) async {}
+
+  @override
+  Future<SnapshotData?> takeSnapshot() async => WebMediaProbeService.takeSnapshot(_videoElement);
+
+  @override
+  Future<int?> getDuration(DurationProbeRequest request) =>
+      WebMediaProbeService.getDuration(request);
+
+  @override
+  Future<List<CoverFrameData>> extractCovers(CoverExtractRequest request) =>
+      WebMediaProbeService.extractCovers(request);
+
+  @override
+  Future<void> configureCache(CacheConfigRequest request) async {}
+
+  @override
+  Future<void> precache(PrecacheRequest request) async {}
+
+  @override
+  Future<void> cancelPrecache(String cacheKey) async {}
+
+  @override
+  Future<bool> isCached(CacheEntryRequest request) async => false;
+
+  @override
+  Future<int> getCacheSize(String? cacheDir) async => 0;
+
+  @override
+  Future<void> removeCache(CacheEntryRequest request) async {}
+
+  @override
+  Future<void> clearCache(String? cacheDir) async {}
+
+  @override
+  Future<void> pinCacheKey(String cacheKey) async {}
+
+  @override
+  Future<void> unpinCacheKey(String cacheKey) async {}
 
   void _setupListeners(html.HTMLVideoElement video) {
     video.addEventListener(
       'loadedmetadata',
       ((html.Event e) {
         if (video.duration.isFinite && video.duration > 0) {
-          final durationMs = (video.duration * 1000).toInt();
-          _sendEvent('duration', durationMs);
+          _sendEvent(
+            PlayerEventData(
+              kind: NativePlayerEventType.duration,
+              intValue: (video.duration * 1000).toInt(),
+            ),
+          );
         }
-        _sendEvent('buffering', false);
+        _sendEvent(PlayerEventData(kind: NativePlayerEventType.buffering, boolValue: false));
         final vw = video.videoWidth;
         final vh = video.videoHeight;
         if (vw > 0 && vh > 0) {
-          _sendEvent('videoSize', {'width': vw, 'height': vh});
+          _sendEvent(
+            PlayerEventData(
+              kind: NativePlayerEventType.videoSize,
+              width: vw.toDouble(),
+              height: vh.toDouble(),
+              rotationDegrees: 0,
+            ),
+          );
         }
         if (video.paused) {
-          _sendEvent('playing', false);
+          _sendEvent(PlayerEventData(kind: NativePlayerEventType.playing, boolValue: false));
         }
       }).toJS,
     );
@@ -223,7 +285,7 @@ class XueHuaNaviteVideoPlayerWeb {
     video.addEventListener(
       'play',
       ((html.Event e) {
-        _sendEvent('playing', true);
+        _sendEvent(PlayerEventData(kind: NativePlayerEventType.playing, boolValue: true));
         _startPositionTimer();
       }).toJS,
     );
@@ -231,7 +293,7 @@ class XueHuaNaviteVideoPlayerWeb {
     video.addEventListener(
       'pause',
       ((html.Event e) {
-        _sendEvent('playing', false);
+        _sendEvent(PlayerEventData(kind: NativePlayerEventType.playing, boolValue: false));
         _stopPositionTimer();
       }).toJS,
     );
@@ -239,7 +301,7 @@ class XueHuaNaviteVideoPlayerWeb {
     video.addEventListener(
       'ended',
       ((html.Event e) {
-        _sendEvent('completed', null);
+        _sendEvent(PlayerEventData(kind: NativePlayerEventType.completed));
         _stopPositionTimer();
       }).toJS,
     );
@@ -255,35 +317,35 @@ class XueHuaNaviteVideoPlayerWeb {
           4 => 'MEDIA_ERR_SRC_NOT_SUPPORTED',
           _ => 'Video playback error',
         };
-        _sendEvent('error', message);
+        _sendEvent(PlayerEventData(kind: NativePlayerEventType.error, message: message));
       }).toJS,
     );
 
     video.addEventListener(
       'waiting',
       ((html.Event e) {
-        _sendEvent('buffering', true);
+        _sendEvent(PlayerEventData(kind: NativePlayerEventType.buffering, boolValue: true));
       }).toJS,
     );
 
     video.addEventListener(
       'stalled',
       ((html.Event e) {
-        _sendEvent('buffering', true);
+        _sendEvent(PlayerEventData(kind: NativePlayerEventType.buffering, boolValue: true));
       }).toJS,
     );
 
     video.addEventListener(
       'playing',
       ((html.Event e) {
-        _sendEvent('buffering', false);
+        _sendEvent(PlayerEventData(kind: NativePlayerEventType.buffering, boolValue: false));
       }).toJS,
     );
 
     video.addEventListener(
       'canplay',
       ((html.Event e) {
-        _sendEvent('buffering', false);
+        _sendEvent(PlayerEventData(kind: NativePlayerEventType.buffering, boolValue: false));
         _emitBuffered(video);
       }).toJS,
     );
@@ -304,25 +366,14 @@ class XueHuaNaviteVideoPlayerWeb {
       if (ranges.length <= 0) return;
       final endSeconds = ranges.end(ranges.length - 1);
       if (endSeconds.isFinite && endSeconds >= 0) {
-        _sendEvent('buffered', (endSeconds * 1000).round());
+        _sendEvent(
+          PlayerEventData(
+            kind: NativePlayerEventType.buffered,
+            intValue: (endSeconds * 1000).round(),
+          ),
+        );
       }
     } catch (_) {}
-  }
-
-  void _open(String url) {
-    final video = _videoElement;
-    if (video == null) return;
-    // Blob URLs and data: URLs do not need anonymous CORS mode, whereas remote
-    // http(s) URLs keep crossOrigin='anonymous' for canvas snapshots.
-    if (url.startsWith('blob:') || url.startsWith('data:')) {
-      video.removeAttribute('crossorigin');
-    } else {
-      video.crossOrigin = 'anonymous';
-    }
-    video.src = url;
-    video.load();
-    _sendEvent('playing', false);
-    _sendEvent('buffering', true);
   }
 
   void _startPositionTimer() {
@@ -330,8 +381,12 @@ class XueHuaNaviteVideoPlayerWeb {
     _positionTimer = Timer.periodic(const Duration(milliseconds: 200), (_) {
       final video = _videoElement;
       if (video != null) {
-        final ms = (video.currentTime * 1000).toInt();
-        _sendEvent('position', ms);
+        _sendEvent(
+          PlayerEventData(
+            kind: NativePlayerEventType.position,
+            intValue: (video.currentTime * 1000).toInt(),
+          ),
+        );
         _emitBuffered(video);
       }
     });
@@ -340,17 +395,5 @@ class XueHuaNaviteVideoPlayerWeb {
   void _stopPositionTimer() {
     _positionTimer?.cancel();
     _positionTimer = null;
-  }
-
-  void _dispose() {
-    _stopPositionTimer();
-    final video = _videoElement;
-    if (video == null) return;
-    video.pause();
-    video.removeAttribute('src');
-    // Keep the element alive for the registered HtmlElementView factory.
-    try {
-      video.load();
-    } catch (_) {}
   }
 }

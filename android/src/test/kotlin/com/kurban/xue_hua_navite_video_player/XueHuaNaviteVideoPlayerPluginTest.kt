@@ -1,49 +1,76 @@
 package com.kurban.xue_hua_navite_video_player
 
-import io.flutter.plugin.common.MethodCall
-import io.flutter.plugin.common.MethodChannel
-import org.mockito.Mockito
+import kotlin.test.AfterTest
+import kotlin.test.BeforeTest
 import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
 
 /*
- * This demonstrates a simple unit test of the Kotlin portion of this plugin's implementation.
+ * Unit tests for the Android Pigeon PlayerHostApi implementation.
  *
- * Once you have built the plugin's example app, you can run these tests from the command
- * line by running `./gradlew testDebugUnitTest` in the `example/android/` directory, or
- * you can run them directly from IDEs that support JUnit such as Android Studio.
+ * Run with `./gradlew testDebugUnitTest` inside `example/android/`.
  */
 
+@OptIn(ExperimentalCoroutinesApi::class)
 internal class XueHuaNaviteVideoPlayerPluginTest {
-    @Test
-    fun onMethodCall_getPlatformVersion_returnsExpectedValue() {
-        val plugin = XueHuaNaviteVideoPlayerPlugin()
+    private val testDispatcher = UnconfinedTestDispatcher()
 
-        val call = MethodCall("getPlatformVersion", null)
-        val mockResult: MethodChannel.Result = Mockito.mock(MethodChannel.Result::class.java)
-        plugin.onMethodCall(call, mockResult)
+    @BeforeTest
+    fun setUp() {
+        Dispatchers.setMain(testDispatcher)
+    }
 
-        Mockito.verify(mockResult).success("Android " + android.os.Build.VERSION.RELEASE)
+    @AfterTest
+    fun tearDown() {
+        Dispatchers.resetMain()
     }
 
     @Test
-    fun playWithoutCreate_returnsNoPlayer() {
+    fun playWithoutCreate_throwsNoPlayer() {
         val plugin = XueHuaNaviteVideoPlayerPlugin()
-        val call = MethodCall("play", null)
-        val mockResult: MethodChannel.Result = Mockito.mock(MethodChannel.Result::class.java)
-        plugin.onMethodCall(call, mockResult)
-        Mockito.verify(mockResult).error("NO_PLAYER", "Player not initialized", null)
+        val error = assertFailsWith<FlutterError> {
+            plugin.play()
+        }
+        assertEquals("NO_PLAYER", error.code)
+        assertEquals("Player not initialized", error.message)
     }
 
     @Test
-    fun showCastPickerAndStopCastingWithoutActivity_succeedGracefully() {
+    fun openWithoutCreate_throwsNoPlayer() = runTest(testDispatcher) {
         val plugin = XueHuaNaviteVideoPlayerPlugin()
+        val error = assertFailsWith<FlutterError> {
+            plugin.open(OpenMediaRequest(url = "https://example.com/video.mp4"))
+        }
+        assertEquals("NO_PLAYER", error.code)
+        assertEquals("Player not initialized", error.message)
+    }
 
-        val showResult: MethodChannel.Result = Mockito.mock(MethodChannel.Result::class.java)
-        plugin.onMethodCall(MethodCall("showCastPicker", null), showResult)
-        Mockito.verify(showResult).success(null)
+    @Test
+    fun controlMethodsWithoutCreate_throwNoPlayer() {
+        val plugin = XueHuaNaviteVideoPlayerPlugin()
+        assertEquals("NO_PLAYER", assertFailsWith<FlutterError> { plugin.pause() }.code)
+        assertEquals("NO_PLAYER", assertFailsWith<FlutterError> { plugin.seek(1000L) }.code)
+        assertEquals("NO_PLAYER", assertFailsWith<FlutterError> { plugin.setVolume(0.5) }.code)
+        assertEquals("NO_PLAYER", assertFailsWith<FlutterError> { plugin.setSpeed(1.5) }.code)
+    }
 
-        val stopResult: MethodChannel.Result = Mockito.mock(MethodChannel.Result::class.java)
-        plugin.onMethodCall(MethodCall("stopCasting", null), stopResult)
-        Mockito.verify(stopResult).success(null)
+    @Test
+    fun showCastPickerAndStopCastingWithoutActivity_completeGracefully() {
+        val plugin = XueHuaNaviteVideoPlayerPlugin()
+        plugin.showCastPicker()
+        plugin.stopCasting()
+    }
+
+    @Test
+    fun getBrightnessWithoutActivity_returnsDefaultOne() {
+        val plugin = XueHuaNaviteVideoPlayerPlugin()
+        assertEquals(1.0, plugin.getBrightness())
     }
 }

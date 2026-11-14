@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:web/web.dart' as html;
 
+import '../bridge/video_player_host_bridge.dart';
 import '../core/video_source.dart';
 import '../data/models/video_cache_config.dart';
 import 'video_cache_types.dart';
@@ -25,6 +26,8 @@ class _WebCachedBlobEntry {
 /// - 显式调用 [precache] 的同源/允许 CORS 短视频缓存为内存 LRU `Blob` Object URL，
 ///   实现列表预热与二次零网络秒开，超限时自动调用 `URL.revokeObjectURL` 释放内存。
 class PlatformVideoCacheEngine {
+  PlatformVideoCacheEngine({VideoPlayerHostBridge? bridge});
+
   VideoCacheConfig _config = const VideoCacheConfig();
   final Map<String, _WebCachedBlobEntry> _entries = <String, _WebCachedBlobEntry>{};
   final Map<String, html.AbortController> _inflightAbort = <String, html.AbortController>{};

@@ -1,50 +1,35 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:xue_hua_navite_video_player/src/bridge/video_player_host_bridge.dart';
 import 'package:xue_hua_navite_video_player/src/player/fullscreen_coordinator.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  const channel = MethodChannel('xue_hua_navite_video_player/player');
-
   tearDown(() {
     debugDefaultTargetPlatformOverride = null;
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
-      channel,
-      null,
-    );
   });
 
   test('desktop enter / exit invokes setWindowFullscreen', () async {
     debugDefaultTargetPlatformOverride = TargetPlatform.windows;
-    final calls = <MethodCall>[];
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
-      channel,
-      (call) async {
-        calls.add(call);
-        return null;
-      },
-    );
+    final bridge = _FakeHostBridge();
 
-    final coord = SystemChromeFullscreenCoordinator(channel: channel, isWeb: false);
+    final coord = SystemChromeFullscreenCoordinator(bridge: bridge, isWeb: false);
     await coord.enter(landscapeVideo: true);
     await coord.exit();
 
-    expect(calls, hasLength(2));
-    expect(calls[0].method, 'setWindowFullscreen');
-    expect(calls[0].arguments, {'value': true});
-    expect(calls[1].method, 'setWindowFullscreen');
-    expect(calls[1].arguments, {'value': false});
+    expect(bridge.fullscreenCalls, [true, false]);
     coord.dispose();
+    await bridge.close();
   });
 
   test('web enter / exit uses browser applier', () async {
+    final bridge = _FakeHostBridge();
     final browser = _FakeBrowser();
     final coord = SystemChromeFullscreenCoordinator(
-      channel: channel,
+      bridge: bridge,
       browser: browser,
       isWeb: true,
     );
@@ -54,29 +39,29 @@ void main() {
     await coord.exit();
     expect(browser.entered, isFalse);
     coord.dispose();
+    await bridge.close();
   });
 
-  test('onWindowFullscreen method call is forwarded as externalChanges', () async {
-    final coord = SystemChromeFullscreenCoordinator(channel: channel, isWeb: false);
+  test('bridge fullscreenEvents is forwarded as externalChanges', () async {
+    final bridge = _FakeHostBridge();
+    final coord = SystemChromeFullscreenCoordinator(bridge: bridge, isWeb: false);
     final events = <bool>[];
     final sub = coord.externalChanges.listen(events.add);
 
-    await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.handlePlatformMessage(
-      channel.name,
-      const StandardMethodCodec().encodeMethodCall(const MethodCall('onWindowFullscreen', false)),
-      (_) {},
-    );
+    bridge.fullscreenController.add(false);
     await Future<void>.delayed(Duration.zero);
 
     expect(events, [false]);
     await sub.cancel();
     coord.dispose();
+    await bridge.close();
   });
 
   test('web browser changes are forwarded as externalChanges', () async {
+    final bridge = _FakeHostBridge();
     final browser = _FakeBrowser();
     final coord = SystemChromeFullscreenCoordinator(
-      channel: channel,
+      bridge: bridge,
       browser: browser,
       isWeb: true,
     );
@@ -89,7 +74,28 @@ void main() {
     expect(events, [false]);
     await sub.cancel();
     coord.dispose();
+    await bridge.close();
   });
+}
+
+class _FakeHostBridge implements VideoPlayerHostBridge {
+  final StreamController<bool> fullscreenController = StreamController<bool>.broadcast();
+  final List<bool> fullscreenCalls = <bool>[];
+
+  @override
+  Stream<bool> get fullscreenEvents => fullscreenController.stream;
+
+  @override
+  Future<void> setWindowFullscreen(bool value) async {
+    fullscreenCalls.add(value);
+  }
+
+  Future<void> close() async {
+    await fullscreenController.close();
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _FakeBrowser implements BrowserFullscreenApplier {
