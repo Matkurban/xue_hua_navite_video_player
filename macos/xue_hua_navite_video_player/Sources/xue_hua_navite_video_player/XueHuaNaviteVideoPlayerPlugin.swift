@@ -55,6 +55,7 @@ public class XueHuaNaviteVideoPlayerPlugin: NSObject, FlutterPlugin, PlayerHostA
     private var savedBrightness: Float?
     private var enterFullscreenObserver: NSObjectProtocol?
     private var exitFullscreenObserver: NSObjectProtocol?
+    private weak var fullscreenWindow: NSWindow?
     private var windowFullscreen = false
     private var eventContinuation: AsyncStream<MacOutboundEvent>.Continuation?
     private var eventPumpTask: Task<Void, Never>?
@@ -158,13 +159,40 @@ public class XueHuaNaviteVideoPlayerPlugin: NSObject, FlutterPlugin, PlayerHostA
     func open(request: OpenMediaRequest) async throws {
         let player = try requirePlayer()
         let normalizedHeaders = Self.normalizeHeaders(request.headers)
-        await MainActor.run {
-            player.open(
+        let prep = await MainActor.run {
+            player.beginOpen(
                 url: request.url,
                 castUrl: request.castUrl,
                 cacheKey: request.cacheKey,
                 headers: normalizedHeaders,
                 enableCache: request.enableCache
+            )
+        }
+        guard let prep else { return }
+
+        let (isReadableFile, cachedFileURL): (Bool, URL?) = await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let readable = !prep.mediaUrl.isFileURL
+                    || FileManager.default.isReadableFile(atPath: prep.mediaUrl.path)
+                let resolved = readable
+                    ? NativeVideoPlayer.resolveCompleteCacheURL(
+                        mediaUrl: prep.mediaUrl,
+                        cacheKey: request.cacheKey,
+                        enableCache: request.enableCache,
+                        isAirPlayActive: prep.keepCastPlayer
+                    )
+                    : nil
+                continuation.resume(returning: (readable, resolved))
+            }
+        }
+
+        await MainActor.run {
+            player.finishOpen(
+                generation: prep.generation,
+                mediaUrl: prep.mediaUrl,
+                keepCastPlayer: prep.keepCastPlayer,
+                isReadableFile: isReadableFile,
+                preResolvedCacheURL: cachedFileURL
             )
         }
     }
@@ -238,14 +266,7 @@ public class XueHuaNaviteVideoPlayerPlugin: NSObject, FlutterPlugin, PlayerHostA
     }
 
     func getBrightness() throws -> Double {
-        if Thread.isMainThread {
-            return currentBrightness()
-        }
-        var value = 1.0
-        DispatchQueue.main.sync {
-            value = self.currentBrightness()
-        }
-        return value
+        Self.currentBrightness()
     }
 
     func setBrightness(value: Double) throws {
@@ -408,7 +429,7 @@ public class XueHuaNaviteVideoPlayerPlugin: NSObject, FlutterPlugin, PlayerHostA
         }
     }
 
-    private func currentBrightness() -> Double {
+    private static func currentBrightness() -> Double {
         if let value = displayServicesBrightness() {
             return Double(value)
         }
@@ -421,16 +442,16 @@ public class XueHuaNaviteVideoPlayerPlugin: NSObject, FlutterPlugin, PlayerHostA
     private func applyBrightness(_ value: Double) {
         let clamped = Float(min(max(value, 0), 1))
         if savedBrightness == nil {
-            savedBrightness = Float(currentBrightness())
+            savedBrightness = Float(Self.currentBrightness())
         }
-        _ = setDisplayBrightness(clamped)
+        _ = Self.setDisplayBrightness(clamped)
     }
 
     private func restoreBrightness() {
         guard let original = savedBrightness else { return }
         savedBrightness = nil
-        runOnMainThread { [weak self] in
-            _ = self?.setDisplayBrightness(original)
+        runOnMainThread {
+            _ = Self.setDisplayBrightness(original)
         }
     }
 
@@ -444,6 +465,7 @@ public class XueHuaNaviteVideoPlayerPlugin: NSObject, FlutterPlugin, PlayerHostA
 
     private func applyWindowFullscreen(_ enable: Bool) {
         guard let window = hostWindow() else { return }
+        fullscreenWindow = window
         window.collectionBehavior.insert(.fullScreenPrimary)
         let isFs = window.styleMask.contains(.fullScreen)
         if enable != isFs {
@@ -453,13 +475,16 @@ public class XueHuaNaviteVideoPlayerPlugin: NSObject, FlutterPlugin, PlayerHostA
     }
 
     private func restoreWindowFullscreen() {
-        runOnMainThread { [weak self] in
-            guard let self, let window = self.hostWindow(), window.styleMask.contains(.fullScreen) else {
-                self?.windowFullscreen = false
+        windowFullscreen = false
+        let targetWindow = fullscreenWindow
+            ?? (Thread.isMainThread ? hostWindow() : registrar?.view?.window)
+        fullscreenWindow = nil
+        guard let targetWindow else { return }
+        runOnMainThread { [weak targetWindow] in
+            guard let window = targetWindow, window.styleMask.contains(.fullScreen) else {
                 return
             }
             window.toggleFullScreen(nil)
-            self.windowFullscreen = false
         }
     }
 
@@ -499,7 +524,7 @@ public class XueHuaNaviteVideoPlayerPlugin: NSObject, FlutterPlugin, PlayerHostA
     }
 
     @discardableResult
-    private func setDisplayBrightness(_ value: Float) -> Bool {
+    private static func setDisplayBrightness(_ value: Float) -> Bool {
         if let set = DisplayBrightnessAPI.displayServicesSet,
            set(CGMainDisplayID(), value) == 0
         {
@@ -508,14 +533,14 @@ public class XueHuaNaviteVideoPlayerPlugin: NSObject, FlutterPlugin, PlayerHostA
         return setIOKitBrightness(value)
     }
 
-    private func displayServicesBrightness() -> Float? {
+    private static func displayServicesBrightness() -> Float? {
         guard let get = DisplayBrightnessAPI.displayServicesGet else { return nil }
         var brightness: Float = 1
         let status = get(CGMainDisplayID(), &brightness)
         return status == 0 ? brightness : nil
     }
 
-    private func ioKitBrightness() -> Float? {
+    private static func ioKitBrightness() -> Float? {
         guard let get = DisplayBrightnessAPI.ioDisplayGet else { return nil }
         var brightness: Float = 1
         let ok = withDisplayService { service in
@@ -524,14 +549,14 @@ public class XueHuaNaviteVideoPlayerPlugin: NSObject, FlutterPlugin, PlayerHostA
         return ok == true ? brightness : nil
     }
 
-    private func setIOKitBrightness(_ value: Float) -> Bool {
+    private static func setIOKitBrightness(_ value: Float) -> Bool {
         guard let set = DisplayBrightnessAPI.ioDisplaySet else { return false }
         return withDisplayService { service in
             set(service, 0, "brightness" as CFString, value) == KERN_SUCCESS
         } ?? false
     }
 
-    private func withDisplayService<T>(_ body: (io_service_t) -> T) -> T? {
+    private static func withDisplayService<T>(_ body: (io_service_t) -> T) -> T? {
         var iterator: io_iterator_t = 0
         let port: mach_port_t
         if #available(macOS 12.0, *) {
@@ -546,6 +571,14 @@ public class XueHuaNaviteVideoPlayerPlugin: NSObject, FlutterPlugin, PlayerHostA
         guard service != 0 else { return nil }
         defer { IOObjectRelease(service) }
         return body(service)
+    }
+}
+
+private final class WeakBox<Value: AnyObject>: @unchecked Sendable {
+    weak var value: Value?
+
+    init(_ value: Value?) {
+        self.value = value
     }
 }
 
@@ -594,9 +627,16 @@ class NativeVideoPlayer: NSObject {
     private var currentHeaders: [String: String]?
     private var currentEnableCache: Bool?
     private var lastReportedBufferedMs: Int = -1
+    struct OpenPreparation {
+        let generation: Int
+        let mediaUrl: URL
+        let keepCastPlayer: Bool
+    }
+
     private var snapshotGeneration = 0
     private var openGeneration = 0
     private var activeSnapshotGenerator: AVAssetImageGenerator?
+    private var activeSnapshotGeneratorId: ObjectIdentifier?
     private var wantsToPlay = false
     private weak var hostedPlayerLayer: AVPlayerLayer?
     private var videoGravity: AVLayerVideoGravity = .resizeAspect
@@ -644,13 +684,13 @@ class NativeVideoPlayer: NSObject {
         return 0
     }
 
-    func open(
+    func beginOpen(
         url: String,
         castUrl: String? = nil,
         cacheKey: String? = nil,
         headers: [String: String]? = nil,
         enableCache: Bool? = nil
-    ) {
+    ) -> OpenPreparation? {
         openGeneration += 1
         let targetOpenGen = openGeneration
 
@@ -660,7 +700,7 @@ class NativeVideoPlayer: NSObject {
         } else {
             cleanupPlayer()
         }
-        guard targetOpenGen == openGeneration else { return }
+        guard targetOpenGen == openGeneration else { return nil }
 
         currentUrl = url
         currentCastUrl = castUrl
@@ -677,7 +717,22 @@ class NativeVideoPlayer: NSObject {
         } else {
             targetUrlString = url
         }
-        openInternal(url: targetUrlString, keepCastPlayer: keepCastPlayer)
+        guard let mediaUrl = Self.mediaURL(from: targetUrlString) else {
+            emitError("Invalid URL: \(url)")
+            return nil
+        }
+
+        // Security-scoped bookmarks (e.g. file picker) need an explicit access
+        // pair before background readability probing.
+        let accessing = mediaUrl.isFileURL && mediaUrl.startAccessingSecurityScopedResource()
+        if accessing {
+            securityScopedURLs.insert(mediaUrl)
+        }
+        return OpenPreparation(
+            generation: targetOpenGen,
+            mediaUrl: mediaUrl,
+            keepCastPlayer: keepCastPlayer
+        )
     }
 
     private static func mediaURL(from raw: String) -> URL? {
@@ -694,12 +749,38 @@ class NativeVideoPlayer: NSObject {
         securityScopedURLs.removeAll()
     }
 
+    static func resolveCompleteCacheURL(
+        mediaUrl: URL,
+        cacheKey: String?,
+        enableCache: Bool?,
+        isAirPlayActive: Bool
+    ) -> URL? {
+        guard !isAirPlayActive,
+              let scheme = mediaUrl.scheme?.lowercased(),
+              scheme == "http" || scheme == "https"
+        else {
+            return nil
+        }
+        let mgr = MediaCacheManager.shared
+        let resolvedKey = (cacheKey?.isEmpty == false)
+            ? cacheKey!
+            : MediaCacheManager.sha1Hex(mediaUrl.absoluteString)
+        let useCache = (enableCache ?? mgr.enabled)
+            && mgr.maxCacheBytes > 0
+            && mgr.maxSingleFileBytes > 0
+            && !MediaCacheManager.isStreamingManifest(url: mediaUrl.absoluteString)
+        guard useCache else { return nil }
+        return mgr.completeFileURL(cacheKey: resolvedKey)
+    }
+
     private static func buildPlaybackAsset(
         mediaUrl: URL,
         cacheKey: String?,
         headers: [String: String]?,
         enableCache: Bool?,
-        isAirPlayActive: Bool
+        isAirPlayActive: Bool,
+        preResolvedCacheURL: URL? = nil,
+        cacheLookupDone: Bool = false
     ) -> (AVURLAsset, MediaCacheResourceLoader?) {
         let scheme = mediaUrl.scheme?.lowercased() ?? ""
         if scheme == "http" || scheme == "https" {
@@ -713,7 +794,9 @@ class NativeVideoPlayer: NSObject {
                 && !MediaCacheManager.isStreamingManifest(url: mediaUrl.absoluteString)
 
             if !isAirPlayActive, useCache {
-                if let localFileURL = mgr.completeFileURL(cacheKey: resolvedKey) {
+                if let localFileURL = preResolvedCacheURL
+                    ?? (cacheLookupDone ? nil : mgr.completeFileURL(cacheKey: resolvedKey))
+                {
                     return (AVURLAsset(url: localFileURL), nil)
                 }
                 if let customURL = MediaCacheResourceLoader.makeCustomSchemeURL(from: mediaUrl) {
@@ -739,20 +822,16 @@ class NativeVideoPlayer: NSObject {
         return (AVURLAsset(url: mediaUrl), nil)
     }
 
-    private func openInternal(url: String, keepCastPlayer: Bool) {
-        guard let mediaUrl = Self.mediaURL(from: url) else {
-            emitError("Invalid URL: \(url)")
-            return
-        }
+    func finishOpen(
+        generation: Int,
+        mediaUrl: URL,
+        keepCastPlayer: Bool,
+        isReadableFile: Bool,
+        preResolvedCacheURL: URL?
+    ) {
+        guard generation == openGeneration else { return }
 
-        // Security-scoped bookmarks (e.g. file picker) need an explicit access
-        // pair; harmless no-op for ordinary file:// / http(s) URLs.
-        let accessing = mediaUrl.isFileURL && mediaUrl.startAccessingSecurityScopedResource()
-        if accessing {
-            securityScopedURLs.insert(mediaUrl)
-        }
-
-        if mediaUrl.isFileURL, !FileManager.default.isReadableFile(atPath: mediaUrl.path) {
+        if mediaUrl.isFileURL, !isReadableFile {
             emitError(
                 "The file couldn’t be opened because you don’t have permission to view it. "
                     + "On macOS App Sandbox, open files via a user-selected bookmark "
@@ -766,7 +845,9 @@ class NativeVideoPlayer: NSObject {
             cacheKey: currentCacheKey,
             headers: currentHeaders,
             enableCache: currentEnableCache,
-            isAirPlayActive: keepCastPlayer
+            isAirPlayActive: keepCastPlayer,
+            preResolvedCacheURL: preResolvedCacheURL,
+            cacheLookupDone: true
         )
         resourceLoader = loader
         let item = AVPlayerItem(asset: asset)
@@ -1128,6 +1209,7 @@ class NativeVideoPlayer: NSObject {
         snapshotGeneration += 1
         activeSnapshotGenerator?.cancelAllCGImageGeneration()
         activeSnapshotGenerator = nil
+        activeSnapshotGeneratorId = nil
         cleanupPlayer()
         routePickerView?.removeFromSuperview()
         routePickerView = nil
@@ -1256,17 +1338,21 @@ class NativeVideoPlayer: NSObject {
                 genInstance.requestedTimeToleranceBefore = .zero
                 genInstance.requestedTimeToleranceAfter = .zero
                 activeSnapshotGenerator = genInstance
+                activeSnapshotGeneratorId = ObjectIdentifier(genInstance)
                 return (gen, playhead, resolvedAsset, genInstance)
             }
         _ = asset
 
         return try await withCheckedThrowingContinuation { continuation in
             let gate = OneShotGate()
+            let selfBox = WeakBox(self)
+            let generatorId = ObjectIdentifier(generator)
             generator.generateCGImagesAsynchronously(forTimes: [NSValue(time: time)]) {
-                [weak self] _, cgImage, _, status, error in
+                _, cgImage, _, status, error in
                 guard gate.tryEnter() else { return }
-                Task { @MainActor [weak self] in
-                    guard let self else {
+                let errorMessage = error?.localizedDescription
+                Task { @MainActor in
+                    guard let player = selfBox.value else {
                         continuation.resume(
                             throwing: PigeonError(
                                 code: "CANCELLED",
@@ -1276,10 +1362,11 @@ class NativeVideoPlayer: NSObject {
                         )
                         return
                     }
-                    if self.activeSnapshotGenerator === generator {
-                        self.activeSnapshotGenerator = nil
+                    if player.activeSnapshotGeneratorId == generatorId {
+                        player.activeSnapshotGenerator = nil
+                        player.activeSnapshotGeneratorId = nil
                     }
-                    guard generation == self.snapshotGeneration else {
+                    guard generation == player.snapshotGeneration else {
                         continuation.resume(
                             throwing: PigeonError(
                                 code: "CANCELLED",
@@ -1293,7 +1380,7 @@ class NativeVideoPlayer: NSObject {
                         continuation.resume(
                             throwing: PigeonError(
                                 code: "NO_FRAME",
-                                message: error?.localizedDescription ?? "Failed to capture frame",
+                                message: errorMessage ?? "Failed to capture frame",
                                 details: nil
                             )
                         )

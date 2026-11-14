@@ -172,21 +172,47 @@ class XueHuaNaviteVideoPlayerPlugin :
 
     private fun startEventConsumer(binding: FlutterPlugin.FlutterPluginBinding) {
         stopEventConsumer()
-        val queue = Channel<PlayerEventData>(Channel.UNLIMITED)
-        eventQueue = queue
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         pluginScope = scope
-        eventConsumerJob = scope.launch {
-            val registrar = PlayerFlutterApiRegistrar()
-            for (event in queue) {
-                if (!isActive || flutterPluginBinding == null) break
-                try {
-                    registrar.getInstance(binding)?.onPlayerEvent(event)
-                } catch (t: Throwable) {
-                    Log.w(TAG, "Failed to dispatch PlayerFlutterApi event: ${event.kind}", t)
-                }
+        val registrar = PlayerFlutterApiRegistrar()
+        startEventLoop(scope) { event ->
+            if (flutterPluginBinding == null) return@startEventLoop
+            try {
+                registrar.getInstance(binding)?.onPlayerEvent(event)
+            } catch (t: Throwable) {
+                Log.w(TAG, "Failed to dispatch PlayerFlutterApi event: ${event.kind}", t)
             }
         }
+    }
+
+    internal fun startEventLoop(
+        scope: CoroutineScope,
+        dispatch: suspend (PlayerEventData) -> Unit,
+    ): Job {
+        eventConsumerJob?.cancel()
+        eventQueue?.close()
+        val queue = Channel<PlayerEventData>(Channel.UNLIMITED)
+        eventQueue = queue
+        val job = scope.launch {
+            for (event in queue) {
+                if (!isActive) break
+                dispatch(event)
+            }
+        }
+        eventConsumerJob = job
+        return job
+    }
+
+    internal fun enqueueEventForTest(event: PlayerEventData) {
+        emitEvent(event)
+    }
+
+    internal fun bumpOpenGenerationForTest(): Int = openGeneration.incrementAndGet()
+
+    internal fun currentEngineGenerationForTest(): Int = engineGeneration.get()
+
+    internal fun isOpenGenerationValid(targetOpenGen: Int, targetEngineGen: Int): Boolean {
+        return targetOpenGen == openGeneration.get() && targetEngineGen == engineGeneration.get()
     }
 
     private fun stopEventConsumer() {
@@ -231,7 +257,7 @@ class XueHuaNaviteVideoPlayerPlugin :
 
     override suspend fun create(): Long {
         val generation = engineGeneration.get()
-        return withContext(Dispatchers.Main.immediate) {
+        val appContext = withContext(Dispatchers.Main.immediate) {
             val binding = flutterPluginBinding ?: throw FlutterError(
                 code = "NO_ENGINE",
                 message = "Flutter engine not attached",
@@ -242,14 +268,28 @@ class XueHuaNaviteVideoPlayerPlugin :
                     message = "Engine detached before player creation completed",
                 )
             }
+            binding.applicationContext
+        }
+
+        // Pre-warm SimpleCache (SQLite + cache directory scan) off the merged UI/platform thread.
+        val dataSourceFactory = withContext(Dispatchers.IO) {
+            AndroidMediaCacheManager.buildDataSourceFactory(appContext)
+        }
+
+        return withContext(Dispatchers.Main.immediate) {
+            if (flutterPluginBinding == null || generation != engineGeneration.get()) {
+                throw FlutterError(
+                    code = "CANCELLED",
+                    message = "Engine detached before player creation completed",
+                )
+            }
 
             releasePlayer()
 
-            val context = binding.applicationContext
-            val defaultAdapterFactory = DefaultMediaCodecAdapterFactory(context)
+            val defaultAdapterFactory = DefaultMediaCodecAdapterFactory(appContext)
 
             // Align odd dimensions before MediaCodec configuration to avoid green stripes/failures.
-            val renderersFactory = object : DefaultRenderersFactory(context) {
+            val renderersFactory = object : DefaultRenderersFactory(appContext) {
                 override fun getCodecAdapterFactory(): MediaCodecAdapter.Factory {
                     return MediaCodecAdapter.Factory { configuration ->
                         val mediaFormat = configuration.mediaFormat
@@ -275,10 +315,9 @@ class XueHuaNaviteVideoPlayerPlugin :
                 setEnableDecoderFallback(true)
             }
 
-            val dataSourceFactory = AndroidMediaCacheManager.buildDataSourceFactory(context)
             val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory)
 
-            val player = ExoPlayer.Builder(context)
+            val player = ExoPlayer.Builder(appContext)
                 .setRenderersFactory(renderersFactory)
                 .setMediaSourceFactory(mediaSourceFactory)
                 .build()
@@ -296,7 +335,7 @@ class XueHuaNaviteVideoPlayerPlugin :
             playerView?.player = player
             playerView?.resizeMode = resizeMode
 
-            initCastSupport(context)
+            initCastSupport(appContext)
 
             0L
         }
@@ -463,26 +502,45 @@ class XueHuaNaviteVideoPlayerPlugin :
     }
 
     override suspend fun open(request: OpenMediaRequest) {
+        val url = request.url
+        if (url.isEmpty()) {
+            throw FlutterError(
+                code = "INVALID_ARG",
+                message = "url is required",
+            )
+        }
         val targetOpenGen = openGeneration.incrementAndGet()
         val targetEngineGen = engineGeneration.get()
+        val appContext = withContext(Dispatchers.Main.immediate) {
+            if (exoPlayer == null) {
+                throw FlutterError(
+                    code = "NO_PLAYER",
+                    message = "Player not initialized",
+                )
+            }
+            flutterPluginBinding?.applicationContext
+        }
+
+        val headers = normalizeHeaders(request.headers)
+        val dsFactory = appContext?.let { ctx ->
+            withContext(Dispatchers.IO) {
+                AndroidMediaCacheManager.buildDataSourceFactory(
+                    context = ctx,
+                    headers = headers,
+                    enableCacheOverride = request.enableCache,
+                )
+            }
+        }
+
         withContext(Dispatchers.Main.immediate) {
-            if (targetOpenGen != openGeneration.get() || targetEngineGen != engineGeneration.get()) {
+            if (!isOpenGenerationValid(targetOpenGen, targetEngineGen)) {
                 return@withContext
             }
             val local = exoPlayer ?: throw FlutterError(
                 code = "NO_PLAYER",
                 message = "Player not initialized",
             )
-            val url = request.url
-            if (url.isEmpty()) {
-                throw FlutterError(
-                    code = "INVALID_ARG",
-                    message = "url is required",
-                )
-            }
-            val appContext = flutterPluginBinding?.applicationContext
             val cacheKey = request.cacheKey
-            val headers = normalizeHeaders(request.headers)
 
             lastReportedDuration = -1L
             lastReportedBuffered = -1L
@@ -500,12 +558,7 @@ class XueHuaNaviteVideoPlayerPlugin :
                 }
                 .build()
 
-            if (appContext != null) {
-                val dsFactory = AndroidMediaCacheManager.buildDataSourceFactory(
-                    context = appContext,
-                    headers = headers,
-                    enableCacheOverride = request.enableCache,
-                )
+            if (dsFactory != null) {
                 val mediaSource = DefaultMediaSourceFactory(dsFactory).createMediaSource(mediaItem)
                 local.setMediaSource(mediaSource)
             } else {
@@ -1311,6 +1364,7 @@ class XueHuaNaviteVideoPlayerPlugin :
     }
 
     private fun stopPositionPolling() {
+        if (!isPollingPosition) return
         isPollingPosition = false
         mainHandler.removeCallbacks(positionRunnable)
     }

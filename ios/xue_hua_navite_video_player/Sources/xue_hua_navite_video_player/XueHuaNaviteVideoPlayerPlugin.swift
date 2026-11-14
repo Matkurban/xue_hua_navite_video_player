@@ -9,6 +9,7 @@ public class XueHuaNaviteVideoPlayerPlugin: NSObject, FlutterPlugin, PlayerHostA
     private var registrar: FlutterPluginRegistrar?
     private var videoPlayer: NativeVideoPlayer?
     private var savedBrightness: CGFloat?
+    private var lastKnownBrightness: Double = 1.0
     private var interruptionObserver: NSObjectProtocol?
     private var backgroundObserver: NSObjectProtocol?
     private var eventContinuation: AsyncStream<PlayerEventData>.Continuation?
@@ -141,13 +142,35 @@ public class XueHuaNaviteVideoPlayerPlugin: NSObject, FlutterPlugin, PlayerHostA
     func open(request: OpenMediaRequest) async throws {
         let player = try requirePlayer()
         let normalizedHeaders = Self.normalizeHeaders(request.headers)
-        await MainActor.run {
-            player.open(
+        let prep = await MainActor.run {
+            player.beginOpen(
                 url: request.url,
                 castUrl: request.castUrl,
                 cacheKey: request.cacheKey,
                 headers: normalizedHeaders,
                 enableCache: request.enableCache
+            )
+        }
+        guard let prep else { return }
+
+        let cachedFileURL: URL? = await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let resolved = NativeVideoPlayer.resolveCompleteCacheURL(
+                    mediaUrl: prep.mediaUrl,
+                    cacheKey: request.cacheKey,
+                    enableCache: request.enableCache,
+                    isAirPlayActive: prep.keepCastPlayer
+                )
+                continuation.resume(returning: resolved)
+            }
+        }
+
+        await MainActor.run {
+            player.finishOpen(
+                generation: prep.generation,
+                mediaUrl: prep.mediaUrl,
+                keepCastPlayer: prep.keepCastPlayer,
+                preResolvedCacheURL: cachedFileURL
             )
         }
     }
@@ -222,13 +245,11 @@ public class XueHuaNaviteVideoPlayerPlugin: NSObject, FlutterPlugin, PlayerHostA
 
     func getBrightness() throws -> Double {
         if Thread.isMainThread {
-            return currentBrightness()
+            let value = currentBrightness()
+            lastKnownBrightness = value
+            return value
         }
-        var value = 1.0
-        DispatchQueue.main.sync {
-            value = self.currentBrightness()
-        }
-        return value
+        return lastKnownBrightness
     }
 
     func setBrightness(value: Double) throws {
@@ -397,15 +418,26 @@ public class XueHuaNaviteVideoPlayerPlugin: NSObject, FlutterPlugin, PlayerHostA
         if savedBrightness == nil {
             savedBrightness = UIScreen.main.brightness
         }
-        UIScreen.main.brightness = CGFloat(min(max(value, 0), 1))
+        let clamped = CGFloat(min(max(value, 0), 1))
+        UIScreen.main.brightness = clamped
+        lastKnownBrightness = Double(clamped)
     }
 
     private func restoreBrightness() {
         guard let original = savedBrightness else { return }
         savedBrightness = nil
+        lastKnownBrightness = Double(original)
         runOnMainThread {
             UIScreen.main.brightness = original
         }
+    }
+}
+
+private final class WeakBox<Value: AnyObject>: @unchecked Sendable {
+    weak var value: Value?
+
+    init(_ value: Value?) {
+        self.value = value
     }
 }
 
@@ -457,9 +489,16 @@ class NativeVideoPlayer: NSObject {
     private var currentHeaders: [String: String]?
     private var currentEnableCache: Bool?
     private var lastReportedBufferedMs: Int = -1
+    struct OpenPreparation {
+        let generation: Int
+        let mediaUrl: URL
+        let keepCastPlayer: Bool
+    }
+
     private var snapshotGeneration = 0
     private var openGeneration = 0
     private var activeSnapshotGenerator: AVAssetImageGenerator?
+    private var activeSnapshotGeneratorId: ObjectIdentifier?
     private var securityScopedURLs = Set<URL>()
 
     init(eventEmitter: @escaping (PlayerEventData) -> Void) {
@@ -515,12 +554,38 @@ class NativeVideoPlayer: NSObject {
         securityScopedURLs.removeAll()
     }
 
+    static func resolveCompleteCacheURL(
+        mediaUrl: URL,
+        cacheKey: String?,
+        enableCache: Bool?,
+        isAirPlayActive: Bool
+    ) -> URL? {
+        guard !isAirPlayActive,
+              let scheme = mediaUrl.scheme?.lowercased(),
+              scheme == "http" || scheme == "https"
+        else {
+            return nil
+        }
+        let mgr = MediaCacheManager.shared
+        let resolvedKey = (cacheKey?.isEmpty == false)
+            ? cacheKey!
+            : MediaCacheManager.sha1Hex(mediaUrl.absoluteString)
+        let useCache = (enableCache ?? mgr.enabled)
+            && mgr.maxCacheBytes > 0
+            && mgr.maxSingleFileBytes > 0
+            && !MediaCacheManager.isStreamingManifest(url: mediaUrl.absoluteString)
+        guard useCache else { return nil }
+        return mgr.completeFileURL(cacheKey: resolvedKey)
+    }
+
     private static func buildPlaybackAsset(
         mediaUrl: URL,
         cacheKey: String?,
         headers: [String: String]?,
         enableCache: Bool?,
-        isAirPlayActive: Bool
+        isAirPlayActive: Bool,
+        preResolvedCacheURL: URL? = nil,
+        cacheLookupDone: Bool = false
     ) -> (AVURLAsset, MediaCacheResourceLoader?) {
         let scheme = mediaUrl.scheme?.lowercased() ?? ""
         if scheme == "http" || scheme == "https" {
@@ -534,7 +599,9 @@ class NativeVideoPlayer: NSObject {
                 && !MediaCacheManager.isStreamingManifest(url: mediaUrl.absoluteString)
 
             if !isAirPlayActive, useCache {
-                if let localFileURL = mgr.completeFileURL(cacheKey: resolvedKey) {
+                if let localFileURL = preResolvedCacheURL
+                    ?? (cacheLookupDone ? nil : mgr.completeFileURL(cacheKey: resolvedKey))
+                {
                     return (AVURLAsset(url: localFileURL), nil)
                 }
                 if let customURL = MediaCacheResourceLoader.makeCustomSchemeURL(from: mediaUrl) {
@@ -560,13 +627,13 @@ class NativeVideoPlayer: NSObject {
         return (AVURLAsset(url: mediaUrl), nil)
     }
 
-    func open(
+    func beginOpen(
         url: String,
         castUrl: String? = nil,
         cacheKey: String? = nil,
         headers: [String: String]? = nil,
         enableCache: Bool? = nil
-    ) {
+    ) -> OpenPreparation? {
         openGeneration += 1
         let targetOpenGen = openGeneration
 
@@ -576,7 +643,7 @@ class NativeVideoPlayer: NSObject {
         } else {
             cleanupPlayer()
         }
-        guard targetOpenGen == openGeneration else { return }
+        guard targetOpenGen == openGeneration else { return nil }
 
         wantsToPlay = false
         currentUrl = url
@@ -597,20 +664,36 @@ class NativeVideoPlayer: NSObject {
 
         guard let mediaUrl = Self.mediaURL(from: targetUrlString) else {
             emitError("Invalid URL: \(url)")
-            return
+            return nil
         }
 
         let accessing = mediaUrl.isFileURL && mediaUrl.startAccessingSecurityScopedResource()
         if accessing {
             securityScopedURLs.insert(mediaUrl)
         }
+        return OpenPreparation(
+            generation: targetOpenGen,
+            mediaUrl: mediaUrl,
+            keepCastPlayer: keepCastPlayer
+        )
+    }
+
+    func finishOpen(
+        generation: Int,
+        mediaUrl: URL,
+        keepCastPlayer: Bool,
+        preResolvedCacheURL: URL?
+    ) {
+        guard generation == openGeneration else { return }
 
         let (asset, loader) = Self.buildPlaybackAsset(
             mediaUrl: mediaUrl,
-            cacheKey: cacheKey,
-            headers: headers,
-            enableCache: enableCache,
-            isAirPlayActive: keepCastPlayer
+            cacheKey: currentCacheKey,
+            headers: currentHeaders,
+            enableCache: currentEnableCache,
+            isAirPlayActive: keepCastPlayer,
+            preResolvedCacheURL: preResolvedCacheURL,
+            cacheLookupDone: true
         )
         resourceLoader = loader
         let item = AVPlayerItem(asset: asset)
@@ -1010,6 +1093,7 @@ class NativeVideoPlayer: NSObject {
         snapshotGeneration += 1
         activeSnapshotGenerator?.cancelAllCGImageGeneration()
         activeSnapshotGenerator = nil
+        activeSnapshotGeneratorId = nil
         cleanupPlayer()
         if let observer = routeChangeObserver {
             NotificationCenter.default.removeObserver(observer)
@@ -1142,17 +1226,21 @@ class NativeVideoPlayer: NSObject {
                 genInstance.requestedTimeToleranceBefore = .zero
                 genInstance.requestedTimeToleranceAfter = .zero
                 activeSnapshotGenerator = genInstance
+                activeSnapshotGeneratorId = ObjectIdentifier(genInstance)
                 return (gen, playhead, resolvedAsset, genInstance)
             }
         _ = asset
 
         return try await withCheckedThrowingContinuation { continuation in
             let gate = OneShotGate()
+            let selfBox = WeakBox(self)
+            let generatorId = ObjectIdentifier(generator)
             generator.generateCGImagesAsynchronously(forTimes: [NSValue(time: time)]) {
-                [weak self] _, cgImage, _, status, error in
+                _, cgImage, _, status, error in
                 guard gate.tryEnter() else { return }
-                Task { @MainActor [weak self] in
-                    guard let self else {
+                let errorMessage = error?.localizedDescription
+                Task { @MainActor in
+                    guard let player = selfBox.value else {
                         continuation.resume(
                             throwing: PigeonError(
                                 code: "CANCELLED",
@@ -1162,10 +1250,11 @@ class NativeVideoPlayer: NSObject {
                         )
                         return
                     }
-                    if self.activeSnapshotGenerator === generator {
-                        self.activeSnapshotGenerator = nil
+                    if player.activeSnapshotGeneratorId == generatorId {
+                        player.activeSnapshotGenerator = nil
+                        player.activeSnapshotGeneratorId = nil
                     }
-                    guard generation == self.snapshotGeneration else {
+                    guard generation == player.snapshotGeneration else {
                         continuation.resume(
                             throwing: PigeonError(
                                 code: "CANCELLED",
@@ -1179,7 +1268,7 @@ class NativeVideoPlayer: NSObject {
                         continuation.resume(
                             throwing: PigeonError(
                                 code: "NO_FRAME",
-                                message: error?.localizedDescription ?? "Failed to capture frame",
+                                message: errorMessage ?? "Failed to capture frame",
                                 details: nil
                             )
                         )
