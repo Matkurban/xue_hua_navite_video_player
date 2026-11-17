@@ -27,20 +27,12 @@ const List<DemoItem> networkDemoPlaylist = <DemoItem>[
     'https://github.com/stevederico/omarchy-quattro-sizzle/releases/download/v1-4k/v1-4k.mp4',
   ),
   DemoItem(
-    'Demo1',
-    'https://file.icve.com.cn/file_doc/805/748/193/cpRdydfH.mp4',
-  ),
-  DemoItem(
     'Demo3',
     'https://raw.githubusercontent.com/chthomos/video-media-samples/master/big-buck-bunny-1080p-30sec.mp4',
   ),
   DemoItem(
     'Demo4',
     'https://flutter.github.io/assets-for-api-docs/assets/videos/butterfly.mp4',
-  ),
-  DemoItem(
-    'Chromium · 720p HD (1280x720 · Bear)',
-    'https://raw.githubusercontent.com/chromium/chromium/master/media/test/data/bear-1280x720.mp4',
   ),
   DemoItem(
     'GitHub · 480p SD (854x480 · Big Buck Bunny)',
@@ -53,14 +45,6 @@ const List<DemoItem> networkDemoPlaylist = <DemoItem>[
   DemoItem(
     'W3C · Movie 300',
     'https://raw.githubusercontent.com/web-platform-tests/wpt/master/media/movie_300.mp4',
-  ),
-  DemoItem(
-    'Chromium · 240p LD (320x240 · Big Buck Bunny)',
-    'https://raw.githubusercontent.com/chromium/chromium/master/media/test/data/bbb-320x240-2video-2audio.mp4',
-  ),
-  DemoItem(
-    'Chromium · 180p LD (320x180 · Bear)',
-    'https://raw.githubusercontent.com/chromium/chromium/master/media/test/data/bear-320x180-hi10p.mp4',
   ),
 ];
 
