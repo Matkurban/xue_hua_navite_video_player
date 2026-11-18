@@ -42,3 +42,5 @@ migrate_working_dir/
 android_shots/
 /pigeon/
 **/*_objc_gen/*.o
+skills/system/
+.vscode/
