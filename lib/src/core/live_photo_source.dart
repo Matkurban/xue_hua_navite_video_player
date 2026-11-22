@@ -19,6 +19,9 @@ sealed class LivePhotoSource {
   /// Optional presentation timestamp for the still cover frame.
   final Duration? presentationTimestamp;
 
+  /// 构造动态照片来源基类。
+  ///
+  /// Base constructor accepting an optional [presentationTimestamp].
   const LivePhotoSource({this.presentationTimestamp});
 
   /// 用作缓存与状态判断的稳定唯一标识。
@@ -55,11 +58,22 @@ sealed class LivePhotoSource {
     Duration? presentationTimestamp,
   }) = BytesLivePhotoSource;
 
-  /// 快速构造网络动态照片：
+  /// 快速构造网络动态照片。
+  ///
   /// - 若同时提供 [videoUrl]，作为双文件配对网络实况照片；
   /// - 若省略 [videoUrl]，将下载并解析单文件网络 Motion Photo。
   ///
   /// Shortcut for network-backed Live Photo (paired if [videoUrl] is given, or single-file Motion Photo).
+  ///
+  /// - [imageUrl]：静态封面图或单文件动态照片的网络 URL。Image or single-file Motion Photo URL.
+  /// - [videoUrl]：可选配对动态短视频的网络 URL。Optional companion motion video URL.
+  /// - [presentationTimestamp]：可选静态封面帧时间戳。Optional still frame timestamp.
+  /// - [cacheKey]：可选静态图/单文件缓存键。Optional cache key for [imageUrl].
+  /// - [videoCacheKey]：可选配对视频缓存键。Optional cache key for [videoUrl].
+  /// - [headers]：可选自定义 HTTP 请求头。Optional custom HTTP request headers.
+  /// - [enableCache]：单源缓存开关覆盖。Optional per-source cache toggle.
+  ///
+  /// 返回值 / Returns：对应的 [PairedLivePhotoSource] 或 [SingleFileLivePhotoSource]。
   factory LivePhotoSource.network({
     required String imageUrl,
     String? videoUrl,
@@ -92,11 +106,18 @@ sealed class LivePhotoSource {
     );
   }
 
-  /// 快速构造本地文件动态照片：
+  /// 快速构造本地文件动态照片。
+  ///
   /// - 若同时提供 [videoPath]，作为双文件配对实况照片；
   /// - 若省略 [videoPath]，自动解析单文件 Motion Photo 或自动查找同目录同名 `.MOV`/`.MP4` 及 `.pvt` 包。
   ///
   /// Shortcut for local-file Live Photo (paired if [videoPath] is given, or auto-detected).
+  ///
+  /// - [imagePath]：本地静态图或单文件动态照片路径。Local still image or Motion Photo path.
+  /// - [videoPath]：可选本地配对短视频路径。Optional companion motion video path.
+  /// - [presentationTimestamp]：可选静态封面帧时间戳。Optional still frame timestamp.
+  ///
+  /// 返回值 / Returns：对应的 [PairedLivePhotoSource] 或 [SingleFileLivePhotoSource]。
   factory LivePhotoSource.file({
     required String imagePath,
     String? videoPath,
@@ -115,11 +136,19 @@ sealed class LivePhotoSource {
     );
   }
 
-  /// 快速构造 Flutter Asset 动态照片：
+  /// 快速构造 Flutter Asset 动态照片。
+  ///
   /// - 若同时提供 [videoAsset]，作为双文件配对实况照片；
   /// - 若省略 [videoAsset]，自动从单文件 Asset Motion Photo 中拆分图片与视频。
   ///
   /// Shortcut for Flutter asset Live Photo.
+  ///
+  /// - [imageAsset]：静态图或单文件动态照片的 Asset 路径。Image or single-file Motion Photo asset key.
+  /// - [videoAsset]：可选配对短视频的 Asset 路径。Optional companion video asset key.
+  /// - [bundle]：可选自定义 [AssetBundle]，默认 `rootBundle`。Optional custom [AssetBundle].
+  /// - [presentationTimestamp]：可选静态封面帧时间戳。Optional still frame timestamp.
+  ///
+  /// 返回值 / Returns：对应的 [PairedLivePhotoSource] 或 [SingleFileLivePhotoSource]。
   factory LivePhotoSource.asset({
     required String imageAsset,
     String? videoAsset,
@@ -145,11 +174,18 @@ sealed class LivePhotoSource {
 /// Paired Live Photo source consisting of a still [image] source and a motion [video] source.
 class PairedLivePhotoSource extends LivePhotoSource {
   /// 静态封面图来源。
+  ///
+  /// Still cover image source.
   final VideoSource image;
 
   /// 动态短视频来源。
+  ///
+  /// Companion motion video source.
   final VideoSource video;
 
+  /// 创建双文件配对的动态照片来源。
+  ///
+  /// Creates a [PairedLivePhotoSource] from [image] and [video].
   const PairedLivePhotoSource({
     required this.image,
     required this.video,
@@ -179,8 +215,13 @@ class PairedLivePhotoSource extends LivePhotoSource {
 /// Single-file Motion Photo or auto-paired local Live Photo source.
 class SingleFileLivePhotoSource extends LivePhotoSource {
   /// 原始单文件（或主文件）来源。
+  ///
+  /// Underlying single-file or primary image source.
   final VideoSource source;
 
+  /// 创建单文件或自动配对动态照片来源。
+  ///
+  /// Creates a [SingleFileLivePhotoSource] wrapping [source].
   const SingleFileLivePhotoSource(this.source, {super.presentationTimestamp});
 
   @override
@@ -205,11 +246,18 @@ class SingleFileLivePhotoSource extends LivePhotoSource {
 /// In-memory single-file Motion Photo source.
 class BytesLivePhotoSource extends LivePhotoSource {
   /// 包含内嵌视频流的单文件动态照片字节。
+  ///
+  /// Raw single-file Motion Photo bytes containing an embedded video track.
   final Uint8List bytes;
 
   /// 文件标识名（默认 `'motion_photo.jpg'`）。
+  ///
+  /// Logical file name identifier (defaults to `'motion_photo.jpg'`).
   final String name;
 
+  /// 创建基于内存字节流的动态照片来源。
+  ///
+  /// Creates a [BytesLivePhotoSource] from [bytes] and an optional [name].
   const BytesLivePhotoSource(
     this.bytes, {
     this.name = 'motion_photo.jpg',

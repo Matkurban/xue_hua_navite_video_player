@@ -5,14 +5,22 @@ import '../style/player_icon_catalog.dart';
 import '../style/video_player_theme.dart';
 import 'player_glass_surface.dart';
 
-/// Default center HUD indicator shown during fullscreen gestures (brightness,
-/// volume, and horizontal seek).
+/// 全屏手势操作期间（亮度、音量与水平快进/快退）居中展示的默认实时指示器组件。
 ///
-/// Automatically adapts to both Material and Cupertino themes via
-/// [VideoPlayerTheme.isCupertinoFor].
+/// 通过 [VideoPlayerTheme.isCupertinoFor] 自动适配 Material 主题（深色卡片 +
+/// [LinearProgressIndicator]）与 Cupertino 主题（毛玻璃 [PlayerGlassSurface] + 胶囊进度条）。
+///
+/// Default center HUD indicator shown during fullscreen gestures (brightness,
+/// volume, and horizontal seek), adapting automatically to Material and Cupertino themes.
 class PlayerGestureHud extends StatelessWidget {
+  /// 创建默认手势实时指示器组件。
+  ///
+  /// Creates a [PlayerGestureHud] displaying the snapshot in [hud].
   const PlayerGestureHud({super.key, required this.hud});
 
+  /// 当前手势的实时上下文快照（包含类型、进度值、百分比文本与主题）。
+  ///
+  /// Real-time gesture snapshot containing kind, normalized value, label, and theme.
   final PlayerGestureHudContext hud;
 
   @override

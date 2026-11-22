@@ -4,12 +4,16 @@ import 'package:material_ui/material_ui.dart';
 import '../style/video_player_theme.dart';
 import 'player_glass_surface.dart';
 
-/// Theme-adaptive icon button for player chrome and center transport controls.
+/// 主题自适应的播放器图标按钮组件，供顶栏、底栏、居中控制与锁屏按钮使用。
 ///
-/// - In Material mode: renders [IconButton] with Material ink ripple.
-/// - In Cupertino mode: renders [CupertinoButton] with spring opacity fade
-///   and optional frosted glass circular backing.
+/// - Material 模式：渲染带水波纹反馈的 [IconButton]；
+/// - Cupertino 模式：渲染带按压透明度渐变与可选圆形毛玻璃底衬的 [CupertinoButton]。
+///
+/// Theme-adaptive icon button for player chrome and transport controls.
 class PlayerIconButton extends StatelessWidget {
+  /// 创建主题自适应图标按钮。
+  ///
+  /// Creates a [PlayerIconButton].
   const PlayerIconButton({
     super.key,
     required this.icon,
@@ -23,14 +27,49 @@ class PlayerIconButton extends StatelessWidget {
     this.minSize = 36.0,
   });
 
+  /// 按钮内部图标组件。
+  ///
+  /// Icon widget rendered inside the button.
   final Widget icon;
+
+  /// 点击回调；为 `null` 时按钮处于禁用态。
+  ///
+  /// Tap callback; disables the button when `null`.
   final VoidCallback? onPressed;
+
+  /// 图标前景色，默认读取 `VideoPlayerTheme.foregroundColor`。
+  ///
+  /// Foreground color of the icon.
   final Color? color;
+
+  /// 可选圆形按钮背景色。
+  ///
+  /// Optional circular button background color.
   final Color? backgroundColor;
+
+  /// 可选悬停/长按提示文本。
+  ///
+  /// Optional tooltip message.
   final String? tooltip;
+
+  /// 是否启用紧凑视觉密度与内边距。
+  ///
+  /// Whether to use compact density and padding.
   final bool compact;
+
+  /// Cupertino 模式下当设置了 [backgroundColor] 时是否启用高斯模糊毛玻璃底衬。
+  ///
+  /// Enables frosted glass blur backing in Cupertino mode when [backgroundColor] is set.
   final bool circularGlassInCupertino;
+
+  /// 自定义内边距覆盖。
+  ///
+  /// Optional explicit button padding.
   final EdgeInsetsGeometry? padding;
+
+  /// 按钮最小可点击热区尺寸，默认 `36.0`。
+  ///
+  /// Minimum interactive tap target dimension (defaults to `36.0`).
   final double minSize;
 
   @override
@@ -91,8 +130,13 @@ class PlayerIconButton extends StatelessWidget {
   }
 }
 
-/// Theme-adaptive labeled action pill button (e.g. casting quick actions).
+/// 主题自适应的图标+文字胶囊按钮组件（用于投屏遮罩的快捷操作）。
+///
+/// Theme-adaptive labeled action pill button (used for casting quick actions).
 class PlayerActionPillButton extends StatelessWidget {
+  /// 创建图标+文字胶囊按钮。
+  ///
+  /// Creates a [PlayerActionPillButton].
   const PlayerActionPillButton({
     super.key,
     required this.icon,
@@ -100,8 +144,19 @@ class PlayerActionPillButton extends StatelessWidget {
     required this.onPressed,
   });
 
+  /// 胶囊按钮前置图标。
+  ///
+  /// Leading icon displayed before [label].
   final IconData icon;
+
+  /// 胶囊按钮文本标签。
+  ///
+  /// Text label displayed inside the pill.
   final String label;
+
+  /// 点击回调。
+  ///
+  /// Callback invoked when pressed.
   final VoidCallback onPressed;
 
   @override

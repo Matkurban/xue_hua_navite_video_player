@@ -38,6 +38,15 @@ class VideoCacheConfig {
   /// Optional callback that maps a network [Uri] into a stable cache identity string.
   final String Function(Uri uri)? cacheKeyBuilder;
 
+  /// 创建磁盘缓存配置对象。
+  ///
+  /// Creates a [VideoCacheConfig] instance.
+  ///
+  /// - [enabled]：是否全局启用磁盘缓存，默认 `true`。Whether caching is enabled globally.
+  /// - [maxCacheBytes]：磁盘缓存总容量上限（字节，必须 `>= 0`）。Maximum total cache size in bytes.
+  /// - [maxSingleFileBytes]：单文件缓存上限（字节，必须 `>= 0`）。Maximum single-file cache size in bytes.
+  /// - [cacheDirectory]：可选自定义缓存目录路径。Optional custom cache directory.
+  /// - [cacheKeyBuilder]：可选稳定缓存键生成回调。Optional stable cache-key builder.
   const VideoCacheConfig({
     this.enabled = true,
     this.maxCacheBytes = defaultMaxCacheBytes,
@@ -48,7 +57,18 @@ class VideoCacheConfig {
        assert(maxSingleFileBytes >= 0, 'maxSingleFileBytes must be >= 0');
 
   /// 创建修改部分字段后的新配置。
+  ///
   /// Creates a copy of this configuration with the given fields replaced.
+  ///
+  /// - [enabled]：替换后的缓存总开关。Updated enabled flag.
+  /// - [maxCacheBytes]：替换后的总容量上限（字节）。Updated total capacity limit.
+  /// - [maxSingleFileBytes]：替换后的单文件上限（字节）。Updated single-file size limit.
+  /// - [cacheDirectory]：替换后的缓存目录路径。Updated cache directory path.
+  /// - [clearCacheDirectory]：为 `true` 时显式清空 [cacheDirectory] 为 `null`。Clears [cacheDirectory] when `true`.
+  /// - [cacheKeyBuilder]：替换后的缓存键生成器。Updated cache key builder.
+  /// - [clearCacheKeyBuilder]：为 `true` 时显式清空 [cacheKeyBuilder] 为 `null`。Clears [cacheKeyBuilder] when `true`.
+  ///
+  /// 返回值 / Returns：合并修改后的新 [VideoCacheConfig] 实例。Updated [VideoCacheConfig] copy.
   VideoCacheConfig copyWith({
     bool? enabled,
     int? maxCacheBytes,
@@ -68,6 +88,12 @@ class VideoCacheConfig {
   }
 
   /// 序列化为可同步给原生层的参数字典。
+  ///
+  /// Serializes this configuration into a map suitable for native channel sync.
+  ///
+  /// - [resolvedCacheDir]：已解析的缓存根目录绝对路径。Resolved absolute cache directory path.
+  ///
+  /// 返回值 / Returns：包含缓存开关、容量上限与目录路径的键值映射。Serialized configuration map.
   Map<String, dynamic> toChannelMap({required String resolvedCacheDir}) {
     return <String, dynamic>{
       'enabled': enabled,

@@ -7,11 +7,23 @@ import '../video_player_slot_context.dart';
 import 'player_glass_surface.dart';
 import 'player_icon_button.dart';
 
+/// 默认无线投屏状态遮罩层，展示连接状态与快捷操作按钮（“切换设备” / “退出投屏”）。
+///
 /// Default wireless casting status overlay and quick action buttons ("切换设备" / "退出投屏").
 class PlayerCastingOverlay extends StatelessWidget {
+  /// 创建默认投屏状态遮罩层。
+  ///
+  /// Creates a [PlayerCastingOverlay].
   const PlayerCastingOverlay({super.key, required this.slot, required this.onInteract});
 
+  /// 当前播放器槽位上下文。
+  ///
+  /// Active player slot context.
   final VideoPlayerSlotContext slot;
+
+  /// 用户点击投屏快捷操作时的交互通知回调。
+  ///
+  /// Callback invoked when the user taps a cast action button.
   final VoidCallback onInteract;
 
   @override

@@ -36,6 +36,15 @@ class LivePhotoBundle {
   /// Parsed format and presentation metadata.
   final LivePhotoMetadata metadata;
 
+  /// 创建已解析完毕的动态照片资源包。
+  ///
+  /// Creates a resolved [LivePhotoBundle].
+  ///
+  /// - [videoSource]：可供播放器消费的动态视频来源。Playable motion video source.
+  /// - [nativeVideoUrl]：可直接传给原生播放器的视频地址。Native URL ready for playback.
+  /// - [metadata]：动态照片格式与偏移量元数据。Parsed format and timing metadata.
+  /// - [imageFile]：可选的静态封面图文件。Optional resolved still image file.
+  /// - [imageSource]：可选的静态封面图来源。Optional still cover image source.
   const LivePhotoBundle({
     required this.videoSource,
     required this.nativeVideoUrl,

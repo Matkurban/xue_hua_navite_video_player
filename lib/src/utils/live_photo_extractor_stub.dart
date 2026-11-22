@@ -10,14 +10,19 @@ import '../data/models/live_photo_metadata.dart';
 import '../data/models/navite_file.dart';
 import 'live_photo_parser.dart';
 
-/// Web / WASM 平台动态照片解析与内存 `data:` URL 封装实现。
+/// 非 IO / 兜底平台的动态照片解析器，将拆出的静态封面与内嵌 MP4 封装为内存 `data:` URL。
 ///
-/// Web / WASM implementation of [LivePhotoExtractor] that wraps extracted still
-/// images and embedded MP4 streams as in-memory `data:` URLs via [NaviteFile.fromBytes].
+/// Fallback / stub implementation of [LivePhotoExtractor] that wraps extracted
+/// still images and embedded MP4 streams as in-memory `data:` URLs via [NaviteFile.fromBytes].
 class LivePhotoExtractor {
   LivePhotoExtractor._();
 
   /// 将任意 [LivePhotoSource] 解析为可供播放与展示的 [LivePhotoBundle]。
+  ///
+  /// - [source]：实况照片源（配对源、字节源或单文件源）。
+  /// - 返回值：包含静态封面、视频源及元数据的 [LivePhotoBundle]。
+  ///
+  /// Resolves any [LivePhotoSource] into a playable [LivePhotoBundle].
   static Future<LivePhotoBundle> resolve(LivePhotoSource source) async {
     switch (source) {
       case PairedLivePhotoSource(:final image, :final video, :final presentationTimestamp):
@@ -76,7 +81,13 @@ class LivePhotoExtractor {
     );
   }
 
-  /// 尝试从单个 [VideoSource] 中探测并提取动态照片。
+  /// 尝试从单个 [VideoSource] 中探测并提取动态照片；若不支持或非动态照片则返回 `null`。
+  ///
+  /// - [source]：待探测的媒体源。
+  /// - [presentationTimestampOverride]：可选的封面帧时间戳覆盖值。
+  ///
+  /// Attempts to probe and extract a [LivePhotoBundle] from [source], returning
+  /// `null` when [source] is not a supported Motion Photo.
   static Future<LivePhotoBundle?> tryExtractFromVideoSource(
     VideoSource source, {
     Duration? presentationTimestampOverride,
@@ -106,6 +117,8 @@ class LivePhotoExtractor {
   }
 
   /// 检测 [source] 是否为动态照片。
+  ///
+  /// Returns `true` if [source] is detected as a valid Live Photo / Motion Photo.
   static Future<bool> isLivePhoto(VideoSource source) async {
     final bundle = await tryExtractFromVideoSource(source);
     return bundle != null;

@@ -5,18 +5,24 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 
-/// 负责把 Flutter assets 中的媒体懒抽取到本地文件，供原生播放器使用。
-/// Extracts Flutter assets to a local file so native players can read them.
+/// 负责将 Flutter Assets 中的媒体文件懒抽取并原子落盘至临时目录，供原生播放器直接读取。
+///
+/// Lazily extracts bundled Flutter media assets to atomic temporary files on
+/// disk so native players (ExoPlayer, AVPlayer, libmpv) can open them directly.
 class AssetExtractor {
   AssetExtractor._();
 
   /// 同一 asset 的抽取过程只进行一次，多次并发调用共享同一个 future。
-  /// Concurrent extractions of the same asset share a single future.
   static final Map<String, Future<String>> _inflight = <String, Future<String>>{};
 
-  /// 返回抽取后落地文件的绝对路径；若已存在则直接复用。
+  /// 抽取 [assetPath] 并返回本地落地文件的绝对路径；若已存在有效文件则直接复用。
   ///
-  /// Returns the absolute path of the extracted file; reuses existing files.
+  /// - [assetPath]：Flutter `pubspec.yaml` 中声明的资源路径。
+  /// - [bundle]：可选资源加载 [AssetBundle]，默认使用 [rootBundle]。
+  /// - 返回值：提取后本地文件的绝对路径。
+  ///
+  /// Extracts [assetPath] using optional [bundle] (defaulting to [rootBundle])
+  /// and returns the absolute local file path, reusing cached files if present.
   static Future<String> extract(String assetPath, {AssetBundle? bundle}) {
     final key = assetPath;
     final inflight = _inflight[key];

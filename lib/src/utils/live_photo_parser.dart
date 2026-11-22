@@ -33,6 +33,10 @@ class ParsedMotionPhotoBytes {
   /// Parsed metadata (format, byte offset, byte length, presentation timestamp).
   final LivePhotoMetadata metadata;
 
+  /// 创建一个 [ParsedMotionPhotoBytes] 解析结果对象。
+  ///
+  /// Creates a [ParsedMotionPhotoBytes] holding the split still image, video
+  /// stream, MIME types, and parsed [metadata].
   const ParsedMotionPhotoBytes({
     required this.imageBytes,
     required this.imageMimeType,
@@ -45,11 +49,15 @@ class ParsedMotionPhotoBytes {
 /// 纯 Dart 实现的跨平台动态照片（Motion Photo / Live Photo）二进制与 XMP 解析器及合成器。
 ///
 /// 支持格式：
-/// 1. Google Camera MicroVideo XMP (`GCamera:MicroVideoOffset`)
-/// 2. Android / Google Motion Photo 1.0 (`Container:Directory` / `Item:Semantic="MotionPhoto"` + `Item:Length`)
-/// 3. Samsung Motion Photo (`MotionPhoto_Data` 标记块)
-/// 4. 通用内嵌 MP4 / QuickTime 尾部流（JPEG `FF D9` 之后或 HEIC 二级 `ftyp` 视频容器）
-/// 5. Apple QuickTime `com.apple.quicktime.content.identifier` 元数据嗅探
+/// 1. Google Camera MicroVideo XMP (`GCamera:MicroVideoOffset`)；
+/// 2. Android / Google Motion Photo 1.0 (`Container:Directory` / `Item:Semantic="MotionPhoto"` + `Item:Length`)；
+/// 3. Samsung Motion Photo (`MotionPhoto_Data` 标记块)；
+/// 4. 通用内嵌 MP4 / QuickTime 尾部流（JPEG `FF D9` 之后或 HEIC 二级 `ftyp` 视频容器）；
+/// 5. Apple QuickTime `com.apple.quicktime.content.identifier` 元数据嗅探。
+///
+/// Pure-Dart cross-platform binary/XMP parser and synthesizer for Motion Photos
+/// and Live Photos (Google MicroVideo, Android Motion Photo 1.0, Samsung
+/// `MotionPhoto_Data`, embedded ISO BMFF MP4/MOV trailers, and Apple/vivo markers).
 abstract final class LivePhotoParser {
   static const List<int> _samsungMarker = <int>[
     0x4D, 0x6F, 0x74, 0x69, 0x6F, 0x6E, 0x50, 0x68, // MotionPh
@@ -81,11 +89,12 @@ abstract final class LivePhotoParser {
     'ndss',
   };
 
-  /// Returns `true` if [bytes] looks like an Apple Live Photo *still* (HEIC `MiPr` brand).
+  /// 判断 [bytes] 是否为 Apple Live Photo 静态封面容器（HEIC `MiPr` 品牌标识）。
   ///
-  /// These files are valid Live Photo stills; the motion clip is a paired `.MOV`
-  /// (or an embedded Motion Photo stream). Detecting this avoids treating the
-  /// still as a playable video URL when the companion is missing.
+  /// 用于在缺失同名 `.MOV` 配对视频时区分“静图封面”与“可播放视频”。
+  ///
+  /// Returns `true` if [bytes] looks like an Apple Live Photo *still* (HEIC `MiPr` brand).
+  /// These files are valid Live Photo stills whose motion clip lives in a paired `.MOV`.
   static bool isAppleLivePhotoStillBytes(Uint8List bytes) {
     if (bytes.length < 16) return false;
     if (bytes[4] != 0x66 || bytes[5] != 0x74 || bytes[6] != 0x79 || bytes[7] != 0x70) {
@@ -103,6 +112,8 @@ abstract final class LivePhotoParser {
     return false;
   }
 
+  /// 判断 [bytes] 是否携带 vivo / Android `livephoto` 尾部配对标记。
+  ///
   /// Returns `true` if [bytes] carries a vivo / Android `livephoto` trailer marker.
   static bool isVivoLivePhotoMarkerBytes(Uint8List bytes) {
     if (bytes.length < 32) return false;
@@ -110,16 +121,18 @@ abstract final class LivePhotoParser {
         _indexOfSequence(bytes, ascii.encode('com.vivo.gallery.livePhoto')) != -1;
   }
 
+  /// 判断 [bytes] 是否为 Apple `MiPr` 或 vivo 实况静态封面容器（即使未内嵌视频流）。
+  ///
   /// Returns `true` when [bytes] is an Apple / vivo Live Photo *still container*
-  /// (MiPr brand and/or vivo livephoto trailer) even if no motion bytes are present.
+  /// (`MiPr` brand and/or vivo livephoto trailer) even if no motion bytes are present.
   static bool isLivePhotoStillContainerBytes(Uint8List bytes) {
     return isAppleLivePhotoStillBytes(bytes) || isVivoLivePhotoMarkerBytes(bytes);
   }
 
-  /// Extracts vivo / Android `com.android.camera.livephoto` pairing id from a trailer, if any.
+  /// 从尾部标记中提取 vivo / Android `com.android.camera.livephoto` 配对内容 ID；不存在时返回 `null`。
   ///
-  /// This id is used by the phone gallery to locate the companion motion clip; it is
-  /// **not** embedded video. Returns `null` when the marker is absent.
+  /// Extracts vivo / Android `com.android.camera.livephoto` pairing id from a trailer, if any.
+  /// This id is used by the phone gallery to locate the companion motion clip; it is **not** embedded video.
   static String? extractVivoLivePhotoContentId(Uint8List bytes) {
     if (bytes.length < 32) return null;
     final text = latin1.decode(

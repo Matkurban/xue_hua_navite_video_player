@@ -24,28 +24,36 @@ import 'live_photo_source.dart';
 /// * [LivePhotoVideoSource] – Live Photo / Motion Photo source resolved to its motion video stream.
 @immutable
 sealed class VideoSource {
+  /// 构造媒体来源基类。
+  ///
+  /// Base constructor for sealed [VideoSource] subclasses.
   const VideoSource();
 
-  /// 用作 mime 探测的稳定标识。
-  /// Stable identity used for mime sniffing.
+  /// 用作 MIME 探测与状态追踪的稳定唯一标识。
+  ///
+  /// Stable identity used for MIME sniffing and session tracking.
   String get identity;
 
-  /// 是否为网络来源。只有 [NetworkVideoSource]（以及配对网络视频的 [LivePhotoVideoSource]）为 true。
-  /// Whether this source is a network URL.
+  /// 是否为网络来源。只有 [NetworkVideoSource]（以及配对网络视频的 [LivePhotoVideoSource]）为 `true`。
+  ///
+  /// Whether this source is backed by a network URL.
   bool get isNetwork => false;
 
   /// 将来源解析为原生播放器可直接消费的 URL。
   ///
-  /// * 网络：原样返回
-  /// * 文件：规范化为 `file:///absolute/path`
-  /// * 资源：原生抽取到临时目录并返回 `file://` URI；Web 返回 `assets/` URL
-  /// * 动态照片：解析或拆分出视频流并返回对应的原生可播放 URL
+  /// * 网络：原样返回；
+  /// * 文件：规范化为 `file:///absolute/path`；
+  /// * 资源：原生抽取到临时目录并返回 `file://` URI；Web 返回 `assets/` URL；
+  /// * 动态照片：解析或拆分出视频流并返回对应的原生可播放 URL。
   ///
-  /// Resolve this source into a URL the native player can consume directly.
+  /// Resolves this source into a URL the native player can consume directly.
+  ///
+  /// 返回值 / Returns：原生播放器可直接打开的 URL 字符串。A native-consumable media URL.
   Future<String> resolveToNativeUrl();
 
   /// 快速构造一个网络来源。
-  /// Shortcut for a network URL.
+  ///
+  /// Shortcut for creating a [NetworkVideoSource].
   const factory VideoSource.network(
     String url, {
     String? cacheKey,
@@ -54,37 +62,49 @@ sealed class VideoSource {
   }) = NetworkVideoSource;
 
   /// 快速构造一个本地文件来源。
-  /// Shortcut for a local file path / URI.
+  ///
+  /// Shortcut for creating a [FileVideoSource] from a local path or `file://` URI.
   const factory VideoSource.file(String path) = FileVideoSource;
 
-  /// 快速构造一个资源来源。
-  /// Shortcut for a Flutter asset.
+  /// 快速构造一个 Flutter Asset 资源来源。
+  ///
+  /// Shortcut for creating an [AssetVideoSource].
   const factory VideoSource.asset(String assetPath, {AssetBundle? bundle}) = AssetVideoSource;
 
   /// 快速构造一个动态照片（Live Photo / Motion Photo）来源。
-  /// Shortcut for a Live Photo / Motion Photo source.
+  ///
+  /// Shortcut for creating a [LivePhotoVideoSource].
   const factory VideoSource.livePhoto(LivePhotoSource livePhoto) = LivePhotoVideoSource;
 }
 
 /// 网络来源，由原生播放器直连（或通过本地缓存层透明加速）。
+///
 /// Network-backed media source, opened by the native player (with optional transparent disk cache).
 class NetworkVideoSource extends VideoSource {
   /// 原始网络地址。
+  ///
   /// Original network URL.
   final String url;
 
   /// 可选稳定缓存键（如带动态签名的 OSS/S3 URL 可传入不随签名变化的资源 ID）。
+  ///
   /// Optional stable cache key overriding the raw URL for disk cache lookup.
   final String? cacheKey;
 
   /// 可选自定义 HTTP 请求头（如 `Authorization`、`Referer`、`Cookie`）。
+  ///
   /// Optional custom HTTP request headers forwarded when fetching or streaming media.
   final Map<String, String>? headers;
 
-  /// 单源缓存开关；为 `null` 时继承全局 [VideoCacheConfig.enabled] 配置。
+  /// 单源缓存开关；为 `null` 时继承全局缓存开关配置。
+  ///
   /// Per-source cache override; when `null`, inherits the global cache setting.
   final bool? enableCache;
 
+  /// 创建网络媒体来源。
+  ///
+  /// Creates a [NetworkVideoSource] for [url] with optional [cacheKey],
+  /// [headers], and [enableCache] overrides.
   const NetworkVideoSource(this.url, {this.cacheKey, this.headers, this.enableCache});
 
   @override
@@ -117,12 +137,17 @@ class NetworkVideoSource extends VideoSource {
 }
 
 /// 本地文件来源（绝对路径或 `file://` URI）。
+///
 /// Local file media source (absolute path or `file://` URI).
 class FileVideoSource extends VideoSource {
   /// 文件路径或 `file://` URI。
+  ///
   /// Raw path or `file://` URI.
   final String path;
 
+  /// 创建本地文件媒体来源。
+  ///
+  /// Creates a [FileVideoSource] from an absolute [path] or `file://` URI.
   const FileVideoSource(this.path);
 
   @override
@@ -146,16 +171,22 @@ class FileVideoSource extends VideoSource {
 }
 
 /// Flutter assets 来源；原生平台首次使用时抽取到临时目录，Web 直接使用托管 URL。
-/// Flutter asset media source; extracted on native, served as a URL on web.
+///
+/// Flutter asset media source; extracted to temp storage on native, served as a URL on Web.
 class AssetVideoSource extends VideoSource {
   /// Asset 路径（与 `rootBundle.load(...)` 相同）。
+  ///
   /// Asset key (same as `rootBundle.load(...)`).
   final String assetPath;
 
-  /// 自定义 asset bundle，默认 `rootBundle`。
+  /// 自定义 asset bundle，默认使用 [rootBundle]。
+  ///
   /// Custom asset bundle, defaults to [rootBundle].
   final AssetBundle? bundle;
 
+  /// 创建 Flutter Asset 媒体来源。
+  ///
+  /// Creates an [AssetVideoSource] for [assetPath] and an optional [bundle].
   const AssetVideoSource(this.assetPath, {this.bundle});
 
   @override
@@ -190,9 +221,13 @@ class AssetVideoSource extends VideoSource {
 /// Live Photo / Motion Photo media source that resolves to its motion video stream.
 class LivePhotoVideoSource extends VideoSource {
   /// 动态照片描述。
+  ///
   /// Underlying [LivePhotoSource] descriptor.
   final LivePhotoSource livePhoto;
 
+  /// 创建动态照片视频来源。
+  ///
+  /// Creates a [LivePhotoVideoSource] wrapping [livePhoto].
   const LivePhotoVideoSource(this.livePhoto);
 
   @override

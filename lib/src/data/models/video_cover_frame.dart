@@ -22,6 +22,13 @@ class VideoCoverFrame {
   /// pure-black frames and rank candidates.
   final double brightness;
 
+  /// 创建视频封面候选帧对象。
+  ///
+  /// Creates a [VideoCoverFrame] candidate.
+  ///
+  /// - [image]：提取出的封面图片文件（PNG）。Extracted PNG cover image file.
+  /// - [position]：该帧在视频中的时间位置。Timestamp of this frame in the video.
+  /// - [brightness]：平均亮度评分（`0.0..1.0`）。Average brightness score (`0.0..1.0`).
   const VideoCoverFrame({required this.image, required this.position, required this.brightness});
 
   @override

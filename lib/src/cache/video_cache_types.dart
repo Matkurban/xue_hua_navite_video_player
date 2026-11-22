@@ -7,25 +7,47 @@ import '../core/video_source.dart';
 import '../data/models/video_cache_config.dart';
 import '../utils/mime_detector.dart';
 
-/// 半开字节区间 `[start, end)`（`0 <= start < end`）。
+/// 表示文件已缓存切片的半开字节区间 `[start, end)`（满足 `0 <= start <= end`）。
 ///
 /// Half-open byte range `[start, end)` representing a cached slice of a file.
 @immutable
 class ByteInterval {
+  /// 区间起始字节偏移量（包含），必须大于等于 `0`。
+  ///
+  /// Inclusive starting byte offset (must be `>= 0`).
   final int start;
+
+  /// 区间结束字节偏移量（不包含），必须大于等于 [start]。
+  ///
+  /// Exclusive ending byte offset (must be `>= start`).
   final int end;
 
+  /// 创建一个半开字节区间 `[start, end)`。
+  ///
+  /// Creates a half-open byte interval `[start, end)`.
   const ByteInterval(this.start, this.end)
     : assert(start >= 0, 'start must be >= 0'),
       assert(end >= start, 'end must be >= start');
 
+  /// 当前区间包含的字节长度（`end - start`）。
+  ///
+  /// Number of bytes covered by this interval (`end - start`).
   int get length => end - start;
 
+  /// 当前区间是否为空（`end <= start`）。
+  ///
+  /// Whether this interval covers zero bytes (`end <= start`).
   bool get isEmpty => end <= start;
 
+  /// 判断给定字节偏移量 [offset] 是否落在当前区间内。
+  ///
+  /// Returns `true` if [offset] falls within `[start, end)`.
   bool contains(int offset) => offset >= start && offset < end;
 
-  /// 将任意乱序、重叠或相邻的区间列表合并为互不重叠且严格递增的最简区间表。
+  /// 将任意乱序、重叠或相邻的 [intervals] 合并为互不重叠且严格递增的最简区间列表。
+  ///
+  /// Merges arbitrary unsorted, overlapping, or adjacent [intervals] into a
+  /// sorted list of disjoint minimal intervals.
   static List<ByteInterval> merge(Iterable<ByteInterval> intervals) {
     final nonEmpty = intervals.where((i) => i.end > i.start).toList();
     if (nonEmpty.isEmpty) return const <ByteInterval>[];
@@ -49,7 +71,9 @@ class ByteInterval {
     return merged;
   }
 
-  /// 计算合并后所有已缓存字节总数。
+  /// 计算 [intervals] 合并后覆盖的总字节数。
+  ///
+  /// Computes the total number of unique bytes covered by [intervals].
   static int totalCoveredBytes(Iterable<ByteInterval> intervals) {
     var sum = 0;
     for (final item in merge(intervals)) {
@@ -58,7 +82,9 @@ class ByteInterval {
     return sum;
   }
 
-  /// 判断 `[targetStart, targetEnd)` 是否已被区间集合完整覆盖。
+  /// 判断目标区间 `[targetStart, targetEnd)` 是否已被 [intervals] 完整覆盖。
+  ///
+  /// Returns `true` if `[targetStart, targetEnd)` is fully covered by [intervals].
   static bool coversRange(Iterable<ByteInterval> intervals, int targetStart, int targetEnd) {
     if (targetEnd <= targetStart) return true;
     for (final item in merge(intervals)) {
@@ -84,27 +110,47 @@ class ByteInterval {
 }
 
 /// 缓存层为一次播放或媒体探测解析出的目标描述。
+///
+/// Resolved playback or probe target returned by the caching layer, separating
+/// local playback URLs from remote wireless casting URLs.
 @immutable
 class ResolvedVideoCacheTarget {
   /// 交给本地原生播放器或探测器的实际播放地址（可能是 `file://`、`http://127.0.0.1:...`、`blob:` 或原始远程 URL）。
+  ///
+  /// Actual URL passed to the local native player or prober (`file://`,
+  /// `http://127.0.0.1:...`, `blob:`, or the original remote URL).
   final String playUrl;
 
   /// 交给无线投屏接收器（Google Cast / AirPlay / Windows Miracast/DLNA）的远程地址。
   /// 对于网络源，始终保持原始 `http(s)://` 地址，绝不暴露本机回环或自定义协议。
+  ///
+  /// Remote URL forwarded to wireless cast receivers; always preserves the
+  /// original `http(s)://` address for network sources rather than loopback proxies.
   final String? castUrl;
 
   /// 规范化后的 40 位十六进制 SHA-1 缓存键。
+  ///
+  /// Normalized 40-character hexadecimal SHA-1 cache key.
   final String? cacheKey;
 
   /// 需要透传给上游网络请求的 HTTP 头。
+  ///
+  /// Optional HTTP request headers forwarded to upstream network requests.
   final Map<String, String>? headers;
 
   /// 本次打开是否启用缓存写入与读取。
+  ///
+  /// Whether cache reading and writing are enabled for this open request.
   final bool enableCache;
 
   /// 是否已 100% 命中本地完整缓存文件。
+  ///
+  /// Whether the target resolved to a 100% complete local cached file.
   final bool isCompleteFileHit;
 
+  /// 创建一个 [ResolvedVideoCacheTarget] 实例。
+  ///
+  /// Creates a [ResolvedVideoCacheTarget] with [playUrl] and optional cache/cast metadata.
   const ResolvedVideoCacheTarget({
     required this.playUrl,
     this.castUrl,
@@ -115,8 +161,14 @@ class ResolvedVideoCacheTarget {
   });
 }
 
-/// 缓存键计算与媒体扩展名推断工具。
+/// 缓存键计算与媒体扩展名推断工具类。
+///
+/// Utility helpers for computing deterministic SHA-1 cache keys, identifying
+/// adaptive streaming manifests, and inferring container file extensions.
 abstract final class VideoCacheKeyUtils {
+  /// 插件支持的常见音视频容器扩展名白名单（带 `.` 前缀）。
+  ///
+  /// Whitelist of recognized audio/video container file extensions (with leading `.`).
   static const List<String> knownMediaExtensions = <String>[
     '.mp4',
     '.mov',
@@ -135,7 +187,13 @@ abstract final class VideoCacheKeyUtils {
     '.flac',
   ];
 
-  /// 解析网络源用于缓存去重的原始业务标识字符串（尚未哈希）。
+  /// 解析网络源 [source] 用于缓存去重的原始业务标识字符串（尚未进行哈希）。
+  ///
+  /// 优先级：`source.cacheKey` > `config.cacheKeyBuilder` > `source.url`。
+  ///
+  /// Resolves the raw pre-hash cache identity string for [source] using
+  /// [config], checking explicit `source.cacheKey`, `config.cacheKeyBuilder`,
+  /// and finally falling back to `source.url`.
   static String resolveRawIdentity(NetworkVideoSource source, VideoCacheConfig config) {
     final explicit = source.cacheKey?.trim();
     if (explicit != null && explicit.isNotEmpty) {
@@ -154,19 +212,26 @@ abstract final class VideoCacheKeyUtils {
     return source.url.trim();
   }
 
-  /// 生成跨平台文件名安全的固定 40 字符 SHA-1 缓存键。
+  /// 对原始标识 [rawIdentity] 计算跨平台文件名安全的固定 40 位十六进制 SHA-1 缓存键。
+  ///
+  /// Computes a filesystem-safe 40-character hexadecimal SHA-1 key from [rawIdentity].
   static String computeSha1Key(String rawIdentity) {
     return sha1.convert(utf8.encode(rawIdentity)).toString();
   }
 
-  /// 判断 URL 是否为自适应流媒体索引清单（HLS `.m3u8` / DASH `.mpd`）。
+  /// 判断 [url] 是否为自适应流媒体索引清单（HLS `.m3u8` 或 DASH `.mpd`）。
+  ///
+  /// Returns `true` if [url] points to an adaptive streaming manifest (`.m3u8` or `.mpd`).
   static bool isStreamingManifestUrl(String url) {
     final uri = Uri.tryParse(url);
     final path = (uri?.path ?? url).toLowerCase();
     return path.endsWith('.m3u8') || path.endsWith('.mpd');
   }
 
-  /// 结合原始 URL 路径与可选的 HTTP `Content-Type` 推断标准容器扩展名（带 `.` 前缀）。
+  /// 结合原始 [url] 路径与可选 HTTP [contentType] 推断标准容器扩展名（带 `.` 前缀，默认 `.mp4`）。
+  ///
+  /// Infers a canonical media container extension (with leading `.`, defaulting
+  /// to `.mp4`) from optional [contentType], [url] path, or [MimeDetector].
   static String inferExtension(String url, {String? contentType}) {
     if (contentType != null && contentType.isNotEmpty) {
       final cleanMime = contentType.split(';').first.trim().toLowerCase();

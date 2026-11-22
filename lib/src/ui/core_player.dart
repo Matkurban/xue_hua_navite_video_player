@@ -12,18 +12,44 @@ import 'platform_view_types.dart';
 import 'style/video_player_theme.dart';
 import 'widgets/live_photo_still_view.dart';
 
-/// 视频渲染组件，只负责显示视频画面和基本状态（加载/缓冲/错误）。
+/// 纯视频渲染表面组件，只负责显示原生视频画面及基础状态（加载 / 缓冲 / 错误）。
 ///
-/// - iOS / macOS / Android：PlatformView（原生 videoGravity / resizeMode）
-/// - Web：HtmlElementView（object-fit）
-/// - Linux / Windows：Flutter [Texture]（mpv keepaspect/panscan）
+/// Bare video rendering surface that displays native video frames alongside
+/// loading, buffering, and error states without built-in playback chrome.
+///
+/// - iOS / macOS / Android：PlatformView（原生 `videoGravity` / `resizeMode`）
+/// - Web：`HtmlElementView`（CSS `object-fit`）
+/// - Linux / Windows：Flutter [Texture]（libmpv `keepaspect` / `panscan`）
 class CorePlayer extends SignalWidget {
+  /// 绑定的视频播放器控制器。
+  ///
+  /// Attached [VideoPlayerController] driving this surface.
   final VideoPlayerController controller;
+
+  /// 可选画面宽高比标记；为 `null` 时监听 `controller.videoAspectRatio` 以便在尺寸或旋转变化时重建。
+  ///
+  /// Optional aspect ratio hint; when `null`, watches `controller.videoAspectRatio`
+  /// so size and rotation updates trigger rebuilds.
   final double? aspectRatio;
+
+  /// 背景底色，默认读取 [VideoPlayerTheme.backgroundColor]。
+  ///
+  /// Background color behind the video surface; falls back to [VideoPlayerTheme.backgroundColor].
   final Color? backgroundColor;
+
+  /// 播放进入 [PlayState.error] 时的自定义错误界面构建器。
+  ///
+  /// Optional builder displayed when playback enters [PlayState.error].
   final Widget Function(BuildContext context, String? errorMessage)? errorBuilder;
+
+  /// 处于加载或缓冲状态时的自定义加载指示器构建器。
+  ///
+  /// Optional builder displayed while loading or buffering.
   final Widget Function(BuildContext context)? loadingBuilder;
 
+  /// 创建纯视频渲染表面组件。
+  ///
+  /// Creates a [CorePlayer] bound to [controller].
   const CorePlayer({
     super.key,
     required this.controller,

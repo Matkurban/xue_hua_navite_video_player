@@ -18,8 +18,15 @@ import 'video_cache_types.dart';
 /// 原生 IO 平台缓存引擎统一调度器：
 /// - **Android**：同步配置并委托给 Media3 `SimpleCache` (`AndroidMediaCacheManager`)；
 /// - **iOS / macOS**：完整文件直通 `file://` 快路径，未完成流委托给 Swift `AVAssetResourceLoaderDelegate`；
-/// - **Windows / Linux**：完整文件直通 `file://` 快路径，未完成流使用 Dart `LocalVideoCacheEngine` 回环 Range 代理。
+/// - **Windows / Linux**：完整文件直通 `file://` 快路径，未完成流使用 Dart [LocalVideoCacheEngine] 回环 Range 代理。
+///
+/// Unified native IO cache engine dispatcher routing Android to Media3
+/// `SimpleCache`, Apple platforms to `AVAssetResourceLoaderDelegate`, and
+/// Windows/Linux to the Dart [LocalVideoCacheEngine] loopback Range proxy.
 class PlatformVideoCacheEngine {
+  /// 创建原生 IO 缓存引擎，可选注入自定义桥接实例（便于测试）。
+  ///
+  /// Creates an IO [PlatformVideoCacheEngine] with an optional custom bridge.
   PlatformVideoCacheEngine({this._bridge});
 
   final VideoPlayerHostBridge? _bridge;
@@ -29,9 +36,14 @@ class PlatformVideoCacheEngine {
   VideoPlayerHostBridge get _resolvedBridge => _bridge ?? VideoPlayerHostBridge.instance;
 
   /// 暴露内部纯 Dart 稀疏分片缓存引擎（便于桌面端与单元测试直接校验）。
+  ///
+  /// Exposes the internal Dart sparse-segment [LocalVideoCacheEngine] for testing.
   @visibleForTesting
   LocalVideoCacheEngine get localEngine => _localEngine;
 
+  /// 当前生效的全局缓存配置。
+  ///
+  /// Currently active [VideoCacheConfig].
   VideoCacheConfig get config => _localEngine.config;
 
   bool get _usesDesktopDartProxy {
@@ -50,6 +62,9 @@ class PlatformVideoCacheEngine {
     return error is MissingPluginException || (isFlutterTestEnvironment && _bridge == null);
   }
 
+  /// 更新缓存策略配置 [config]，并在移动端/macOS 上同步下发至原生缓存层。
+  ///
+  /// Updates [config] locally and synchronizes it to the native bridge on mobile/macOS.
   Future<void> configure(VideoCacheConfig config) async {
     _nativeConfigSynced = false;
     await _localEngine.configure(config);
@@ -84,6 +99,9 @@ class PlatformVideoCacheEngine {
     }
   }
 
+  /// 按当前平台策略为 [source] 解析播放目标（含完整文件直通、原生分片流或回环代理）。
+  ///
+  /// Resolves [source] into a [ResolvedVideoCacheTarget] according to the active platform strategy.
   Future<ResolvedVideoCacheTarget> resolveForPlayback(NetworkVideoSource source) async {
     if (_usesDesktopDartProxy) {
       return _localEngine.resolveForPlayback(source);
@@ -151,6 +169,9 @@ class PlatformVideoCacheEngine {
     );
   }
 
+  /// 为媒体探测（时长/封面抽帧）解析 [source] 的缓存目标。
+  ///
+  /// Resolves a [ResolvedVideoCacheTarget] for media probing (duration/cover extraction).
   Future<ResolvedVideoCacheTarget> resolveForProbe(NetworkVideoSource source) async {
     if (_usesDesktopDartProxy) {
       return _localEngine.resolveForProbe(source);
@@ -183,6 +204,9 @@ class PlatformVideoCacheEngine {
     );
   }
 
+  /// 固定 [cacheKey] 防止活跃播放期间被 LRU 淘汰。
+  ///
+  /// Pins [cacheKey] in both Dart and native cache layers to prevent eviction.
   void pin(String cacheKey) {
     _localEngine.pin(cacheKey);
     if (!_usesDesktopDartProxy) {
@@ -190,6 +214,9 @@ class PlatformVideoCacheEngine {
     }
   }
 
+  /// 解除 [cacheKey] 的 LRU 淘汰保护。
+  ///
+  /// Unpins [cacheKey] in both Dart and native cache layers.
   void unpin(String cacheKey) {
     _localEngine.unpin(cacheKey);
     if (!_usesDesktopDartProxy) {
@@ -197,6 +224,9 @@ class PlatformVideoCacheEngine {
     }
   }
 
+  /// 后台预加载网络媒体 [source]，可选通过 [preloadBytes] 限制首包预热字节数。
+  ///
+  /// Precaches [source] up to [preloadBytes] (or full file when `null`).
   Future<void> precache(NetworkVideoSource source, {int? preloadBytes}) async {
     final enabled =
         (source.enableCache ?? config.enabled) &&
@@ -236,6 +266,9 @@ class PlatformVideoCacheEngine {
     }
   }
 
+  /// 取消正在针对 [source] 执行的后台预加载任务。
+  ///
+  /// Cancels an active background precache task for [source].
   Future<void> cancelPrecache(NetworkVideoSource source) async {
     if (_usesDesktopDartProxy) {
       await _localEngine.cancelPrecache(source);
@@ -256,6 +289,9 @@ class PlatformVideoCacheEngine {
     }
   }
 
+  /// 查询 [source] 是否已完成本地完整缓存（同时检查网络实况照片缓存目录）。
+  ///
+  /// Returns `true` if [source] is completely cached locally (including network Live Photo cache).
   Future<bool> isCached(NetworkVideoSource source) async {
     if (await _hasCachedNetworkLivePhoto(source)) {
       return true;
@@ -288,6 +324,9 @@ class PlatformVideoCacheEngine {
     }
   }
 
+  /// 统计当前磁盘缓存总字节数（包含网络实况照片缓存体积）。
+  ///
+  /// Returns total cached disk usage in bytes, including cached network Live Photos.
   Future<int> getCacheSize() async {
     final livePhotoBytes = await _getNetworkLivePhotoCacheSize();
     if (_usesDesktopDartProxy) {
@@ -313,6 +352,9 @@ class PlatformVideoCacheEngine {
     return livePhotoBytes;
   }
 
+  /// 删除 [source] 对应的本地缓存条目（含关联的网络实况照片缓存）。
+  ///
+  /// Deletes cached entries for [source], including any network Live Photo artifacts.
   Future<void> removeCache(NetworkVideoSource source) async {
     await cancelPrecache(source);
     await _removeCachedNetworkLivePhoto(source);
@@ -343,6 +385,9 @@ class PlatformVideoCacheEngine {
     }
   }
 
+  /// 清空所有非活跃的网络视频与网络实况照片磁盘缓存。
+  ///
+  /// Clears all non-pinned cached network video and Live Photo files from disk.
   Future<void> clearCache() async {
     await _clearNetworkLivePhotoCache();
     if (_usesDesktopDartProxy) {
@@ -367,6 +412,9 @@ class PlatformVideoCacheEngine {
     }
   }
 
+  /// 释放本地回环代理服务与底层缓存引擎资源。
+  ///
+  /// Disposes the underlying local cache engine and loopback proxy server.
   Future<void> dispose() async {
     await _localEngine.dispose();
   }

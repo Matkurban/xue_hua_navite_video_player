@@ -4,8 +4,18 @@ import '../data/enums/cast_state.dart';
 import '../pigeon/player_api.g.dart';
 import 'player_event.dart';
 
+/// 将 Pigeon 强类型事件载荷 [PlayerEventData] 解码为领域层 [PlayerEvent] 的工具类。
+///
 /// Decodes strongly-typed Pigeon [PlayerEventData] payloads into [PlayerEvent].
 abstract final class PlayerEventDecoder {
+  /// 解析单条 Pigeon [PlayerEventData]；载荷字段不完整时安全返回 `null`。
+  ///
+  /// Decodes a Pigeon [PlayerEventData] into a [PlayerEvent], returning `null`
+  /// when required payload fields are missing.
+  ///
+  /// - [data]：来自宿主桥接的原始 Pigeon 事件数据。Raw Pigeon event payload.
+  ///
+  /// 返回值 / Returns：解码后的 [PlayerEvent]，或字段缺失时返回 `null`。
   static PlayerEvent? fromPigeon(PlayerEventData data) {
     switch (data.kind) {
       case NativePlayerEventType.position:

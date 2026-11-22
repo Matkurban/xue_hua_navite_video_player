@@ -10,17 +10,26 @@ import '../data/models/video_cover_frame.dart';
 import '../pigeon/player_api.g.dart';
 import '../utils/temp_paths.dart';
 
-/// Probe duration / cover frames without a live playback session.
+/// 独立于播放会话的媒体探测服务（支持在不创建活跃播放器的情况下探测时长与抽取封面帧）。
 ///
-/// Uses [VideoPlayerHostBridge] for host interop, independent from [PlayerBackend].
+/// Probes media duration and candidate cover frames without a live playback session,
+/// using [VideoPlayerHostBridge] independently of `PlayerBackend`.
 class MediaProbe {
+  /// 创建媒体探测服务实例，可选注入测试用 [bridge]。
+  ///
+  /// Creates a [MediaProbe] with an optional [bridge] override.
   MediaProbe({this._bridge});
 
   final VideoPlayerHostBridge? _bridge;
 
   VideoPlayerHostBridge get _resolvedBridge => _bridge ?? VideoPlayerHostBridge.instance;
 
-  /// Probe total duration for [source]. Returns `null` on failure / timeout.
+  /// 探测 [source] 的媒体总时长（超时时间由 [timeout] 控制）。
+  ///
+  /// Probes total media duration for [source] within [timeout].
+  ///
+  /// 返回值 / Returns：媒体总时长 [Duration]；失败、超时或直播流返回 `null`。
+  /// Media [Duration], or `null` on failure, timeout, or non-finite duration.
   Future<Duration?> probeDuration(
     VideoSource source, {
     Duration timeout = const Duration(seconds: 15),
@@ -63,7 +72,15 @@ class MediaProbe {
     }
   }
 
-  /// Extract non-black cover candidates, sorted by brightness descending.
+  /// 从 [source] 中抽取非黑候选封面帧并按平均亮度降序返回。
+  ///
+  /// Extracts non-black candidate cover frames from [source], sorted by descending brightness.
+  ///
+  /// - [count]：目标返回封面帧数量（必须 `> 0`，默认 `5`）。Target number of frames.
+  /// - [minBrightness]：过滤黑帧的最小平均亮度阈值（`0.0..1.0`，默认 `0.08`）。Minimum brightness threshold.
+  /// - [outputDir]：可选原生输出目录路径。Optional native output directory.
+  ///
+  /// 返回值 / Returns：按亮度降序排列的 [VideoCoverFrame] 列表。Sorted [VideoCoverFrame] list.
   Future<List<VideoCoverFrame>> extractCovers(
     VideoSource source, {
     int count = 5,

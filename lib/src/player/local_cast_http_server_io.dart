@@ -7,8 +7,11 @@ import '../utils/mime_detector.dart';
 /// 轻量级局域网单文件 HTTP Range 媒体代理服务。
 ///
 /// 用于在投屏本地文件（`VideoSource.file`）或已解压资源（`VideoSource.asset`）时，
-/// 为只接受 `http://` 地址的远端接收器（如 Android Google Cast、Linux DLNA/UPnP）
+/// 为只接受 `http://` 地址的远端接收器（如 Android Google Cast、Windows Cast）
 /// 提供支持 `206 Partial Content` 字节范围拖动（Seek）的局域网流地址。
+///
+/// Lightweight in-process LAN HTTP Range server for casting local files and
+/// extracted assets to remote receivers that require an `http://` URL.
 class LocalCastHttpServer {
   HttpServer? _server;
   File? _activeFile;
@@ -16,19 +19,30 @@ class LocalCastHttpServer {
   String? _activeMimeType;
   String? _servingUrl;
 
-  /// 当前正在提供服务的局域网 HTTP URL（若未启动则为 `null`）。
+  /// 当前正在提供服务的局域网 HTTP URL（未启动时为 `null`）。
+  ///
+  /// Currently active LAN HTTP URL, or `null` when stopped.
   String? get servingUrl => _servingUrl;
 
   /// 绑定指定 IP 地址（默认 `InternetAddress.anyIPv4`，测试时可传入 `loopbackIPv4`）。
+  ///
+  /// Optional bind address (defaults to `InternetAddress.anyIPv4`).
   final InternetAddress? bindAddress;
 
-  /// 覆盖主机 IP 字符串（仅用于单元测试环境）。
+  /// 覆盖对外暴露的主机 IP 字符串（主要用于单元测试）。
+  ///
+  /// Optional host IP override (primarily for unit tests).
   final String? overrideHostIp;
 
+  /// 创建局域网本地投屏 HTTP 服务实例。
+  ///
+  /// Creates a [LocalCastHttpServer] with optional [bindAddress] and [overrideHostIp].
   LocalCastHttpServer({this.bindAddress, this.overrideHostIp});
 
-  /// 若 [nativeUrl] 是本地路径或 `file://` URI，启动（或复用）局域网 HTTP 服务并返回
-  /// `http://<lan-ip>:<port>/cast/<token>.<ext>`；若非本地文件或无法获取局域网 IP 则返回 `null`。
+  /// 将本地文件或 `file://` URI（[nativeUrl]）映射为局域网 HTTP Range 流地址。
+  ///
+  /// Starts or reuses the LAN HTTP server for [nativeUrl] (using optional [mimeType])
+  /// and returns `http://<lan-ip>:<port>/cast/<token>.<ext>`, or `null` if unavailable.
   Future<String?> serveLocalFileUrl(String nativeUrl, {String? mimeType}) async {
     final filePath = _extractFilePath(nativeUrl);
     if (filePath == null) return null;

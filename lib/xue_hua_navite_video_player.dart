@@ -1,3 +1,9 @@
+/// 跨平台六端原生音视频与动态照片播放插件主入口导出库。
+///
+/// Main public barrel library for `xue_hua_navite_video_player`, exporting
+/// media sources, data models, enums, reactive controller, and built-in UI widgets.
+library;
+
 // Core
 export 'src/core/live_photo_source.dart';
 export 'src/core/video_source.dart';

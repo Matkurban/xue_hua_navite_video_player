@@ -30,36 +30,58 @@ class PlayerScrubberSlider extends StatefulWidget {
   final ValueChanged<double>? onChangeEnd;
 
   /// 轨道厚度（静止状态）。未传时从 [VideoPlayerTheme] 读取。
+  ///
+  /// Track thickness at rest; falls back to [VideoPlayerTheme.scrubberTrackHeight].
   final double? trackHeight;
 
   /// 拖动时轨道加厚的目标厚度。未传时从 [VideoPlayerTheme] 读取。
+  ///
+  /// Expanded track thickness while scrubbing; falls back to [VideoPlayerTheme.scrubberActiveTrackHeight].
   final double? activeTrackHeight;
 
   /// 已播放部分颜色。未传时从 [VideoPlayerTheme] 读取。
+  ///
+  /// Played segment color; falls back to [VideoPlayerTheme.scrubberActiveColor].
   final Color? activeColor;
 
   /// 已缓冲部分颜色。未传时从 [VideoPlayerTheme] 读取。
+  ///
+  /// Buffered segment color; falls back to [VideoPlayerTheme.scrubberBufferedColor].
   final Color? bufferedColor;
 
   /// 未播放部分颜色。未传时从 [VideoPlayerTheme] 读取。
+  ///
+  /// Unplayed track color; falls back to [VideoPlayerTheme.scrubberInactiveColor].
   final Color? inactiveColor;
 
   /// 拖动滑块颜色。未传时从 [VideoPlayerTheme] 读取。
+  ///
+  /// Thumb dot color; falls back to [VideoPlayerTheme.scrubberThumbColor].
   final Color? thumbColor;
 
-  /// Soft shadow under the thumb. 未传时从 [VideoPlayerTheme] 读取。
+  /// 拖动滑块底部柔和阴影颜色。未传时从 [VideoPlayerTheme] 读取。
+  ///
+  /// Soft shadow under the thumb; falls back to [VideoPlayerTheme.scrubberThumbShadowColor].
   final Color? thumbShadowColor;
 
   /// 滑块半径（静止）。未传时从 [VideoPlayerTheme] 读取。
+  ///
+  /// Thumb radius at rest; falls back to [VideoPlayerTheme.scrubberThumbRadius].
   final double? thumbRadius;
 
   /// 滑块半径（拖动时放大）。未传时从 [VideoPlayerTheme] 读取。
+  ///
+  /// Expanded thumb radius while scrubbing; falls back to [VideoPlayerTheme.scrubberActiveThumbRadius].
   final double? activeThumbRadius;
 
   /// 是否显示滑块。
+  ///
   /// Whether to render the thumb dot.
   final bool showThumb;
 
+  /// 创建播放器极简双层进度条组件。
+  ///
+  /// Creates a [PlayerScrubberSlider] with current progress [value].
   const PlayerScrubberSlider({
     super.key,
     required this.value,

@@ -44,6 +44,9 @@ import 'widgets/live_photo_still_view.dart';
 /// - **合成安全**：原生 PlatformView / Web `HtmlElementView` 不会被包在 `Opacity` /
 ///   `Transform` / `ClipRRect` 祖先下（否则全端易黑屏）；微缩放与交叉淡入仅作用在静态封面上。
 class LivePhotoPlayer extends StatefulWidget {
+  /// 创建跨平台动态照片播放组件。
+  ///
+  /// Creates a cross-platform [LivePhotoPlayer] for [source].
   const LivePhotoPlayer({
     super.key,
     required this.source,
@@ -73,76 +76,123 @@ class LivePhotoPlayer extends StatefulWidget {
   });
 
   /// 动态照片来源（支持配对图+视频、单文件 Motion Photo、内存字节或自动配对本地文件）。
+  ///
+  /// Live Photo / Motion Photo source descriptor.
   final LivePhotoSource source;
 
-  /// 可选的外部 [VideoPlayerController]。
-  /// 若为 `null`，组件将在触发播放时自动创建并协调内部控制器（遵循插件全局单会话约束）。
+  /// 可选的外部 [VideoPlayerController]；为 `null` 时按需自动创建并协调单会话控制器。
+  ///
+  /// Optional external [VideoPlayerController]; auto-managed when `null`.
   final VideoPlayerController? controller;
 
   /// 动态照片触发与循环模式，默认 [LivePhotoPlayMode.longPress]。
+  ///
+  /// Interaction and playback trigger mode (defaults to [LivePhotoPlayMode.longPress]).
   final LivePhotoPlayMode playMode;
 
-  /// 在桌面端（macOS / Windows / Linux / Web）是否允许鼠标悬停在 `LIVE` 徽标上直接触发播放（仿 macOS Photos 行为），默认 `true`。
+  /// 在桌面端/Web 是否允许鼠标悬停 `LIVE` 徽标直接触发播放，默认 `true`。
+  ///
+  /// Enables desktop/Web hover playback over the `LIVE` badge (defaults to `true`).
   final bool enableBadgeHoverOnDesktop;
 
   /// `LIVE` 徽标在画面四角的位置，默认 [LivePhotoBadgePosition.topLeft]。
+  ///
+  /// Corner placement of the `LIVE` badge (defaults to [LivePhotoBadgePosition.topLeft]).
   final LivePhotoBadgePosition badgePosition;
 
   /// `LIVE` 徽标距离边缘的内边距。
+  ///
+  /// Padding inset for the `LIVE` badge.
   final EdgeInsets badgePadding;
 
   /// 是否显示 `LIVE` 徽标，默认 `true`。
+  ///
+  /// Whether to show the `LIVE` badge overlay (defaults to `true`).
   final bool showBadge;
 
   /// 徽标文字，默认 `'LIVE'`（可设为 `'实况'` 等）。
+  ///
+  /// Text label shown on the badge (defaults to `'LIVE'`).
   final String badgeLabel;
 
   /// 是否在徽标旁展示静音切换按钮，默认 `true`。
+  ///
+  /// Whether to display the inline mute button beside the badge (defaults to `true`).
   final bool showMuteButton;
 
   /// 初始是否静音，默认 `false`。
+  ///
+  /// Initial mute state (defaults to `false`).
   final bool initiallyMuted;
 
-  /// 播放动态效果时是否启用 iOS / macOS 相册风格的微缩放动效，默认 `true`。
+  /// 播放动态效果时是否启用相册风格的微缩放动效，默认 `true`。
+  ///
+  /// Enables subtle Photos-style zoom animation during motion playback (defaults to `true`).
   final bool enableScaleEffect;
 
   /// 启用缩放动效时的目标缩放比例，默认 `1.035`。
+  ///
+  /// Target scale factor when [enableScaleEffect] is enabled (defaults to `1.035`).
   final double activeScale;
 
   /// 触发播放时是否产生轻触觉反馈（HapticFeedback），默认 `true`。
+  ///
+  /// Enables light haptic feedback on mobile playback triggers (defaults to `true`).
   final bool enableHapticFeedback;
 
   /// 画面填充方式，默认 [BoxFit.cover]。
+  ///
+  /// How the still cover and motion video fit inside the bounds (defaults to [BoxFit.cover]).
   final BoxFit fit;
 
   /// 可选宽高比约束；若为 `null` 则填满父容器。
+  ///
+  /// Optional aspect ratio constraint; fills parent when `null`.
   final double? aspectRatio;
 
-  /// 可选圆角裁剪。
+  /// 可选圆角裁剪（视频激活时自动使用安全角遮罩以避免 PlatformView 黑屏）。
+  ///
+  /// Optional corner radius (uses a safe corner mask while video is mounted).
   final BorderRadius? borderRadius;
 
   /// 背景底色，默认读取 [VideoPlayerTheme.backgroundColor]。
+  ///
+  /// Background color behind the still and video surface.
   final Color? backgroundColor;
 
   /// 静态图与动态视频之间的交叉淡入淡出时长，默认 `220ms`。
+  ///
+  /// Crossfade duration between the still cover and motion video.
   final Duration crossfadeDuration;
 
   /// 可选的局部主题覆盖。
+  ///
+  /// Optional per-widget [VideoPlayerTheme] override.
   final VideoPlayerTheme? theme;
 
   /// 动态视频开始播放时的回调。
+  ///
+  /// Callback invoked when motion playback begins.
   final VoidCallback? onPlaybackStart;
 
   /// 动态视频自然播放结束或停止时的回调。
+  ///
+  /// Callback invoked when motion playback completes or stops.
   final VoidCallback? onPlaybackComplete;
 
   /// 自定义角标构建器。
+  ///
+  /// Custom builder replacing the default `LIVE` badge.
   final Widget Function(BuildContext context, bool isPlaying, bool isMuted)? badgeBuilder;
 
   /// 静态封面加载前的占位构建器。
+  ///
+  /// Optional placeholder builder shown before the still cover is ready.
   final Widget Function(BuildContext context)? placeholderBuilder;
 
   /// 解析或播放出错时的错误构建器。
+  ///
+  /// Optional error overlay builder shown when resolution or playback fails.
   final Widget Function(BuildContext context, String? errorMessage)? errorBuilder;
 
   @override

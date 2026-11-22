@@ -4,33 +4,41 @@ import '../data/enums/aspect_ratio_mode.dart';
 import '../data/models/navite_file.dart';
 import 'player_event.dart';
 
-/// Session-transport seam for the single active native player.
+/// 进程级单一原生播放器的传输层抽象接口。
 ///
-/// Process-wide invariant: one native player behind the global channels.
-/// [create] / [dispose] acquire and release that session — they are not a
-/// multi-instance factory.
+/// 进程级不变量：全局底层仅维护一个原生播放器实例；[create] 与 [dispose] 用于获取和释放该会话，
+/// 而非多实例工厂。不包含独立媒体探测能力（时长探测与封面抽取位于 `MediaProbe`）。
 ///
-/// Does **not** include media probe (`getDuration` / `extractCovers`).
+/// Session-transport abstraction for the single process-wide native player.
+/// Does not include standalone media probing (`getDuration` / `extractCovers`).
 abstract class PlayerBackend {
-  /// Flutter texture id after [create]; `null` before create or after dispose.
+  /// 调用 [create] 后获得的 Flutter 纹理 ID；创建前或释放后为 `null`。
   ///
-  /// On PlatformView platforms (iOS/macOS/Android) native `create` returns `0`
-  /// (not a Flutter [Texture] id). The picture is shown via the registered
-  /// PlatformView (`plugins.xuehua/navite_video_player`).
+  /// 在 PlatformView 平台（iOS/macOS/Android）原生 `create` 返回 `0`（非纹理 ID），
+  /// 画面由已注册的 PlatformView 展示。
+  ///
+  /// Flutter texture ID after [create]; `null` before creation or after disposal.
   FlutterSignal<int?> get textureId;
 
-  /// Typed events from the native (or fake) player.
+  /// 来自原生（或测试桩）播放器的强类型事件流。
+  ///
+  /// Typed playback, metadata, video size, and cast event stream.
   Stream<PlayerEvent> get events;
 
-  /// Acquires the single native session and registers a texture / platform view.
+  /// 获取全局唯一原生会话并注册渲染纹理或 PlatformView。
+  ///
+  /// Acquires the single native session and returns its texture ID (`0` on PlatformView hosts).
   Future<int> create();
 
+  /// 在当前活跃会话上打开媒体 [url]。
+  ///
   /// Opens [url] on the active session.
   ///
-  /// [castUrl] is an optional HTTP(S) URL used by remote cast receivers when
-  /// [url] is a local `file://` path, loopback proxy, or custom cache scheme.
-  /// [cacheKey], [headers], and [enableCache] forward media cache parameters to
-  /// native backends that manage disk caching directly.
+  /// - [url]：原生可直接播放的媒体地址。Native-playable media URL.
+  /// - [castUrl]：可选公网/局域网 HTTP(S) 投屏地址。Optional HTTP(S) URL for remote cast receivers.
+  /// - [cacheKey]：可选稳定磁盘缓存键。Optional stable disk cache key.
+  /// - [headers]：可选自定义 HTTP 请求头。Optional custom HTTP request headers.
+  /// - [enableCache]：可选单源缓存开关覆盖。Optional per-source cache toggle.
   Future<void> open(
     String url, {
     String? castUrl,
@@ -39,35 +47,62 @@ abstract class PlayerBackend {
     bool? enableCache,
   });
 
+  /// 开始或恢复播放。
+  ///
+  /// Starts or resumes playback.
   Future<void> play();
 
+  /// 暂停播放。
+  ///
+  /// Pauses playback.
   Future<void> pause();
 
+  /// 跳转至指定时间点（[positionMs]，单位毫秒）。
+  ///
+  /// Seeks to [positionMs] in milliseconds.
   Future<void> seek(int positionMs);
 
+  /// 设置播放音量（[volume]，范围 `0.0..1.0`）。
+  ///
+  /// Sets output audio [volume] (`0.0..1.0`).
   Future<void> setVolume(double volume);
 
+  /// 设置播放倍速（[speed]）。
+  ///
+  /// Sets playback rate [speed].
   Future<void> setSpeed(double speed);
 
-  /// Maps to each platform's official fit property (videoGravity / resizeMode /
-  /// mpv keepaspect / object-fit).
+  /// 设置画面适应模式（映射到各平台官方缩放属性：`videoGravity` / `resizeMode` / `object-fit` / mpv）。
+  ///
+  /// Maps [mode] to each platform's native scaling property.
   Future<void> setAspectRatioMode(AspectRatioMode mode);
 
-  /// Updates the native render / output size (needed for mpv panscan relative
-  /// to the Flutter view). No-op on PlatformView platforms that size themselves.
+  /// 上报 Flutter 视图尺寸与设备像素比（供 libmpv 桌面渲染纹理适配，PlatformView 平台为空操作）。
+  ///
+  /// Reports Flutter view [width], [height], and [devicePixelRatio] to texture-based hosts.
   Future<void> setVideoViewSize({
     required double width,
     required double height,
     required double devicePixelRatio,
   });
 
-  /// Presents the operating system's native wireless cast / route picker.
+  /// 唤起操作系统原生的无线投屏设备选择器。
+  ///
+  /// Presents the operating system's native wireless cast route picker.
   Future<void> showCastPicker() async {}
 
-  /// Disconnects the active wireless cast session and returns playback locally.
+  /// 断开当前无线投屏会话并恢复本地播放。
+  ///
+  /// Disconnects the active wireless cast session and restores local playback.
   Future<void> stopCasting() async {}
 
+  /// 释放原生播放器资源。
+  ///
+  /// Releases native player resources.
   Future<void> dispose();
 
+  /// 截取当前播放画面帧为 PNG [NaviteFile]（可选指定保存路径 [savePath]）。
+  ///
+  /// Captures the current playback frame as a PNG [NaviteFile], optionally saving to [savePath].
   Future<NaviteFile> takeSnapshot({String? savePath});
 }

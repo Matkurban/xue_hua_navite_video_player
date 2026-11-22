@@ -24,16 +24,25 @@ import 'playback_session_state.dart';
 import 'player_backend.dart';
 import 'player_event.dart';
 
-/// Deep module owning open→ready→playing/paused/stopped/completed/error for one session.
+/// 管理单个播放器完整生命周期（open → ready → playing / paused / stopped / completed / error）
+/// 的核心状态机模块。
 ///
-/// Projects [PlayerBackend] events into signals. Session reset on [openSource]
-/// lives here (not in the transport backend).
+/// 负责将 [PlayerBackend] 发出的原生事件流映射为 [PlaybackSessionState] 中的响应式信号，
+/// 协调磁盘缓存固定（pin/unpin）、实况照片自动探测与提取、本地投屏代理、全屏/方向锁定、
+/// 循环播放以及 Seek 稳定窗口去抖等逻辑。
 ///
-/// Process-wide: one active native session (see [PlayerBackend]).
+/// 进程级约束：同一时刻仅允许存在一个活跃的原生 [ChannelPlayerBackend] 会话。
+///
+/// Deep module owning the `open -> ready -> playing/paused/stopped/completed/error`
+/// lifecycle for one playback session. Projects [PlayerBackend] events into
+/// reactive signals and enforces the process-wide single active native session
+/// invariant.
 class PlaybackSession {
   static PlaybackSession? _activeNativeSession;
 
-  /// Whether a native [ChannelPlayerBackend] session is currently active.
+  /// 当前进程中是否存在活跃的原生 [ChannelPlayerBackend] 会话。
+  ///
+  /// Whether a native [ChannelPlayerBackend] session is currently active in this process.
   static bool get hasActiveNativeSession => _activeNativeSession != null;
 
   final PlayerBackend _backend;
@@ -70,45 +79,188 @@ class PlaybackSession {
   Duration? _pendingSeekTarget;
   static const int _seekSettleToleranceMs = 900;
 
-  /// Live / audio-only streams may never emit a positive duration.
+  /// 直播流或纯音频流可能永远不汇报正向时长，超过此兜底延迟后自动将加载态转为就绪。
+  ///
+  /// Fallback delay after which streams that never emit a positive duration
+  /// (such as live or audio-only streams) transition out of loading into ready.
   @visibleForTesting
   static Duration readyFallbackDelay = const Duration(seconds: 3);
 
+  /// 当前播放状态信号。
+  ///
+  /// Reactive signal of the current [PlayState].
   FlutterSignal<PlayState> get playState => _state.playState;
+
+  /// 当前播放位置信号。
+  ///
+  /// Reactive signal of the current playback position.
   FlutterSignal<Duration> get position => _state.position;
+
+  /// 当前已缓冲位置信号。
+  ///
+  /// Reactive signal of the buffered playback position.
   FlutterSignal<Duration> get bufferedPosition => _state.bufferedPosition;
+
+  /// 当前媒体总时长信号。
+  ///
+  /// Reactive signal of the total media duration.
   FlutterSignal<Duration> get duration => _state.duration;
+
+  /// 当前音量信号（`0.0` ~ `1.0`）。
+  ///
+  /// Reactive signal of the volume in `[0.0, 1.0]`.
   FlutterSignal<double> get volume => _state.volume;
+
+  /// 当前播放倍速信号。
+  ///
+  /// Reactive signal of the playback speed multiplier.
   FlutterSignal<double> get speed => _state.speed;
+
+  /// 当前是否处于缓冲状态的信号。
+  ///
+  /// Reactive signal indicating whether the player is buffering.
   FlutterSignal<bool> get isBuffering => _state.isBuffering;
+
+  /// 最近一次错误信息信号；无错时为 `null`。
+  ///
+  /// Reactive signal holding the latest error message, or `null`.
   FlutterSignal<String?> get errorMessage => _state.errorMessage;
+
+  /// 当前加载媒体源的标识 URL 或路径信号。
+  ///
+  /// Reactive signal of the currently loaded media URL or identifier.
   FlutterSignal<String?> get currentUrl => _state.currentUrl;
+
+  /// 当前媒体 MIME 类型信号。
+  ///
+  /// Reactive signal of the detected media MIME type.
   FlutterSignal<String?> get mimeType => _state.mimeType;
+
+  /// 当前视频逻辑分辨率尺寸信号。
+  ///
+  /// Reactive signal of the decoded video dimensions.
   FlutterSignal<Size> get videoSize => _state.videoSize;
+
+  /// 当前视频旋转角度信号（度）。
+  ///
+  /// Reactive signal of the video rotation angle in degrees.
   FlutterSignal<int> get rotationDegrees => _state.rotationDegrees;
+
+  /// 当前是否静音的信号。
+  ///
+  /// Reactive signal indicating whether audio is muted.
   FlutterSignal<bool> get muted => _state.muted;
+
+  /// 当前是否循环播放的信号。
+  ///
+  /// Reactive signal indicating whether end-of-stream looping is enabled.
   FlutterSignal<bool> get isLooping => _state.isLooping;
+
+  /// 快进/快退步进时长配置信号。
+  ///
+  /// Reactive signal of the active [SkipSecondType].
   FlutterSignal<SkipSecondType> get skipSecondType => _state.skipSecondType;
+
+  /// 当前画面宽高比填充模式信号。
+  ///
+  /// Reactive signal of the active [AspectRatioMode].
   FlutterSignal<AspectRatioMode> get aspectRatioMode => _state.aspectRatioMode;
+
+  /// 当前是否全屏的信号。
+  ///
+  /// Reactive signal indicating whether fullscreen mode is active.
   FlutterSignal<bool> get isFullscreen => _state.isFullscreen;
+
+  /// 当前全屏界面与方向是否已锁定的信号。
+  ///
+  /// Reactive signal indicating whether fullscreen controls and orientation are locked.
   FlutterSignal<bool> get isLocked => _state.isLocked;
+
+  /// 当前屏幕亮度信号（`0.0` ~ `1.0`）。
+  ///
+  /// Reactive signal of the screen brightness in `[0.0, 1.0]`.
   FlutterSignal<double> get brightness => _state.brightness;
+
+  /// 当前无线投屏状态信号。
+  ///
+  /// Reactive signal of the active [CastState].
   FlutterSignal<CastState> get castState => _state.castState;
+
+  /// 当前无线投屏目标设备名称信号。
+  ///
+  /// Reactive signal of the remote cast device name, if any.
   FlutterSignal<String?> get castDeviceName => _state.castDeviceName;
+
+  /// 当前解析出的实况照片数据包信号。
+  ///
+  /// Reactive signal of the resolved [LivePhotoBundle], if any.
   FlutterSignal<LivePhotoBundle?> get livePhotoBundle => _state.livePhotoBundle;
 
+  /// 当前加载媒体是否为实况照片的计算信号。
+  ///
+  /// Computed signal indicating whether the active media is a Live Photo.
   FlutterComputed<bool> get isLivePhoto => _state.isLivePhoto;
+
+  /// 当前实况照片元数据计算信号。
+  ///
+  /// Computed signal of the active [LivePhotoMetadata], if any.
   FlutterComputed<LivePhotoMetadata?> get livePhotoMetadata => _state.livePhotoMetadata;
+
+  /// 当前实况照片静态封面图计算信号。
+  ///
+  /// Computed signal of the active Live Photo still image [NaviteFile], if any.
   FlutterComputed<NaviteFile?> get livePhotoStillImage => _state.livePhotoStillImage;
+
+  /// 结合旋转角度计算得到的有效视频显示宽高比信号。
+  ///
+  /// Computed effective display aspect ratio of the video.
   FlutterComputed<double> get videoAspectRatio => _state.videoAspectRatio;
+
+  /// 当前媒体是否为视频的计算信号。
+  ///
+  /// Computed signal indicating whether the active media is video.
   FlutterComputed<bool> get isVideo => _state.isVideo;
+
+  /// 当前媒体是否为纯音频的计算信号。
+  ///
+  /// Computed signal indicating whether the active media is audio-only.
   FlutterComputed<bool> get isAudio => _state.isAudio;
+
+  /// 当前是否处于播放中状态的计算信号。
+  ///
+  /// Computed signal indicating whether [playState] is [PlayState.playing].
   FlutterComputed<bool> get isPlaying => _state.isPlaying;
+
+  /// 当前播放进度百分比（`0.0` ~ `1.0`）计算信号。
+  ///
+  /// Computed playback progress percentage in `[0.0, 1.0]`.
   FlutterComputed<double> get progressPercent => _state.progressPercent;
+
+  /// 当前缓冲进度百分比（`0.0` ~ `1.0`）计算信号。
+  ///
+  /// Computed buffered progress percentage in `[0.0, 1.0]`.
   FlutterComputed<double> get bufferedPercent => _state.bufferedPercent;
+
+  /// 当前环境是否支持无线投屏的计算信号。
+  ///
+  /// Computed signal indicating whether wireless casting is supported.
   FlutterComputed<bool> get isCastSupported => _state.isCastSupported;
+
+  /// 当前是否处于投屏连接中或已连接状态的计算信号。
+  ///
+  /// Computed signal indicating whether a cast session is active or connecting.
   FlutterComputed<bool> get isCasting => _state.isCasting;
 
+  /// 创建一个 [PlaybackSession] 实例。
+  ///
+  /// - [backend]：底层播放传输后端，默认使用 [ChannelPlayerBackend]。
+  /// - [fullscreen]：全屏协调器，默认使用 [SystemChromeFullscreenCoordinator]。
+  /// - [brightness]：屏幕亮度控制器，默认使用 [ChannelBrightnessController]。
+  /// - [localCastServer]：本地文件投屏代理服务，默认创建新的 [LocalCastHttpServer]。
+  /// - [cacheManager]：磁盘缓存管理器；当使用默认原生后端且未传入时自动绑定 [VideoCacheManager.instance]。
+  ///
+  /// Creates a [PlaybackSession] with optional injected collaborators for
+  /// [backend], [fullscreen], [brightness], [localCastServer], and [cacheManager].
   PlaybackSession({
     PlayerBackend? backend,
     FullscreenCoordinator? fullscreen,
@@ -127,8 +279,18 @@ class PlaybackSession {
     _fullscreenExternalSub = _fullscreen.externalChanges.listen(_onExternalFullscreen);
   }
 
+  /// 原生视频渲染纹理 ID 信号。
+  ///
+  /// Reactive signal of the native video texture ID provided by [_backend].
   FlutterSignal<int?> get textureId => _backend.textureId;
 
+  /// 初始化原生播放会话、订阅后端事件流并同步初始画面比例与屏幕亮度。
+  ///
+  /// 若会话已销毁或进程内已有其他活跃原生会话，将抛出 [StateError]。
+  ///
+  /// Initializes the native backend, subscribes to events, and syncs initial
+  /// aspect ratio and brightness. Throws [StateError] if disposed or if another
+  /// native session is already active.
   Future<void> initialize() async {
     if (_disposed) {
       throw StateError('PlaybackSession has been disposed.');
@@ -340,6 +502,10 @@ class PlaybackSession {
     }
   }
 
+  /// 打开并自动播放网络媒体流 [url]。
+  ///
+  /// Opens and auto-plays a network stream at [url] with optional [cacheKey],
+  /// HTTP [headers], and [enableCache] flag.
   Future<void> playNetwork(
     String url, {
     String? cacheKey,
@@ -350,6 +516,9 @@ class PlaybackSession {
     autoPlay: true,
   );
 
+  /// 打开网络媒体流 [url]（不自动播放）。
+  ///
+  /// Opens a network stream at [url] without starting playback immediately.
   Future<void> openNetwork(
     String url, {
     String? cacheKey,
@@ -360,16 +529,31 @@ class PlaybackSession {
     autoPlay: false,
   );
 
+  /// 打开并自动播放本地文件路径 [path]。
+  ///
+  /// Opens and auto-plays a local media file at [path].
   Future<void> playFile(String path) => openSource(VideoSource.file(path), autoPlay: true);
 
+  /// 打开本地文件路径 [path]（不自动播放）。
+  ///
+  /// Opens a local media file at [path] without starting playback immediately.
   Future<void> openFile(String path) => openSource(VideoSource.file(path), autoPlay: false);
 
+  /// 打开并自动播放 Flutter Asset 资源 [assetPath]。
+  ///
+  /// Opens and auto-plays a Flutter asset at [assetPath] from optional [bundle].
   Future<void> playAsset(String assetPath, {AssetBundle? bundle}) =>
       openSource(VideoSource.asset(assetPath, bundle: bundle), autoPlay: true);
 
+  /// 打开 Flutter Asset 资源 [assetPath]（不自动播放）。
+  ///
+  /// Opens a Flutter asset at [assetPath] without starting playback immediately.
   Future<void> openAsset(String assetPath, {AssetBundle? bundle}) =>
       openSource(VideoSource.asset(assetPath, bundle: bundle), autoPlay: false);
 
+  /// 打开并自动播放实况照片源 [source]，可选通过 [loop] 覆盖循环状态。
+  ///
+  /// Opens and auto-plays a [LivePhotoSource], optionally setting [isLooping] via [loop].
   Future<void> playLivePhoto(LivePhotoSource source, {bool? loop}) async {
     if (loop != null) {
       isLooping.value = loop;
@@ -377,6 +561,9 @@ class PlaybackSession {
     await openSource(VideoSource.livePhoto(source), autoPlay: true);
   }
 
+  /// 打开实况照片源 [source]（不自动播放），可选通过 [loop] 覆盖循环状态。
+  ///
+  /// Opens a [LivePhotoSource] without auto-playing, optionally setting [isLooping].
   Future<void> openLivePhoto(LivePhotoSource source, {bool? loop}) async {
     if (loop != null) {
       isLooping.value = loop;
@@ -384,8 +571,19 @@ class PlaybackSession {
     await openSource(VideoSource.livePhoto(source), autoPlay: false);
   }
 
+  /// 打开并自动播放任意 [VideoSource]。
+  ///
+  /// Opens and auto-plays any [VideoSource].
   Future<void> playSource(VideoSource source) => openSource(source, autoPlay: true);
 
+  /// 打开并加载任意 [VideoSource]：执行会话重置、实况照片解析、磁盘缓存/本地投屏路由解析，
+  /// 随后通知原生后端打开并在 [autoPlay] 为 `true` 时开始播放。
+  ///
+  /// 使用递增的 `_openEpoch` 防护并发切源竞态，确保旧请求的异步结果不会污染新会话状态。
+  ///
+  /// Opens any [VideoSource]: resets media signals, resolves Live Photo bundles
+  /// or cache/cast URLs, configures the backend, and starts playback when
+  /// [autoPlay] is `true`. Uses an epoch counter to guard against concurrent opens.
   Future<void> openSource(VideoSource source, {bool autoPlay = false}) async {
     if (_disposed) return;
 
@@ -525,6 +723,9 @@ class PlaybackSession {
     }
   }
 
+  /// 开始或恢复播放；若已播完则先跳转至 `0` 再播放。
+  ///
+  /// Starts or resumes playback, rewinding to zero first if [playState] is [PlayState.completed].
   Future<void> play() async {
     if (_disposed) return;
     if (playState.value == PlayState.completed) {
@@ -535,11 +736,17 @@ class PlaybackSession {
     await _backend.play();
   }
 
+  /// 暂停播放。
+  ///
+  /// Pauses playback.
   Future<void> pause() async {
     if (_disposed) return;
     await _backend.pause();
   }
 
+  /// 切换播放或暂停状态。
+  ///
+  /// Toggles between playing and paused states.
   Future<void> playOrPause() async {
     if (_disposed) return;
     if (isPlaying.value) {
@@ -549,6 +756,10 @@ class PlaybackSession {
     }
   }
 
+  /// 跳转到目标位置 [targetPosition]，并启用代际与稳定容差窗口防止旧进度回调回跳。
+  ///
+  /// Seeks to [targetPosition] (clamped to `[Duration.zero, duration]`) while
+  /// filtering stale pre-seek native ticks until the backend settles near target.
   Future<void> seek(Duration targetPosition) async {
     if (_disposed) return;
     final total = duration.value;
@@ -571,6 +782,9 @@ class PlaybackSession {
     }
   }
 
+  /// 设置播放音量 [value]（自动钳制到 `0.0..1.0`）并同步更新静音状态。
+  ///
+  /// Sets volume to [value] clamped in `[0.0, 1.0]` and synchronizes [muted].
   Future<void> setVolume(double value) async {
     if (_disposed) return;
     final clamped = value.clamp(0.0, 1.0);
@@ -583,6 +797,9 @@ class PlaybackSession {
     }
   }
 
+  /// 设置静音状态 [value]；取消静音时自动恢复静音前的有效音量。
+  ///
+  /// Sets mute state to [value], restoring the last non-zero volume on unmute.
   Future<void> setMuted(bool value) async {
     if (_disposed) return;
     if (value) {
@@ -600,21 +817,39 @@ class PlaybackSession {
     }
   }
 
+  /// 切换静音状态。
+  ///
+  /// Toggles [muted].
   Future<void> toggleMuted() => setMuted(!muted.value);
 
+  /// 设置播完自动循环开关 [looping]。
+  ///
+  /// Sets whether playback loops automatically upon completion.
   void setLooping(bool looping) {
     if (_disposed) return;
     isLooping.value = looping;
   }
 
+  /// 切换播完自动循环开关。
+  ///
+  /// Toggles [isLooping].
   void toggleLooping() => setLooping(!isLooping.value);
 
+  /// 更新快进/快退步进时长枚举 [type]。
+  ///
+  /// Updates [skipSecondType] to [type].
   void setSkipSecondType(SkipSecondType type) {
     skipSecondType.value = type;
   }
 
+  /// 向前快进一个 [skipSecondType] 步长。
+  ///
+  /// Seeks forward by [skipSecondType].
   Future<void> seekForward() => _seekBy(skipSecondType.value.duration);
 
+  /// 向后快退一个 [skipSecondType] 步长。
+  ///
+  /// Seeks backward by [skipSecondType].
   Future<void> seekBackward() => _seekBy(-skipSecondType.value.duration);
 
   Future<void> _seekBy(Duration delta) async {
@@ -626,12 +861,22 @@ class PlaybackSession {
     await seek(target);
   }
 
+  /// 设置画面填充比例模式 [mode] 并下发至原生后端。
+  ///
+  /// Sets the video [AspectRatioMode] and forwards it to the backend.
   Future<void> setAspectRatioMode(AspectRatioMode mode) async {
     if (_disposed) return;
     aspectRatioMode.value = mode;
     await _backend.setAspectRatioMode(mode);
   }
 
+  /// 将当前视频渲染视图尺寸与像素密度同步至原生后端。
+  ///
+  /// - [width]：逻辑宽度（需大于 0）。
+  /// - [height]：逻辑高度（需大于 0）。
+  /// - [devicePixelRatio]：设备像素比。
+  ///
+  /// Reports the rendered viewport [width], [height], and [devicePixelRatio] to the backend.
   Future<void> setVideoViewSize({
     required double width,
     required double height,
@@ -646,19 +891,27 @@ class PlaybackSession {
     );
   }
 
+  /// 弹出操作系统原生无线投屏 / 路由选择器。
+  ///
   /// Presents the operating system's native wireless cast / route picker.
   Future<void> showCastPicker() async {
     if (_disposed) return;
     await _backend.showCastPicker();
   }
 
+  /// 断开当前无线投屏会话并恢复本地播放。
+  ///
   /// Disconnects the active wireless cast session and returns playback locally.
   Future<void> stopCasting() async {
     if (_disposed) return;
     await _backend.stopCasting();
   }
 
-  /// See [VideoPlayerController.enterFullscreen] for the UI contract.
+  /// 进入全屏模式，同步当前屏幕亮度并通知 [_fullscreen] 协调器执行平台切换。
+  /// UI 契约详见 [VideoPlayerController.enterFullscreen]。
+  ///
+  /// Enters fullscreen mode, refreshes [brightness], and delegates platform
+  /// fullscreen transitions to [_fullscreen]. See [VideoPlayerController.enterFullscreen].
   Future<void> enterFullscreen() async {
     if (_disposed || isFullscreen.value) return;
     final bool landscape = videoAspectRatio.value > 1.0;
@@ -671,6 +924,9 @@ class PlaybackSession {
     await _fullscreen.enter(landscapeVideo: landscape);
   }
 
+  /// 退出全屏模式并重置锁定状态。
+  ///
+  /// Exits fullscreen mode and clears [isLocked].
   Future<void> exitFullscreen() async {
     if (_disposed || !isFullscreen.value) return;
     isLocked.value = false;
@@ -678,6 +934,9 @@ class PlaybackSession {
     await _fullscreen.exit();
   }
 
+  /// 切换全屏状态。
+  ///
+  /// Toggles between [enterFullscreen] and [exitFullscreen].
   Future<void> toggleFullscreen() async {
     if (isFullscreen.value) {
       await exitFullscreen();
@@ -686,6 +945,11 @@ class PlaybackSession {
     }
   }
 
+  /// 锁定或解锁全屏控制界面及设备方向；非全屏状态下始终保持未锁定。
+  ///
+  /// - [locked]：是否锁定。
+  /// - [lockedOrientation]：锁定时可选指定的固定方向。
+  ///
   /// Locks or unlocks fullscreen controls and device orientation.
   Future<void> setLocked(bool locked, {DeviceOrientation? lockedOrientation}) async {
     if (_disposed) return;
@@ -702,14 +966,26 @@ class PlaybackSession {
     );
   }
 
+  /// 锁定全屏控制与屏幕方向，可选指定 [lockedOrientation]。
+  ///
+  /// Locks fullscreen controls and orientation, optionally pinning [lockedOrientation].
   Future<void> lock({DeviceOrientation? lockedOrientation}) =>
       setLocked(true, lockedOrientation: lockedOrientation);
 
+  /// 解锁全屏控制并恢复双向重力感应旋转。
+  ///
+  /// Unlocks fullscreen controls and restores gravity-driven bidirectional rotation.
   Future<void> unlock() => setLocked(false);
 
+  /// 在全屏状态下切换锁定状态。
+  ///
+  /// Toggles [isLocked] while in fullscreen.
   Future<void> toggleLocked({DeviceOrientation? lockedOrientation}) =>
       setLocked(!isLocked.value, lockedOrientation: lockedOrientation);
 
+  /// 设置屏幕亮度 [value]（自动钳制在 `0.0..1.0`）并更新 [brightness] 信号。
+  ///
+  /// Sets screen brightness to [value] (clamped to `[0.0, 1.0]`).
   Future<void> setBrightness(double value) async {
     if (_disposed) return;
     final double clamped = value.clamp(0.0, 1.0);
@@ -717,18 +993,31 @@ class PlaybackSession {
     brightness.value = clamped;
   }
 
+  /// 设置播放倍速 [value] 并更新 [speed] 信号。
+  ///
+  /// Sets the playback speed multiplier to [value].
   Future<void> setSpeed(double value) async {
     if (_disposed) return;
     await _backend.setSpeed(value);
     speed.value = value;
   }
 
+  /// 暂停播放并将 [playState] 置为 [PlayState.stopped]。
+  ///
+  /// Pauses playback and sets [playState] to [PlayState.stopped].
   Future<void> stop() async {
     if (_disposed) return;
     await _backend.pause();
     playState.value = PlayState.stopped;
   }
 
+  /// 截取当前播放帧为 PNG 格式的 [NaviteFile]。
+  ///
+  /// - [savePath]：可选保存路径。
+  /// - 异常：会话已销毁或尚未加载媒体时抛出 [StateError]。
+  ///
+  /// Captures the current playback frame as a PNG [NaviteFile]. Throws
+  /// [StateError] if disposed or if no media is currently loaded.
   Future<NaviteFile> takeSnapshot({String? savePath}) async {
     if (_disposed) {
       throw StateError('PlaybackSession has been disposed.');
@@ -748,6 +1037,10 @@ class PlaybackSession {
     isFullscreen.value = fullscreen;
   }
 
+  /// 销毁当前会话、释放进程级原生槽位、退出全屏、取消全部订阅与定时器并释放后端资源。
+  ///
+  /// Disposes this session, synchronously frees the process-wide native slot,
+  /// exits fullscreen if active, cancels subscriptions/timers, and tears down the backend.
   Future<void> dispose() async {
     if (_disposed) return;
     // Mark disposed and free the process-wide native slot synchronously so a
@@ -787,6 +1080,10 @@ class PlaybackSession {
     });
   }
 
+  /// 重置媒体级状态信号、取消就绪兜底定时器并解除当前缓存键固定。
+  ///
+  /// Resets media-scoped signals, cancels pending fallback timers, and unpins
+  /// any active cache key.
   void reset() {
     _releasePinnedCacheKey();
     _readyFallbackTimer?.cancel();

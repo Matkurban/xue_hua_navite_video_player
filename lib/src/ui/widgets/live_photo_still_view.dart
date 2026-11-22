@@ -5,11 +5,14 @@ import '../../core/video_source.dart';
 import '../../data/models/live_photo_bundle.dart';
 import '../../data/models/navite_file.dart';
 
-/// 跨平台渲染动态照片的静态封面图组件（支持内存字节、本地文件、Asset 与网络 URL）。
+/// 跨平台渲染动态照片静态封面图的组件（支持内存字节、本地文件、Asset 与网络 URL）。
 ///
 /// Cross-platform widget that renders the still cover image of a [LivePhotoBundle]
 /// without importing `dart:io` directly.
 class LivePhotoStillView extends StatefulWidget {
+  /// 创建动态照片静态封面图展示组件。
+  ///
+  /// Creates a [LivePhotoStillView].
   const LivePhotoStillView({
     super.key,
     this.bundle,
@@ -18,9 +21,24 @@ class LivePhotoStillView extends StatefulWidget {
     this.placeholderBuilder,
   });
 
+  /// 已解析的动态照片资源包（优先从中读取静态图文件或来源）。
+  ///
+  /// Resolved [LivePhotoBundle] whose still image is rendered when available.
   final LivePhotoBundle? bundle;
+
+  /// 当 [bundle] 尚未就绪或不含图片源时使用的回退图片源。
+  ///
+  /// Fallback [VideoSource] used when [bundle] is not yet resolved.
   final VideoSource? fallbackImageSource;
+
+  /// 图片在容器中的填充适配方式，默认 [BoxFit.cover]。
+  ///
+  /// How the still cover image fits within its bounds (defaults to [BoxFit.cover]).
   final BoxFit fit;
+
+  /// 封面加载前或解码失败时的占位组件构建器。
+  ///
+  /// Optional placeholder builder shown while loading or on decode failure.
   final Widget Function(BuildContext context)? placeholderBuilder;
 
   @override

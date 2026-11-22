@@ -11,6 +11,9 @@ import 'player_glass_surface.dart';
 /// Displays the signature `LIVE` badge with concentric Live Photo rings,
 /// playback activity state, desktop hover callbacks, and an optional mute toggle button.
 class LivePhotoBadge extends StatelessWidget {
+  /// 创建动态照片角标组件。
+  ///
+  /// Creates a [LivePhotoBadge].
   const LivePhotoBadge({
     super.key,
     this.label = 'LIVE',
@@ -26,33 +29,53 @@ class LivePhotoBadge extends StatelessWidget {
   });
 
   /// 徽标文字，默认 `'LIVE'`（可自定义为 `'实况'` 等）。
+  ///
+  /// Badge label text (defaults to `'LIVE'`).
   final String label;
 
   /// 当前是否正在播放动态照片视频。
+  ///
+  /// Whether the Live Photo motion clip is currently playing.
   final bool isPlaying;
 
   /// 当前是否正在加载动态照片视频。
+  ///
+  /// Whether the Live Photo motion clip is currently loading.
   final bool isLoading;
 
   /// 是否在徽标旁显示静音切换按钮。
+  ///
+  /// Whether to show an inline mute toggle button next to the badge.
   final bool showMuteButton;
 
   /// 当前是否已静音。
+  ///
+  /// Whether audio is currently muted.
   final bool isMuted;
 
   /// 点击 LIVE 徽标时的回调（通常用于触发播放/停止）。
+  ///
+  /// Callback invoked when the badge is tapped.
   final VoidCallback? onTap;
 
   /// 桌面端鼠标移入 LIVE 徽标时的回调（仿 macOS Photos 悬停徽标即播放）。
+  ///
+  /// Callback invoked when a desktop mouse pointer enters the badge.
   final VoidCallback? onHoverStart;
 
   /// 桌面端鼠标移出 LIVE 徽标时的回调。
+  ///
+  /// Callback invoked when a desktop mouse pointer exits the badge.
   final VoidCallback? onHoverEnd;
 
   /// 点击静音按钮时的回调。
+  ///
+  /// Callback invoked when the mute button is tapped.
   final VoidCallback? onToggleMute;
 
   /// 是否使用紧凑尺寸（用于播放器顶栏内嵌展示）。
+  ///
+  /// Whether to render a compact variant suitable for the top bar.
   final bool compact;
 
   @override

@@ -11,8 +11,13 @@ import 'player_icon_button.dart';
 import 'player_loading_indicator.dart';
 import 'player_menu_button.dart';
 
-/// Default top bar of [VideoPlayer], adapting to Material and Cupertino styles.
+/// 默认顶栏组件（包含关闭/退出全屏按钮、居中标题、Live Photo 徽标、投屏按钮与画面模式菜单）。
+///
+/// Default top bar of `VideoPlayer`, adapting to Material and Cupertino styles.
 class PlayerTopBar extends StatelessWidget {
+  /// 创建默认顶栏组件。
+  ///
+  /// Creates a [PlayerTopBar].
   const PlayerTopBar({
     super.key,
     required this.slot,
@@ -26,14 +31,49 @@ class PlayerTopBar extends StatelessWidget {
     required this.onShowControls,
   });
 
+  /// 当前播放器槽位上下文。
+  ///
+  /// Active player slot context.
   final VideoPlayerSlotContext slot;
+
+  /// 左侧自定义组件；为 `null` 时显示默认关闭/退出全屏按钮。
+  ///
+  /// Optional leading widget; defaults to the close / exit-fullscreen button.
   final Widget? leading;
+
+  /// 居中标题组件。
+  ///
+  /// Optional centered title widget.
   final Widget? title;
+
+  /// 右侧自定义操作组件列表。
+  ///
+  /// Trailing custom action widgets.
   final List<Widget> actions;
+
+  /// 兼容旧版的额外右侧操作组件列表。
+  ///
+  /// Legacy extra trailing actions merged after [actions].
   final List<Widget> topBarActions;
+
+  /// 当平台支持投屏时是否显示无线投屏按钮。
+  ///
+  /// Whether to display the wireless cast button when supported.
   final bool showCastButton;
+
+  /// 是否显示画面适应模式菜单按钮。
+  ///
+  /// Whether to display the aspect-ratio mode selector menu.
   final bool showAspectRatioMenu;
+
+  /// 点击默认关闭按钮时的回调。
+  ///
+  /// Callback invoked when the default close button is pressed.
   final VoidCallback onClose;
+
+  /// 顶栏任意交互后刷新控件显隐状态的回调。
+  ///
+  /// Callback invoked on top-bar interactions to refresh controls visibility.
   final VoidCallback onShowControls;
 
   @override

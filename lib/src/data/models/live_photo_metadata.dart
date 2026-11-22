@@ -33,6 +33,15 @@ class LivePhotoMetadata {
   /// Optional content identifier linking the still image and motion video.
   final String? contentIdentifier;
 
+  /// 创建动态照片元数据对象。
+  ///
+  /// Creates a [LivePhotoMetadata] descriptor.
+  ///
+  /// - [format]：动态照片容器格式。Container format.
+  /// - [videoOffset]：单文件内嵌视频流的起始字节偏移量。Byte offset of embedded video.
+  /// - [videoLength]：单文件内嵌视频流的字节长度。Byte length of embedded video.
+  /// - [presentationTimestamp]：静态封面帧对应的视频时间戳。Still frame presentation timestamp.
+  /// - [contentIdentifier]：关联静态图与动态视频的内容标识。Optional content identifier.
   const LivePhotoMetadata({
     required this.format,
     this.videoOffset,

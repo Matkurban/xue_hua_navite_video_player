@@ -8,8 +8,13 @@ import 'player_icon_button.dart';
 import 'player_menu_button.dart';
 import 'player_scrubber_slider.dart';
 
-/// Default bottom scrubber bar of [VideoPlayer], adapting to Material and Cupertino styles.
+/// 默认底部进度条与控制栏组件，自动适配 Material 与 Cupertino 设计风格。
+///
+/// Default bottom scrubber bar of `VideoPlayer`, adapting to Material and Cupertino styles.
 class PlayerBottomScrubber extends StatefulWidget {
+  /// 创建底部进度条与控制栏组件。
+  ///
+  /// Creates a [PlayerBottomScrubber].
   const PlayerBottomScrubber({
     super.key,
     required this.slot,
@@ -19,10 +24,29 @@ class PlayerBottomScrubber extends StatefulWidget {
     required this.enableFullscreen,
   });
 
+  /// 当前播放器槽位上下文（控制器、主题与显隐控制回调）。
+  ///
+  /// Slot context providing controller, theme, and visibility callbacks.
   final VideoPlayerSlotContext slot;
+
+  /// 用户开始拖动进度条时的回调（用于暂停自动隐藏计时器）。
+  ///
+  /// Invoked when scrubbing starts to pause the auto-hide timer.
   final VoidCallback onInteractStart;
+
+  /// 用户结束拖动进度条时的回调（用于恢复自动隐藏计时器）。
+  ///
+  /// Invoked when scrubbing ends to resume the auto-hide timer.
   final VoidCallback onInteractEnd;
+
+  /// 用户点击静音、倍速或全屏按钮时的交互通知回调。
+  ///
+  /// Invoked on button interactions to refresh chrome visibility.
   final VoidCallback onInteract;
+
+  /// 是否显示底栏右侧的全屏切换按钮。
+  ///
+  /// Whether to render the fullscreen toggle button.
   final bool enableFullscreen;
 
   @override

@@ -30,9 +30,10 @@ enum LivePhotoFormat {
   /// Apple Live Photo 静帧容器（HEIC `MiPr`）或 vivo 导出的 Live Photo 静帧。
   ///
   /// 文件本身通常不含可抽取的 motion 视频轨（配对 `.MOV` 可能缺失）；插件会尝试
-  /// 从静帧合成短视频，或走 Flutter Ken Burns 动效，避免把 HEIC 当视频硬开导致黑屏。
+  /// 从静帧合成短视频，或走 Flutter 动效，避免把 HEIC 当视频硬开导致黑屏。
   ///
-  /// Apple Live Photo still container (`MiPr`) / vivo-exported Live Photo still.
+  /// Apple Live Photo still container (`MiPr`) or vivo-exported Live Photo still
+  /// without an embedded companion video track.
   appleLivePhoto,
 
   /// 未知或非动态照片。
@@ -40,9 +41,13 @@ enum LivePhotoFormat {
   /// Unknown or not a Live Photo / Motion Photo.
   unknown;
 
+  /// 用于序列化的协议字符串名称。
+  ///
   /// Wire name used for serialization.
   String get wireName => name;
 
+  /// 当前格式是否属于单文件内嵌式 Motion Photo。
+  ///
   /// Whether this format represents a single-file embedded Motion Photo.
   bool get isSingleFile => switch (this) {
     LivePhotoFormat.gcameraMicroVideo ||
@@ -52,7 +57,15 @@ enum LivePhotoFormat {
     LivePhotoFormat.paired || LivePhotoFormat.appleLivePhoto || LivePhotoFormat.unknown => false,
   };
 
-  /// Parses [LivePhotoFormat] from a serialized wire string.
+  /// 从序列化协议字符串解析对应的 [LivePhotoFormat]。
+  ///
+  /// Parses a [LivePhotoFormat] from a serialized wire string.
+  ///
+  /// - [raw]：序列化字符串（可为 `null`）。
+  ///   Serialized wire string (may be `null`).
+  ///
+  /// 返回值 / Returns：匹配到的 [LivePhotoFormat]；无法识别或为 `null` 时返回 [LivePhotoFormat.unknown]。
+  /// The matching [LivePhotoFormat], or [LivePhotoFormat.unknown] when unrecognized or `null`.
   static LivePhotoFormat fromWire(String? raw) {
     return switch (raw) {
       'paired' => LivePhotoFormat.paired,

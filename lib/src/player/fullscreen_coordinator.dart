@@ -6,40 +6,72 @@ import 'package:flutter/services.dart';
 import '../bridge/video_player_host_bridge.dart';
 import 'browser_fullscreen.dart';
 
-/// Applies / restores system UI, window, or browser fullscreen.
+/// 全屏宿主协调器抽象接口：负责应用与恢复系统栏/屏幕方向、桌面窗口全屏或浏览器全屏。
 ///
-/// Extracted so [PlaybackSession] can be unit-tested with a fake coordinator.
+/// Abstracts platform fullscreen coordination so `PlaybackSession` can be
+/// unit-tested with a fake coordinator.
 abstract class FullscreenCoordinator {
+  /// 进入平台全屏（[landscapeVideo] 决定移动端优先横屏还是竖屏）。
+  ///
+  /// Enters platform fullscreen; [landscapeVideo] selects landscape vs. portrait on mobile.
   Future<void> enter({required bool landscapeVideo});
 
+  /// 退出平台全屏并恢复系统栏、屏幕方向或桌面窗口状态。
+  ///
+  /// Exits platform fullscreen and restores system UI, orientations, or window bounds.
   Future<void> exit();
 
-  /// Locks orientation to a single [DeviceOrientation] when [locked] is true,
-  /// or restores gravity-driven bidirectional landscape / portrait rotation
-  /// when [locked] is false.
+  /// 在移动端使用 Flutter 官方 `SystemChrome.setPreferredOrientations` 锁定或解锁屏幕方向。
+  ///
+  /// - [locked] 为 `true` 时锁定到单一方向（[lockedOrientation]，默认按 [landscapeVideo] 选择）。
+  /// - [locked] 为 `false` 时恢复按重力感应自动旋转的双向横屏或双向竖屏。
+  ///
+  /// Locks orientation to a single [DeviceOrientation] when [locked] is `true`,
+  /// or restores gravity-driven bidirectional landscape / portrait rotation when `false`.
   Future<void> setOrientationLocked({
     required bool locked,
     required bool landscapeVideo,
     DeviceOrientation? lockedOrientation,
   }) async {}
 
-  /// OS / browser entered or left fullscreen without [enter] / [exit].
+  /// 来自操作系统或浏览器外部触发的全屏状态变化事件流（如 macOS 滑动退出全屏或浏览器按 Esc）。
+  ///
+  /// Stream of fullscreen changes initiated by the OS or browser outside [enter] / [exit].
   Stream<bool> get externalChanges => const Stream<bool>.empty();
 
+  /// 释放内部订阅与流资源。
+  ///
+  /// Releases internal subscriptions and stream controllers.
   void dispose() {}
 }
 
-/// Applies browser Fullscreen API. Injectable so VM tests can cover the web path.
+/// 浏览器 Fullscreen API 适配接口（可注入以便在 VM 单元测试中覆盖 Web 路径）。
+///
+/// Injectable wrapper around the browser Fullscreen API for VM testability.
 abstract class BrowserFullscreenApplier {
+  /// 请求进入浏览器全屏。
+  ///
+  /// Requests entering browser fullscreen.
   Future<void> enter();
 
+  /// 退出浏览器全屏。
+  ///
+  /// Exits browser fullscreen.
   Future<void> exit();
 
+  /// 浏览器全屏状态变更事件流。
+  ///
+  /// Stream of browser fullscreen state changes.
   Stream<bool> get changes;
 }
 
-/// Default [BrowserFullscreen] wrapper.
+/// 默认浏览器全屏执行器实现，转发至 [BrowserFullscreen]。
+///
+/// Default [BrowserFullscreenApplier] forwarding to [BrowserFullscreen].
 class DefaultBrowserFullscreenApplier implements BrowserFullscreenApplier {
+  /// 创建默认浏览器全屏执行器。
+  ///
+  /// Creates a [DefaultBrowserFullscreenApplier].
   const DefaultBrowserFullscreenApplier();
 
   @override
@@ -52,9 +84,14 @@ class DefaultBrowserFullscreenApplier implements BrowserFullscreenApplier {
   Stream<bool> get changes => BrowserFullscreen.changes;
 }
 
-/// Default coordinator: SystemChrome on mobile, window fullscreen on desktop,
-/// browser Fullscreen API on web.
+/// 默认全屏协调器实现：移动端基于 Flutter 官方 [SystemChrome]，桌面端基于原生窗口全屏，Web 端基于浏览器 Fullscreen API。
+///
+/// Default coordinator using [SystemChrome] on mobile, native window fullscreen
+/// on desktop, and the browser Fullscreen API on Web.
 class SystemChromeFullscreenCoordinator implements FullscreenCoordinator {
+  /// 创建默认全屏协调器，可选注入测试用 [bridge]、[browser] 与 [isWeb] 标志。
+  ///
+  /// Creates a [SystemChromeFullscreenCoordinator] with optional test overrides.
   SystemChromeFullscreenCoordinator({this._bridge, BrowserFullscreenApplier? browser, bool? isWeb})
     : _browser = browser ?? const DefaultBrowserFullscreenApplier(),
       _isWeb = isWeb ?? kIsWeb {

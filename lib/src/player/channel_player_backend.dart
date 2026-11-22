@@ -13,10 +13,14 @@ import 'player_backend.dart';
 import 'player_event.dart';
 import 'player_event_decoder.dart';
 
-/// [PlayerBackend] adapter over [VideoPlayerHostBridge].
+/// 基于 [VideoPlayerHostBridge] 的 [PlayerBackend] 默认适配器，事件解码委托给 [PlayerEventDecoder]。
 ///
-/// Delegates event decoding to [PlayerEventDecoder].
+/// Default [PlayerBackend] adapter over [VideoPlayerHostBridge], delegating
+/// Pigeon payload decoding to [PlayerEventDecoder].
 class ChannelPlayerBackend implements PlayerBackend {
+  /// 创建通道播放器后端，可选传入测试用 [bridge]。
+  ///
+  /// Creates a [ChannelPlayerBackend] with an optional [bridge] override.
   ChannelPlayerBackend({this._bridge});
 
   final VideoPlayerHostBridge? _bridge;

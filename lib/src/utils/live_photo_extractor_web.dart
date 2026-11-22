@@ -18,9 +18,12 @@ import 'live_photo_parser.dart';
 /// Web / WASM 平台完整动态照片解析与原生 `Blob` Object URL (`blob:`) 抽取器。
 ///
 /// 支持：
-/// - 双源配对实况照片（`http(s)://`、`blob:`、`assets/`）
-/// - 单文件 Motion Photo（从 `http(s)://`、Web 本地文件选择器 `blob:`、Flutter `assets/` 或 `Uint8List` 字节流中解析）
+/// - 双源配对实况照片（`http(s)://`、`blob:`、`assets/`）；
+/// - 单文件 Motion Photo（从 `http(s)://`、Web 本地文件选择器 `blob:`、Flutter `assets/` 或 `Uint8List` 字节流中解析）；
 /// - 使用浏览器原生 `URL.createObjectURL(Blob)` 生成零 Base64 损耗的 `blob:` 播放地址，确保 HTML5 `<video>` 高速加载与任意 Seek。
+///
+/// Web / WASM implementation of [LivePhotoExtractor] that parses paired and
+/// single-file Motion Photos and exposes extracted media via `Blob` Object URLs.
 class LivePhotoExtractor {
   LivePhotoExtractor._();
 
@@ -36,7 +39,12 @@ class LivePhotoExtractor {
     '.m4v',
   ];
 
-  /// 将任意 [LivePhotoSource] 解析为可供 Web 播放与展示的 [LivePhotoBundle]。
+  /// 将任意 [LivePhotoSource] 解析为可供 Web 播放与展示的 [LivePhotoBundle]，并缓存生成的 `Blob` URL。
+  ///
+  /// - [source]：实况照片源。
+  /// - 返回值：包含封面图与可播放 `blob:` 视频地址的 [LivePhotoBundle]。
+  ///
+  /// Resolves [source] into a Web-playable [LivePhotoBundle] backed by cached `Blob` Object URLs.
   static Future<LivePhotoBundle> resolve(LivePhotoSource source) {
     final key = source.identity;
     final cached = _blobCache[key];
@@ -53,8 +61,13 @@ class LivePhotoExtractor {
     return future;
   }
 
-  /// 尝试从单个 [VideoSource]（`NetworkVideoSource`、Web `blob:` `FileVideoSource` 或 `AssetVideoSource`）
+  /// 尝试从单个 [VideoSource]（[NetworkVideoSource]、Web `blob:` [FileVideoSource] 或 [AssetVideoSource]）
   /// 中探测并提取动态照片；若不是动态照片则返回 `null`。
+  ///
+  /// - [source]：待探测的媒体源。
+  /// - [presentationTimestampOverride]：可选的封面帧展示时间戳覆盖值。
+  ///
+  /// Attempts to probe and extract a [LivePhotoBundle] from [source], returning `null` if not a Motion Photo.
   static Future<LivePhotoBundle?> tryExtractFromVideoSource(
     VideoSource source, {
     Duration? presentationTimestampOverride,
@@ -70,6 +83,8 @@ class LivePhotoExtractor {
   }
 
   /// 检测 [source] 是否为动态照片。
+  ///
+  /// Returns `true` if [source] is detected as a valid Live Photo / Motion Photo.
   static Future<bool> isLivePhoto(VideoSource source) async {
     final bundle = await tryExtractFromVideoSource(source);
     return bundle != null;

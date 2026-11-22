@@ -6,8 +6,13 @@ import '../style/player_icon_catalog.dart';
 import '../style/video_player_theme.dart';
 import 'player_icon_button.dart';
 
-/// Thin [ChatContextMenuWrapper] icon button used by player chrome.
+/// 基于 [ChatContextMenuWrapper] 封装的播放器弹出菜单图标按钮（用于倍速、画面比例等菜单）。
+///
+/// Thin [ChatContextMenuWrapper] icon button used by player chrome for popup menus.
 class PlayerMenuButton extends StatelessWidget {
+  /// 创建弹出菜单触发按钮。
+  ///
+  /// Creates a [PlayerMenuButton].
   const PlayerMenuButton({
     super.key,
     required this.icon,
@@ -17,10 +22,29 @@ class PlayerMenuButton extends StatelessWidget {
     this.compact = false,
   });
 
+  /// 触发按钮展示的图标。
+  ///
+  /// Icon displayed on the menu trigger button.
   final IconData icon;
+
+  /// 弹出菜单内容构建器，接收 `hideMenu` 回调用于关闭菜单。
+  ///
+  /// Builder producing popup menu contents with a `hideMenu` callback.
   final Widget Function(BuildContext context, VoidCallback hideMenu) menuBuilder;
+
+  /// 图标与菜单项前景色，默认读取 `VideoPlayerTheme.foregroundColor`。
+  ///
+  /// Foreground color for the icon and menu items.
   final Color? color;
+
+  /// 按钮悬停或长按提示文本。
+  ///
+  /// Optional tooltip text for the trigger button.
   final String? tooltip;
+
+  /// 是否启用紧凑内边距布局。
+  ///
+  /// Whether to use compact button padding.
   final bool compact;
 
   @override
@@ -80,13 +104,16 @@ class PlayerMenuButton extends StatelessWidget {
   }
 }
 
-/// Theme-adaptive popup menu item row.
+/// 主题自适应的弹出菜单单行选项组件。
 ///
-/// - In Cupertino mode: renders a Cupertino-styled row with hairline divider
-///   and [CupertinoIcons.checkmark_alt] selection indicator.
-/// - In Material mode: renders a compact [ListTile] with [Icons.check]
-///   selection indicator.
+/// - Cupertino 模式：渲染带细分割线与 `CupertinoIcons.checkmark_alt` 勾选标志的按钮行；
+/// - Material 模式：渲染紧凑型 [ListTile] 与 `Icons.check` 勾选标志。
+///
+/// Theme-adaptive popup menu option row for Material and Cupertino styles.
 class PlayerMenuOptionTile extends StatelessWidget {
+  /// 创建弹出菜单选项行。
+  ///
+  /// Creates a [PlayerMenuOptionTile].
   const PlayerMenuOptionTile({
     super.key,
     required this.label,
@@ -95,9 +122,24 @@ class PlayerMenuOptionTile extends StatelessWidget {
     this.showDivider = false,
   });
 
+  /// 选项文本标签。
+  ///
+  /// Option display label.
   final String label;
+
+  /// 当前项是否处于选中态。
+  ///
+  /// Whether this option is currently selected.
   final bool selected;
+
+  /// 点击该选项时的回调。
+  ///
+  /// Callback invoked when the option is tapped.
   final VoidCallback onTap;
+
+  /// Cupertino 模式下是否在底部绘制细分割线。
+  ///
+  /// Whether to draw a hairline bottom divider in Cupertino mode.
   final bool showDivider;
 
   @override

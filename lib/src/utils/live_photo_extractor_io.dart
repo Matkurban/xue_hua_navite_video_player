@@ -53,7 +53,12 @@ class LivePhotoExtractor {
 
   /// 将任意 [LivePhotoSource] 解析为可供播放与展示的 [LivePhotoBundle]。
   ///
-  /// Resolves any [LivePhotoSource] into a playable [LivePhotoBundle].
+  /// 并发调用同一 [source] 会自动复用进行中的解析 [Future]，避免重复下载或磁盘写入。
+  /// - [source]：实况照片源（配对图+视频、内存字节或单文件容器）。
+  /// - 返回值：包含静态封面、视频源、原生播放地址与元数据的 [LivePhotoBundle]。
+  ///
+  /// Resolves any [LivePhotoSource] into a playable [LivePhotoBundle], sharing
+  /// in-flight futures across concurrent calls for the same identity.
   static Future<LivePhotoBundle> resolve(LivePhotoSource source) {
     final key = source.identity;
     final existing = _inflight[key];
@@ -65,6 +70,11 @@ class LivePhotoExtractor {
   }
 
   /// 尝试从单个 [VideoSource] 中探测并提取动态照片；若不是动态照片则返回 `null`。
+  ///
+  /// 支持 `.pvt` 目录、单文件 Motion Photo、同目录同名配对文件（`.HEIC/.JPG` ↔ `.MOV/.MP4`）
+  /// 以及带磁盘缓存的网络 Motion Photo。
+  /// - [source]：待探测的媒体源。
+  /// - [presentationTimestampOverride]：可选的封面帧时间戳覆盖值。
   ///
   /// Attempts to probe and extract a [LivePhotoBundle] from [source]. Returns
   /// `null` if [source] is not a Motion Photo or paired Live Photo.
@@ -82,7 +92,10 @@ class LivePhotoExtractor {
     }
   }
 
-  /// 检测 [source] 是否为动态照片。
+  /// 检测 [source] 是否为有效的动态照片（单文件 Motion Photo 或配对 Live Photo）。
+  ///
+  /// - [source]：待检测的媒体源。
+  /// - 返回值：有效时返回 `true`，否则返回 `false`。
   ///
   /// Returns `true` if [source] is a valid Motion Photo or paired Live Photo.
   static Future<bool> isLivePhoto(VideoSource source) async {

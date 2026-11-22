@@ -1,5 +1,7 @@
-/// MIME 类型检测器，根据文件扩展名或协议推断媒体类型。
-/// MIME type detector that infers media type from file extension or URI scheme.
+/// MIME 类型检测器，根据文件扩展名、协议或 `data:` URI 推断媒体类型。
+///
+/// MIME type detector that infers media types from file extensions, `data:` URIs,
+/// or `livephoto://` schemes.
 class MimeDetector {
   static const _extensionMap = {
     '.mp4': 'video/mp4',
@@ -32,8 +34,12 @@ class MimeDetector {
     '.pvt',
   ];
 
-  /// 根据 URL 检测 MIME 类型。
-  /// Detects MIME type from the given URL.
+  /// 根据 [url] 或文件路径推断 MIME 类型；无法识别时返回 `'application/octet-stream'`。
+  ///
+  /// - [url]：媒体 URL、文件路径、`data:` URI 或 `livephoto://` 标识。
+  /// - 返回值：推断出的标准 MIME 类型字符串。
+  ///
+  /// Detects the MIME type from [url], returning `'application/octet-stream'` when unknown.
   static String detect(String url) {
     if (url.startsWith('livephoto://')) {
       return 'video/mp4';
@@ -56,7 +62,10 @@ class MimeDetector {
     return 'application/octet-stream';
   }
 
-  /// 判断路径或 URL 是否为可能携带动态照片的静态图片或 `.pvt` 包扩展名。
+  /// 判断路径或 [url] 是否为可能携带动态照片的静态图片或 `.pvt` 包扩展名。
+  ///
+  /// - [url]：待检测的路径或 URL。
+  /// - 返回值：命中图片扩展名、`.pvt` 或 `livephoto://` 时返回 `true`。
   ///
   /// Returns `true` if [url] ends with an image or `.pvt` Live Photo bundle extension.
   static bool isCandidateLivePhotoContainer(String url) {
@@ -69,11 +78,13 @@ class MimeDetector {
     return false;
   }
 
-  /// 判断是否为视频 MIME 类型。
-  /// Checks whether the MIME type is a video type.
+  /// 判断 [mimeType] 是否为视频类型（以 `'video/'` 开头）。
+  ///
+  /// Checks whether [mimeType] represents a video MIME type (`video/*`).
   static bool isVideo(String mimeType) => mimeType.startsWith('video/');
 
-  /// 判断是否为音频 MIME 类型。
-  /// Checks whether the MIME type is an audio type.
+  /// 判断 [mimeType] 是否为音频类型（以 `'audio/'` 开头）。
+  ///
+  /// Checks whether [mimeType] represents an audio MIME type (`audio/*`).
   static bool isAudio(String mimeType) => mimeType.startsWith('audio/');
 }

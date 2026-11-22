@@ -31,8 +31,19 @@ class NaviteFile {
   final String mimeType;
 
   /// 可选的内存字节缓存（当通过 [NaviteFile.fromBytes] 创建时持有）。
+  ///
+  /// Optional in-memory byte buffer populated when created via [NaviteFile.fromBytes].
   final Uint8List? bytes;
 
+  /// 创建跨平台文件封装对象。
+  ///
+  /// Creates a cross-platform [NaviteFile].
+  ///
+  /// - [path]：本地文件路径或 Web URL。Local file path or Web URL.
+  /// - [uri]：跨平台统一 URI 标识。Cross-platform URI identifier.
+  /// - [name]：文件名。Display file name.
+  /// - [mimeType]：MIME 类型，默认 `'image/png'`。MIME type, defaults to `'image/png'`.
+  /// - [bytes]：可选的内存字节缓存。Optional in-memory bytes.
   const NaviteFile({
     required this.path,
     required this.uri,
@@ -45,6 +56,12 @@ class NaviteFile {
   ///
   /// Creates a [NaviteFile] from a local file path, `file://` URI, or Web
   /// `data:` / `blob:` URL.
+  ///
+  /// - [location]：文件路径或 URI 字符串。File path or URI string.
+  /// - [name]：可选文件名，省略时从 [location] 自动推断。Optional file name inferred if omitted.
+  /// - [mimeType]：MIME 类型，默认 `'image/png'`。MIME type, defaults to `'image/png'`.
+  ///
+  /// 返回值 / Returns：构造完成的 [NaviteFile] 实例。Constructed [NaviteFile] instance.
   factory NaviteFile.fromLocation(String location, {String? name, String mimeType = 'image/png'}) {
     if (location.startsWith('data:') ||
         location.startsWith('blob:') ||
@@ -81,6 +98,13 @@ class NaviteFile {
   ///
   /// Creates a [NaviteFile] from in-memory [bytes], wrapping them in a `data:`
   /// URI for cross-platform compatibility.
+  ///
+  /// - [bytes]：文件原始二进制内容。Raw binary file contents.
+  /// - [name]：文件名，默认 `'snapshot.png'`。File name, defaults to `'snapshot.png'`.
+  /// - [mimeType]：MIME 类型，默认 `'image/png'`。MIME type, defaults to `'image/png'`.
+  /// - [path]：可选关联路径或外部 URL。Optional backing file path or URL.
+  ///
+  /// 返回值 / Returns：持有内存字节的 [NaviteFile] 实例。A [NaviteFile] holding [bytes].
   factory NaviteFile.fromBytes(
     Uint8List bytes, {
     String name = 'snapshot.png',
@@ -108,6 +132,8 @@ class NaviteFile {
   /// 读取文件的全部字节。
   ///
   /// Reads the entire file contents as bytes.
+  ///
+  /// 返回值 / Returns：包含完整文件数据的 [Uint8List]。Complete binary payload as [Uint8List].
   Future<Uint8List> readAsBytes() async {
     final inMemory = bytes;
     if (inMemory != null) {
@@ -122,6 +148,8 @@ class NaviteFile {
   /// 获取文件字节长度。
   ///
   /// Returns the length of the file in bytes.
+  ///
+  /// 返回值 / Returns：文件总字节数。Total file size in bytes.
   Future<int> length() async {
     final inMemory = bytes;
     if (inMemory != null) {
@@ -135,7 +163,11 @@ class NaviteFile {
 
   /// 将文件字节保存到 [targetPath]（仅支持原生文件系统平台）。
   ///
-  /// Writes the file contents to [targetPath] on native platforms.
+  /// Writes the file contents to [targetPath] on native filesystem platforms.
+  ///
+  /// - [targetPath]：目标文件保存路径。Destination file path.
+  ///
+  /// 返回值 / Returns：写入完成后结束的 [Future]。A [Future] completing after writing.
   Future<void> saveTo(String targetPath) async {
     final data = await readAsBytes();
     await writeFileBytes(targetPath, data);

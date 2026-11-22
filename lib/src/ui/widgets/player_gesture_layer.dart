@@ -18,9 +18,14 @@ const double _gestureActivationDistance = 12.0;
 
 enum _GestureZone { left, center, right }
 
-/// Fullscreen gesture layer: horizontal seek and landscape vertical
+/// 全屏交互手势层：支持水平快进/快退与横屏左右热区垂直滑动调节亮度/音量，并实时渲染中心 HUD。
+///
+/// Fullscreen gesture layer supporting horizontal seek and landscape vertical
 /// brightness / volume swipe controls with configurable hot-zones and HUD.
 class PlayerGestureLayer extends StatefulWidget {
+  /// 创建全屏手势交互层。
+  ///
+  /// Creates a [PlayerGestureLayer] with validated `0.0..1.0` hot-zone ratios.
   const PlayerGestureLayer({
     super.key,
     required this.controller,
@@ -50,33 +55,53 @@ class PlayerGestureLayer extends StatefulWidget {
          'verticalGestureHeightRatio must be between 0.0 and 1.0.',
        );
 
+  /// 绑定的播放器控制器。
+  ///
+  /// Attached [VideoPlayerController].
   final VideoPlayerController controller;
+
+  /// 单击屏幕时的回调（通常用于显隐控件层或解锁按钮）。
+  ///
+  /// Callback invoked on single tap (typically toggles chrome or unlock button).
   final VoidCallback onTap;
+
+  /// 手势层包裹的子组件。
+  ///
+  /// Child widget rendered beneath the gesture detector.
   final Widget child;
 
-  /// When true, drag gestures are disabled while single-tap remains active.
+  /// 为 `true` 时禁用所有滑动手势，仅保留单击交互。
+  ///
+  /// When `true`, drag gestures are disabled while single-tap remains active.
   final bool isLocked;
 
+  /// 全屏横屏播放时是否启用垂直滑动亮度/音量调节。
+  ///
   /// Enables vertical brightness/volume drag gestures in fullscreen landscape.
   final bool enableVerticalGestures;
 
-  /// Controls which side adjusts brightness vs. volume.
+  /// 控制左右两侧分别调节亮度还是音量。
+  ///
+  /// Controls which side adjusts screen brightness vs. audio volume.
   final FullscreenGestureSideMapping verticalGestureMapping;
 
-  /// Width fraction (`0.0..1.0`) of the left vertical swipe zone. Defaults to `0.3`.
+  /// 左侧垂直滑动热区宽度比例（`0.0..1.0`，默认 `0.3`，且与右侧之和不得超过 `1.0`）。
   ///
-  /// Must satisfy `verticalGestureLeftWidthRatio + verticalGestureRightWidthRatio <= 1.0`.
+  /// Width fraction (`0.0..1.0`) of the left vertical swipe zone (defaults to `0.3`).
   final double verticalGestureLeftWidthRatio;
 
-  /// Width fraction (`0.0..1.0`) of the right vertical swipe zone. Defaults to `0.3`.
+  /// 右侧垂直滑动热区宽度比例（`0.0..1.0`，默认 `0.3`，且与左侧之和不得超过 `1.0`）。
   ///
-  /// Must satisfy `verticalGestureLeftWidthRatio + verticalGestureRightWidthRatio <= 1.0`.
+  /// Width fraction (`0.0..1.0`) of the right vertical swipe zone (defaults to `0.3`).
   final double verticalGestureRightWidthRatio;
 
-  /// Vertically centered height fraction (`0.0..1.0`) of the active vertical swipe band.
-  /// Defaults to `0.7`.
+  /// 居中垂直滑动热区高度比例（`0.0..1.0`，默认 `0.7`）。
+  ///
+  /// Vertically centered height fraction (`0.0..1.0`) of the active vertical swipe band (defaults to `0.7`).
   final double verticalGestureHeightRatio;
 
+  /// 可选自定义中心实时指示器构建器，用于替换默认的 [PlayerGestureHud]。
+  ///
   /// Optional custom center indicator builder replacing [PlayerGestureHud].
   final Widget Function(BuildContext context, PlayerGestureHudContext hud)? gestureHudBuilder;
 
@@ -342,7 +367,15 @@ class _PlayerGestureLayerState extends State<PlayerGestureLayer> {
   }
 }
 
-/// Desktop / web key handler (active when the player Focus is focused).
+/// 桌面端与 Web 端播放器键盘快捷键处理函数（在播放器 [Focus] 获得焦点时生效）。
+///
+/// Desktop and Web keyboard shortcut handler active when the player [Focus] is focused.
+///
+/// - [controller]：目标播放器控制器。Target [VideoPlayerController].
+/// - [event]：收到的键盘事件。Incoming [KeyEvent].
+///
+/// 返回值 / Returns：若快捷键已消费返回 [KeyEventResult.handled]，否则返回 [KeyEventResult.ignored]。
+/// [KeyEventResult.handled] if consumed, otherwise [KeyEventResult.ignored].
 KeyEventResult handlePlayerKeyEvent(VideoPlayerController controller, KeyEvent event) {
   if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
     return KeyEventResult.ignored;

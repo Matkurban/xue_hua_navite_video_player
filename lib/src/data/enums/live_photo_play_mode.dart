@@ -1,6 +1,6 @@
-/// 动态照片（[LivePhotoPlayer]）的交互与播放触发模式。
+/// 动态照片播放器的交互与播放触发模式。
 ///
-/// Playback trigger and loop mode for [LivePhotoPlayer].
+/// Playback trigger and loop mode for the Live Photo player.
 enum LivePhotoPlayMode {
   /// 按住画面（长按）或点击/悬停 LIVE 徽标时播放动态视频，松开手指后平滑切回静态封面图（iOS / Android 系统相册默认交互）。
   ///
@@ -17,7 +17,7 @@ enum LivePhotoPlayMode {
   /// 点击画面或 LIVE 徽标完整播放一次动态视频，播放结束后自动切回静态封面图；播放中再次点击可停止。
   ///
   /// Tapping the photo or LIVE badge plays the full motion clip once and returns
-  /// to the still image upon completion.
+  /// to the still image upon completion; tapping again while playing stops it.
   tap,
 
   /// 组件加载完成后自动播放一次动态视频，结束后停留在静态封面图（仍支持点击、长按或桌面悬停重播）。

@@ -5,11 +5,21 @@ import 'package:web/web.dart' as html;
 
 import '../pigeon/player_api.g.dart';
 
+/// Web 平台离屏 HTML5 `<video>` / `<canvas>` 媒体探测与截图服务。
+///
+/// 负责当前帧截图、候选封面帧抽取以及媒体总时长探测。
+///
 /// Handles offscreen HTML5 `<video>` / `<canvas>` operations on Web:
 /// frame snapshots, cover candidate extraction, and metadata duration probing.
 abstract final class WebMediaProbeService {
+  /// 将 [video] 当前播放画面绘制到 `<canvas>` 并编码为 PNG `data:` URL 封装在 [SnapshotData] 中。
+  ///
   /// Captures the current frame of [video] as a PNG data URL inside [SnapshotData].
-  /// Returns `null` if [video] is null or if the canvas is tainted by CORS.
+  ///
+  /// - [video]：目标 `<video>` 元素。Target HTML5 `<video>` element.
+  ///
+  /// 返回值 / Returns：包含 PNG `dataUri` 的 [SnapshotData]；若 [video] 为 `null` 或触发 CORS 污染则返回 `null`。
+  /// [SnapshotData] containing a PNG `dataUri`, or `null` if [video] is null or tainted by CORS.
   static SnapshotData? takeSnapshot(html.HTMLVideoElement? video) {
     if (video == null) return null;
     try {
@@ -27,7 +37,15 @@ abstract final class WebMediaProbeService {
     }
   }
 
+  /// 使用离屏 `<video>` 元素在媒体时间轴上采样并抽取候选封面帧。
+  ///
   /// Extracts candidate cover frames using an offscreen `<video>` element.
+  ///
+  /// - [request]：包含媒体地址、抽取数量、候选采样数与最小亮度阈值的请求参数。
+  ///   Extraction request specifying URL, target count, candidates, and minimum brightness.
+  ///
+  /// 返回值 / Returns：按平均亮度降序排列的 [CoverFrameData] 列表。
+  /// List of [CoverFrameData] sorted by descending average brightness.
   static Future<List<CoverFrameData>> extractCovers(CoverExtractRequest request) async {
     final url = request.url;
     final count = request.count;
@@ -92,7 +110,14 @@ abstract final class WebMediaProbeService {
     }
   }
 
-  /// Probes media duration (milliseconds) using a detached offscreen `<video>`.
+  /// 使用独立离屏 `<video>` 探测媒体总时长（单位毫秒）。
+  ///
+  /// Probes media duration (in milliseconds) using a detached offscreen `<video>`.
+  ///
+  /// - [request]：包含媒体地址与超时时间的探测请求。Duration probe request.
+  ///
+  /// 返回值 / Returns：媒体时长（毫秒）；失败、超时或直播流（非有限时长）返回 `null`。
+  /// Media duration in milliseconds, or `null` on failure, timeout, or non-finite duration.
   static Future<int?> getDuration(DurationProbeRequest request) async {
     final url = request.url;
     final timeoutMs = request.timeoutMs > 0 ? request.timeoutMs : 15000;

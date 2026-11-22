@@ -17,88 +17,179 @@ import 'widgets/player_body.dart';
 export 'player_gesture_hud_context.dart';
 export 'video_player_slot_context.dart';
 
-/// 高性能的默认视频播放器组件。
+/// 高性能的开箱即用视频播放器组件（含顶栏、居中传输控制、双层缓冲进度条、全屏 Overlay、手势与锁屏）。
 ///
-/// Hosts visual fullscreen via [OverlayPortal]. Entering fullscreen reparents
-/// the in-tree surface into the overlay host in the same frame (via [GlobalKey])
-/// so Android PlatformViews are not disposed and immediately resized.
-/// Controller-only fullscreen without this widget still applies orientation /
-/// window / browser fullscreen, without Overlay chrome.
+/// High-performance drop-in video player widget with top bar, center controls,
+/// bottom buffered scrubber, visual fullscreen via [OverlayPortal], landscape
+/// brightness/volume gestures, and screen lock.
 class VideoPlayer extends StatefulWidget {
+  /// 绑定的视频播放器控制器实例。
+  ///
+  /// Attached [VideoPlayerController] driving playback.
   final VideoPlayerController controller;
+
+  /// 非全屏且 [fill] 为 `false` 时的固定宽高比；为 `null` 时按视频原始比例自适应（不低于 `16/9`）。
+  ///
+  /// Optional aspect ratio when inline and [fill] is `false`; defaults to the video's ratio (>= `16/9`).
   final double? aspectRatio;
+
+  /// 是否直接铺满父容器尺寸（全屏 Overlay 中始终为 `true`）。
+  ///
+  /// Whether to expand to fill the parent constraints (always `true` in fullscreen Overlay).
   final bool fill;
+
+  /// 播放中控件层自动隐藏的等待时长（设为 [Duration.zero] 禁用自动隐藏）。
+  ///
+  /// Delay before auto-hiding chrome while playing ([Duration.zero] disables auto-hide).
   final Duration autoHideDelay;
+
+  /// 控件层显隐切换的淡入淡出动画时长。
+  ///
+  /// Fade duration for showing and hiding overlay chrome.
   final Duration fadeDuration;
+
+  /// 初始渲染时控件层是否可见。
+  ///
+  /// Whether overlay controls are initially visible.
   final bool initiallyVisible;
+
+  /// 非全屏模式下点击默认关闭按钮时的回调；为 `null` 时调用 `Navigator.maybePop()`。
+  ///
+  /// Callback invoked by the default close button when not fullscreen (defaults to `Navigator.maybePop`).
   final VoidCallback? onClose;
 
-  /// AppBar-style leading (defaults to close button).
+  /// 顶栏左侧自定义组件（默认显示关闭 / 退出全屏按钮）。
+  ///
+  /// AppBar-style leading widget (defaults to the close / exit-fullscreen button).
   final Widget? leading;
 
-  /// AppBar-style centered title.
+  /// 顶栏居中标题组件。
+  ///
+  /// AppBar-style centered title widget.
   final Widget? title;
 
-  /// AppBar-style trailing actions (aspect-ratio menu appended when enabled).
+  /// 顶栏右侧自定义操作组件列表（启用投屏与画面比例菜单时会自动追加在其后）。
+  ///
+  /// AppBar-style trailing actions (cast button and aspect-ratio menu append after when enabled).
   final List<Widget> actions;
 
-  /// Legacy extra actions merged into [actions].
+  /// 兼容旧版的额外顶栏右侧操作组件，会合并在 [actions] 之后。
+  ///
+  /// Legacy extra trailing actions merged after [actions].
   final List<Widget> topBarActions;
 
+  /// 当平台支持投屏时是否在默认顶栏展示无线投屏按钮。
+  ///
   /// Whether to show the wireless cast button in the top bar when supported.
   final bool showCastButton;
 
+  /// 是否在默认顶栏展示画面适应模式切换菜单（适应 / 铺满 / 拉伸）。
+  ///
+  /// Whether to display the aspect-ratio mode popup menu in the top bar.
   final bool showAspectRatioMenu;
+
+  /// 是否在默认底栏展示全屏切换按钮。
+  ///
+  /// Whether to show the fullscreen toggle button in the bottom bar.
   final bool enableFullscreen;
 
-  /// Enables vertical brightness/volume drag gestures in fullscreen landscape playback.
+  /// 全屏横屏播放时是否启用左右区域垂直滑动调节亮度与音量手势。
+  ///
+  /// Enables vertical brightness/volume drag gestures during fullscreen landscape playback.
   final bool enableFullscreenVerticalGestures;
 
+  /// 控制全屏横屏播放时左右两侧分别调节亮度还是音量（默认左亮右音）。
+  ///
   /// Configures which side controls screen brightness vs. audio volume in fullscreen landscape.
   final FullscreenGestureSideMapping verticalGestureMapping;
 
-  /// Width fraction (`0.0..1.0`) of the left vertical gesture area. Defaults to `0.3` (30%).
+  /// 左侧垂直手势热区宽度占播放器总宽度的比例（`0.0..1.0`，默认 `0.3`，且左右宽度之和不可超过 `1.0`）。
   ///
+  /// Width fraction (`0.0..1.0`) of the left vertical gesture area. Defaults to `0.3` (30%).
   /// Must satisfy `verticalGestureLeftWidthRatio + verticalGestureRightWidthRatio <= 1.0`.
   final double verticalGestureLeftWidthRatio;
 
-  /// Width fraction (`0.0..1.0`) of the right vertical gesture area. Defaults to `0.3` (30%).
+  /// 右侧垂直手势热区宽度占播放器总宽度的比例（`0.0..1.0`，默认 `0.3`，且左右宽度之和不可超过 `1.0`）。
   ///
+  /// Width fraction (`0.0..1.0`) of the right vertical gesture area. Defaults to `0.3` (30%).
   /// Must satisfy `verticalGestureLeftWidthRatio + verticalGestureRightWidthRatio <= 1.0`.
   final double verticalGestureRightWidthRatio;
 
+  /// 垂直手势热区居中高度占播放器总高度的比例（`0.0..1.0`，默认 `0.7`）。
+  ///
   /// Vertically centered height fraction (`0.0..1.0`) of the vertical gesture band. Defaults to `0.7` (70%).
   final double verticalGestureHeightRatio;
 
+  /// 全屏模式下是否显示屏幕锁定/解锁按钮。
+  ///
   /// Whether to display the screen lock/unlock button in fullscreen mode.
   final bool showLockButton;
 
+  /// 全屏锁定/解锁按钮在屏幕左侧或右侧的摆放位置（默认左侧）。
+  ///
   /// Horizontal edge (`left` or `right`) where the fullscreen lock/unlock button is positioned.
   final PlayerLockButtonPosition lockButtonPosition;
 
-  /// Optional theme override for this player instance. Falls back to
-  /// `VideoPlayerTheme.of(context)` when null.
+  /// 当前播放器实例的局部主题覆盖；为 `null` 时回退到 `VideoPlayerTheme.of(context)`。
+  ///
+  /// Optional theme override for this player instance. Falls back to `VideoPlayerTheme.of(context)`.
   final VideoPlayerTheme? theme;
 
+  /// 播放出错时的自定义错误界面构建器（透传至 `CorePlayer`）。
+  ///
+  /// Custom error overlay builder forwarded to `CorePlayer`.
   final Widget Function(BuildContext context, String? errorMessage)? errorBuilder;
+
+  /// 加载或缓冲中的自定义指示器构建器（透传至 `CorePlayer`）。
+  ///
+  /// Custom loading/buffering indicator builder forwarded to `CorePlayer`.
   final Widget Function(BuildContext context)? loadingBuilder;
+
+  /// 完全替换默认顶栏的自定义构建器。
+  ///
+  /// Custom builder replacing the default top bar.
   final Widget Function(BuildContext, VideoPlayerSlotContext)? topBarBuilder;
+
+  /// 完全替换居中播放/快进/快退控制区的自定义构建器。
+  ///
+  /// Custom builder replacing the default center transport controls.
   final Widget Function(BuildContext, VideoPlayerSlotContext)? centerControlsBuilder;
+
+  /// 完全替换底部进度条与操作栏的自定义构建器。
+  ///
+  /// Custom builder replacing the default bottom scrubber bar.
   final Widget Function(BuildContext, VideoPlayerSlotContext)? bottomScrubberBuilder;
+
+  /// 完全替换投屏状态遮罩层的自定义构建器。
+  ///
+  /// Custom builder replacing the default casting status overlay.
   final Widget Function(BuildContext, VideoPlayerSlotContext)? castingOverlayBuilder;
+
+  /// 叠加在投屏遮罩之上的额外自定义浮层构建器（锁屏时自动隐藏）。
+  ///
+  /// Optional extra full-bleed overlay builder layered above the cast overlay (hidden while locked).
   final Widget Function(BuildContext, VideoPlayerSlotContext)? extraOverlayBuilder;
 
+  /// 全屏手势（亮度/音量/快进快退）实时中心指示器的完全自定义构建器；默认使用 `PlayerGestureHud`。
+  ///
   /// Fully customizable center real-time indicator shown during brightness,
-  /// volume, and seek gestures. Defaults to [PlayerGestureHud].
+  /// volume, and seek gestures. Defaults to `PlayerGestureHud`.
   final Widget Function(BuildContext context, PlayerGestureHudContext hud)? gestureHudBuilder;
 
-  /// Fully customizable fullscreen lock/unlock button widget. Defaults to [PlayerLockButton].
+  /// 全屏锁定/解锁按钮的完全自定义构建器；默认使用 `PlayerLockButton`。
+  ///
+  /// Fully customizable fullscreen lock/unlock button widget. Defaults to `PlayerLockButton`.
   final Widget Function(BuildContext context, VideoPlayerSlotContext slot, bool isLocked)?
   lockButtonBuilder;
 
-  /// Initial skip step; synced with [VideoPlayerController.skipSecondType].
+  /// 初始快进/快退步进时长预设，会同步写入 `VideoPlayerController.skipSecondType`。
+  ///
+  /// Initial skip step preset synced with [VideoPlayerController.skipSecondType].
   final SkipSecondType skipSecondType;
 
+  /// 创建完整功能的视频播放器组件。
+  ///
+  /// Creates a [VideoPlayer] widget with full chrome, gestures, and lock controls.
   const VideoPlayer({
     super.key,
     required this.controller,

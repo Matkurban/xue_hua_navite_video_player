@@ -8,11 +8,23 @@ import 'player_glass_surface.dart';
 import 'player_icon_button.dart';
 import 'player_loading_indicator.dart';
 
+/// 默认居中播放传输控制区（快退、播放/暂停/重播/缓冲指示、快进）。
+///
 /// Default center playback transport controls (skip backward, play/pause/replay, skip forward).
 class PlayerCenterControls extends StatelessWidget {
+  /// 创建居中传输控制组件。
+  ///
+  /// Creates a [PlayerCenterControls] row.
   const PlayerCenterControls({super.key, required this.slot, required this.onInteract});
 
+  /// 当前播放器槽位上下文。
+  ///
+  /// Active player slot context.
   final VideoPlayerSlotContext slot;
+
+  /// 用户点击任意传输控制按钮时的交互通知回调。
+  ///
+  /// Callback invoked after any center transport button interaction.
   final VoidCallback onInteract;
 
   @override

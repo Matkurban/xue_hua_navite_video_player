@@ -88,6 +88,11 @@ class _EvictCandidate {
 ///   已落盘区间直接读本地 `.seg` 分片，缺失区间向上游按需发起 `Range` 请求并实时落盘；
 /// - 区间覆盖 `[0, totalLength)` 后自动原子重命名为完整媒体文件；
 /// - 支持活跃会话 `pin/unpin` 引用保护、单文件体积阈值旁路、LRU 容量淘汰及 `precache` 预加载。
+///
+/// Pure-Dart sparse-segment disk cache engine with a loopback (`127.0.0.1`)
+/// HTTP `206 Partial Content` Range proxy server. Serves complete hits directly
+/// via `file://`, streams missing gaps on demand into `.seg` files, promotes
+/// complete ranges atomically, and enforces LRU eviction with active-key pinning.
 class LocalVideoCacheEngine {
   VideoCacheConfig _config = const VideoCacheConfig();
   HttpServer? _server;
@@ -98,9 +103,14 @@ class LocalVideoCacheEngine {
   final Map<String, Future<void>> _keyLocks = <String, Future<void>>{};
   final Map<String, HttpClient> _precacheClients = <String, HttpClient>{};
 
+  /// 当前生效的缓存配置。
+  ///
+  /// Currently active [VideoCacheConfig].
   VideoCacheConfig get config => _config;
 
-  /// 解析当前生效的磁盘缓存目录路径。
+  /// 解析当前生效的磁盘缓存目录路径（若目录不存在会自动创建）。
+  ///
+  /// Resolves the active on-disk cache directory, creating it if needed.
   Future<String> resolveCacheDir() async {
     final custom = _config.cacheDirectory?.trim();
     if (custom != null && custom.isNotEmpty) {
@@ -113,6 +123,9 @@ class LocalVideoCacheEngine {
     return pluginMediaCacheDir();
   }
 
+  /// 更新缓存配置 [config]，并在必要时执行 LRU 淘汰或清空缓存。
+  ///
+  /// Applies [config] and runs LRU eviction or cache clearance as required.
   Future<void> configure(VideoCacheConfig config) async {
     _config = config;
     if (config.enabled && config.maxCacheBytes > 0) {
@@ -122,15 +135,23 @@ class LocalVideoCacheEngine {
     }
   }
 
+  /// 固定 [cacheKey] 防止活跃播放期间被 LRU 淘汰。
+  ///
+  /// Pins [cacheKey] so it is skipped during LRU eviction.
   void pin(String cacheKey) {
     _pinnedKeys.add(cacheKey);
   }
 
+  /// 解除 [cacheKey] 的活跃引用保护。
+  ///
+  /// Unpins [cacheKey], allowing future LRU eviction.
   void unpin(String cacheKey) {
     _pinnedKeys.remove(cacheKey);
   }
 
-  /// 查找指定 [cacheKey] 是否已有 100% 落盘的完整媒体文件。
+  /// 在 [cacheDir] 中查找指定 [cacheKey] 是否已有 100% 落盘的完整媒体文件。
+  ///
+  /// Searches [cacheDir] for a complete, non-empty cached media file matching [cacheKey].
   static Future<File?> findCompleteFileInDir(String cacheDir, String cacheKey) async {
     for (final ext in VideoCacheKeyUtils.knownMediaExtensions) {
       final candidate = File('$cacheDir/$cacheKey$ext');
@@ -159,7 +180,9 @@ class LocalVideoCacheEngine {
     return null;
   }
 
-  /// 为桌面端播放器（或测试调用方）解析播放目标。
+  /// 为桌面端播放器（或测试调用方）解析 [source] 的播放目标（完整命中返回 `file://`，否则返回本机代理地址）。
+  ///
+  /// Resolves [source] to a `file://` path on a complete hit or a `127.0.0.1` proxy URL otherwise.
   Future<ResolvedVideoCacheTarget> resolveForPlayback(NetworkVideoSource source) async {
     final rawId = VideoCacheKeyUtils.resolveRawIdentity(source, _config);
     final cacheKey = VideoCacheKeyUtils.computeSha1Key(rawId);
@@ -225,7 +248,9 @@ class LocalVideoCacheEngine {
     );
   }
 
-  /// 为 `MediaProbe` 解析目标（完整命中走本地 `file://`，未完成走代理或原地址）。
+  /// 为媒体探测解析 [source] 目标（完整命中走本地 `file://`，未完成直连原地址）。
+  ///
+  /// Resolves [source] for media probing (`file://` on complete hit, raw URL otherwise).
   Future<ResolvedVideoCacheTarget> resolveForProbe(NetworkVideoSource source) async {
     final rawId = VideoCacheKeyUtils.resolveRawIdentity(source, _config);
     final cacheKey = VideoCacheKeyUtils.computeSha1Key(rawId);
@@ -251,7 +276,9 @@ class LocalVideoCacheEngine {
     );
   }
 
-  /// 后台预加载指定字节数（`preloadBytes == null` 时预加载完整文件）。
+  /// 后台预加载 [source] 的指定字节数（[preloadBytes] 为 `null` 时下载完整文件并自动提升为完整缓存）。
+  ///
+  /// Precaches [source] up to [preloadBytes] (or full file when `null`) into `.seg` files.
   Future<void> precache(NetworkVideoSource source, {int? preloadBytes}) async {
     final enabled =
         (source.enableCache ?? _config.enabled) &&
@@ -356,6 +383,9 @@ class LocalVideoCacheEngine {
     }
   }
 
+  /// 强制关闭并取消正在进行的 [source] 后台预下载任务。
+  ///
+  /// Aborts an active background precache HTTP client for [source].
   Future<void> cancelPrecache(NetworkVideoSource source) async {
     final rawId = VideoCacheKeyUtils.resolveRawIdentity(source, _config);
     final cacheKey = VideoCacheKeyUtils.computeSha1Key(rawId);
@@ -363,6 +393,9 @@ class LocalVideoCacheEngine {
     client?.close(force: true);
   }
 
+  /// 查询 [source] 是否已完成 100% 磁盘落盘（必要时会尝试合并已覆盖全量的分片）。
+  ///
+  /// Returns `true` if [source] is completely cached on disk, promoting full segments if ready.
   Future<bool> isCached(NetworkVideoSource source) async {
     final rawId = VideoCacheKeyUtils.resolveRawIdentity(source, _config);
     final cacheKey = VideoCacheKeyUtils.computeSha1Key(rawId);
@@ -375,6 +408,9 @@ class LocalVideoCacheEngine {
     return complete != null;
   }
 
+  /// 递归计算当前缓存目录占用的总磁盘字节数。
+  ///
+  /// Computes the total disk space in bytes used inside the cache directory.
   Future<int> getCacheSize() async {
     final cacheDir = await resolveCacheDir();
     final dir = Directory(cacheDir);
@@ -382,6 +418,9 @@ class LocalVideoCacheEngine {
     return _directoryByteSize(dir);
   }
 
+  /// 取消 [source] 的预加载并删除其所有完整文件与分片缓存。
+  ///
+  /// Cancels any precache and deletes all cached files/segments for [source].
   Future<void> removeCache(NetworkVideoSource source) async {
     await cancelPrecache(source);
     final rawId = VideoCacheKeyUtils.resolveRawIdentity(source, _config);
@@ -389,6 +428,9 @@ class LocalVideoCacheEngine {
     await removeCacheByKey(cacheKey);
   }
 
+  /// 按 40 位 SHA-1 [cacheKey] 原子删除对应的完整缓存文件与 `.part` 分片目录。
+  ///
+  /// Removes all complete files and `.part` directories matching [cacheKey].
   Future<void> removeCacheByKey(String cacheKey) async {
     final cacheDir = await resolveCacheDir();
     final dir = Directory(cacheDir);
@@ -405,6 +447,9 @@ class LocalVideoCacheEngine {
     });
   }
 
+  /// 中止所有预下载任务并清空缓存目录中所有未被固定（unpinned）的条目。
+  ///
+  /// Aborts active precaches and deletes all non-pinned entries in the cache directory.
   Future<void> clearCache() async {
     for (final client in _precacheClients.values) {
       client.close(force: true);
@@ -426,6 +471,9 @@ class LocalVideoCacheEngine {
     }
   }
 
+  /// 当缓存总大小超过 `maxCacheBytes` 时，按最后修改时间执行 LRU 淘汰（跳过已固定或正在写入的条目）。
+  ///
+  /// Evicts least-recently-modified non-pinned entries when total size exceeds `maxCacheBytes`.
   Future<void> evictIfNeeded() async {
     final maxBytes = _config.maxCacheBytes;
     final cacheDir = await resolveCacheDir();
@@ -478,6 +526,9 @@ class LocalVideoCacheEngine {
     }
   }
 
+  /// 关闭所有预加载客户端与本机回环 HTTP 代理服务器。
+  ///
+  /// Closes all active precache HTTP clients and shuts down the loopback proxy server.
   Future<void> dispose() async {
     for (final client in _precacheClients.values) {
       client.close(force: true);
