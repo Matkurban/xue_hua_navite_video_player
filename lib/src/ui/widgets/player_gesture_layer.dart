@@ -29,10 +29,26 @@ class PlayerGestureLayer extends StatefulWidget {
     this.isLocked = false,
     this.enableVerticalGestures = true,
     this.verticalGestureMapping = FullscreenGestureSideMapping.leftBrightnessRightVolume,
-    this.verticalGestureWidthRatio = 0.3,
+    this.verticalGestureLeftWidthRatio = 0.3,
+    this.verticalGestureRightWidthRatio = 0.3,
     this.verticalGestureHeightRatio = 0.7,
     this.gestureHudBuilder,
-  });
+  }) : assert(
+         verticalGestureLeftWidthRatio >= 0.0 && verticalGestureLeftWidthRatio <= 1.0,
+         'verticalGestureLeftWidthRatio must be between 0.0 and 1.0.',
+       ),
+       assert(
+         verticalGestureRightWidthRatio >= 0.0 && verticalGestureRightWidthRatio <= 1.0,
+         'verticalGestureRightWidthRatio must be between 0.0 and 1.0.',
+       ),
+       assert(
+         verticalGestureLeftWidthRatio + verticalGestureRightWidthRatio <= 1.0,
+         'verticalGestureLeftWidthRatio + verticalGestureRightWidthRatio must not exceed 1.0.',
+       ),
+       assert(
+         verticalGestureHeightRatio >= 0.0 && verticalGestureHeightRatio <= 1.0,
+         'verticalGestureHeightRatio must be between 0.0 and 1.0.',
+       );
 
   final VideoPlayerController controller;
   final VoidCallback onTap;
@@ -47,10 +63,18 @@ class PlayerGestureLayer extends StatefulWidget {
   /// Controls which side adjusts brightness vs. volume.
   final FullscreenGestureSideMapping verticalGestureMapping;
 
-  /// Width fraction (`0.05..0.5`) of each vertical swipe zone on the left/right edges.
-  final double verticalGestureWidthRatio;
+  /// Width fraction (`0.0..1.0`) of the left vertical swipe zone. Defaults to `0.3`.
+  ///
+  /// Must satisfy `verticalGestureLeftWidthRatio + verticalGestureRightWidthRatio <= 1.0`.
+  final double verticalGestureLeftWidthRatio;
 
-  /// Vertically centered height fraction (`0.1..1.0`) of the active vertical swipe band.
+  /// Width fraction (`0.0..1.0`) of the right vertical swipe zone. Defaults to `0.3`.
+  ///
+  /// Must satisfy `verticalGestureLeftWidthRatio + verticalGestureRightWidthRatio <= 1.0`.
+  final double verticalGestureRightWidthRatio;
+
+  /// Vertically centered height fraction (`0.0..1.0`) of the active vertical swipe band.
+  /// Defaults to `0.7`.
   final double verticalGestureHeightRatio;
 
   /// Optional custom center indicator builder replacing [PlayerGestureHud].
@@ -72,23 +96,33 @@ class _PlayerGestureLayerState extends State<PlayerGestureLayer> {
   double? _brightnessBaseline;
   double? _volumeBaseline;
 
-  double get _clampedWidthRatio => widget.verticalGestureWidthRatio.clamp(0.05, 0.5);
+  double get _effectiveLeftWidthRatio => widget.verticalGestureLeftWidthRatio.clamp(0.0, 1.0);
 
-  double get _clampedHeightRatio => widget.verticalGestureHeightRatio.clamp(0.1, 1.0);
+  double get _effectiveRightWidthRatio {
+    final double maxRight = (1.0 - _effectiveLeftWidthRatio).clamp(0.0, 1.0);
+    return widget.verticalGestureRightWidthRatio.clamp(0.0, maxRight);
+  }
+
+  double get _effectiveHeightRatio => widget.verticalGestureHeightRatio.clamp(0.0, 1.0);
 
   _GestureZone _zoneFor(double x, double width) {
-    final double sideRatio = _clampedWidthRatio;
-    if (x <= width * sideRatio) {
+    final double leftRatio = _effectiveLeftWidthRatio;
+    if (leftRatio > 0.0 && x <= width * leftRatio) {
       return _GestureZone.left;
     }
-    if (x >= width * (1.0 - sideRatio)) {
+    final double rightRatio = _effectiveRightWidthRatio;
+    if (rightRatio > 0.0 && x >= width * (1.0 - rightRatio)) {
       return _GestureZone.right;
     }
     return _GestureZone.center;
   }
 
   bool _isInsideVerticalBand(double y, double height) {
-    final double verticalMargin = height * (1.0 - _clampedHeightRatio) / 2.0;
+    final double heightRatio = _effectiveHeightRatio;
+    if (heightRatio <= 0.0) {
+      return false;
+    }
+    final double verticalMargin = height * (1.0 - heightRatio) / 2.0;
     return y >= verticalMargin && y <= height - verticalMargin;
   }
 
@@ -191,7 +225,7 @@ class _PlayerGestureLayerState extends State<PlayerGestureLayer> {
       return;
     }
 
-    final double activeHeight = size.height * _clampedHeightRatio;
+    final double activeHeight = size.height * _effectiveHeightRatio;
     if (activeHeight <= 0.0) {
       return;
     }

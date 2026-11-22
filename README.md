@@ -132,7 +132,7 @@ See [CONTEXT.md](CONTEXT.md) for domain notes.
 
 ```yaml
 dependencies:
-  xue_hua_navite_video_player: ^2.8.0
+  xue_hua_navite_video_player: ^2.9.0
 ```
 
 ```bash
@@ -143,7 +143,7 @@ flutter pub get
 import 'package:xue_hua_navite_video_player/xue_hua_navite_video_player.dart';
 ```
 
-Public exports include: `VideoSource`, `VideoCacheConfig`, `VideoPlayerController`, `VideoPlayer`, `CorePlayer`, `LivePhotoPlayer`, `LivePhotoSource`, `VideoPlayerTheme`, `PlayState`, `CastState`, `AspectRatioMode`, `SkipSecondType`, `VideoCoverFrame`, `NaviteFile`, `XueHuaNaviteVideoPlayer`, `PlayerScrubberSlider`, and `VideoPlayerSlotContext`.
+Public exports include: `VideoSource`, `VideoCacheConfig`, `VideoPlayerController`, `VideoPlayer`, `CorePlayer`, `LivePhotoPlayer`, `LivePhotoSource`, `VideoPlayerTheme`, `PlayState`, `CastState`, `AspectRatioMode`, `SkipSecondType`, `FullscreenGestureSideMapping`, `PlayerLockButtonPosition`, `PlayerHudKind`, `PlayerGestureHudContext`, `PlayerGestureHud`, `PlayerLockButton`, `VideoCoverFrame`, `NaviteFile`, `XueHuaNaviteVideoPlayer`, `PlayerScrubberSlider`, and `VideoPlayerSlotContext`.
 
 ---
 
@@ -443,12 +443,18 @@ await controller.setAspectRatioMode(AspectRatioMode.fill);
 // fit | fill | stretch
 ```
 
-### Fullscreen
+### Fullscreen & screen lock
 
 ```dart
 await controller.enterFullscreen();
 await controller.exitFullscreen();
 await controller.toggleFullscreen();
+
+// Lock current orientation & controls in fullscreen, or unlock to restore
+// gravity-driven bidirectional landscape rotation (via Flutter SystemChrome).
+await controller.lock();
+await controller.unlock();
+await controller.toggleLocked();
 ```
 
 See [Fullscreen contract](#fullscreen-contract).
@@ -483,6 +489,7 @@ final NaviteFile saved = await controller.takeSnapshot(savePath: '/tmp/frame.png
 | `skipSecondType`        | `SkipSecondType`  | Skip step                                          |
 | `aspectRatioMode`       | `AspectRatioMode` | Fit mode                                           |
 | `isFullscreen`          | `bool`            | Fullscreen                                         |
+| `isLocked`              | `bool`            | Fullscreen controls & orientation locked           |
 | `brightness`            | `double`          | Screen brightness                                  |
 | `textureId`             | `int?`            | Texture id (desktop)                               |
 | `castState`             | `CastState`       | Cast session. Starts at `unavailable`              |
@@ -589,10 +596,18 @@ VideoPlayer(
   showCastButton: true,
   showAspectRatioMenu: true,
   enableFullscreen: true,
+  enableFullscreenVerticalGestures: true,
+  verticalGestureMapping: FullscreenGestureSideMapping.leftBrightnessRightVolume,
+  verticalGestureLeftWidthRatio: 0.3,
+  verticalGestureRightWidthRatio: 0.3,
+  verticalGestureHeightRatio: 0.7,
+  showLockButton: true,
+  lockButtonPosition: PlayerLockButtonPosition.left,
   skipSecondType: SkipSecondType.second10,
-  // topBarBuilder / centerControlsBuilder /
-  // bottomScrubberBuilder / castingOverlayBuilder / extraOverlayBuilder
-  // errorBuilder / loadingBuilder
+  // Custom builders:
+  // topBarBuilder / centerControlsBuilder / bottomScrubberBuilder /
+  // castingOverlayBuilder / extraOverlayBuilder / gestureHudBuilder /
+  // lockButtonBuilder / errorBuilder / loadingBuilder
 );
 ```
 
@@ -664,31 +679,35 @@ Platform host:
 - **Desktop** — OS window fullscreen (Windows borderless, macOS native fullscreen, Linux `gtk_window_fullscreen`)
 - **Web** — browser Fullscreen API on the Flutter document (not the `<video>` element)
 
-Gestures are active on non-Web platforms while fullscreen **and** a `VideoPlayer` is mounted. Keyboard shortcuts (desktop / web) work in fullscreen or inline when the player is focused. Escape leaves fullscreen.
+Gestures and the fullscreen lock button are active while fullscreen **and** a `VideoPlayer` is mounted. Keyboard shortcuts (desktop / web) work in fullscreen or inline when the player is focused. `Esc` unlocks when locked, or exits fullscreen.
 
 ---
 
-## Gestures & keyboard
+## Gestures, screen lock & keyboard
 
-### Fullscreen gestures (all platforms except Web)
+### Fullscreen gestures & real-time HUD
 
-Active while fullscreen **and** a `VideoPlayer` is mounted (`kIsWeb` uses tap-only, no pan HUD).
+Active while fullscreen, unlocked, **and** a `VideoPlayer` is mounted (brightness swipe is skipped on Web where OS screen brightness is unavailable).
 
-| Gesture         | Zone                 | Action                            |
-| --------------- | -------------------- | --------------------------------- |
-| Horizontal drag | Anywhere (past 48px) | Seek (scaled by `skipSecondType`) |
-| Vertical drag   | Left ~40%            | Brightness                        |
-| Vertical drag   | Right ~40%           | Volume                            |
-| Tap             | —                    | Toggle chrome                     |
+| Gesture         | Zone (default)                                           | Action                                                            |
+| --------------- | -------------------------------------------------------- | ----------------------------------------------------------------- |
+| Horizontal drag | Anywhere (past 48px)                                     | Seek (scaled by `skipSecondType`)                                 |
+| Vertical drag   | Landscape only: left 30% width × centered 70% height     | Brightness by default (swap via `verticalGestureMapping`)         |
+| Vertical drag   | Landscape only: right 30% width × centered 70% height    | Volume by default (swap via `verticalGestureMapping`)             |
+| Tap             | Anywhere                                                 | Toggle chrome (when locked, toggles only the unlock button)       |
+
+- **Configurable side mapping & hot-zone**: set `verticalGestureMapping` (`FullscreenGestureSideMapping.leftBrightnessRightVolume` or `leftVolumeRightBrightness`), `verticalGestureLeftWidthRatio` (`0.0..1.0`, default `0.3`), `verticalGestureRightWidthRatio` (`0.0..1.0`, default `0.3`, with `left + right <= 1.0`), and `verticalGestureHeightRatio` (`0.0..1.0`, default `0.7`).
+- **Theme-adaptive & custom HUD**: the default `PlayerGestureHud` shows a real-time progress bar and percentage styled for both Material (`LinearProgressIndicator`) and Cupertino (frosted glass capsule). Provide `gestureHudBuilder: (context, hud) => ...` to completely replace it.
+- **Screen lock & bidirectional landscape**: tapping the lock button (left or right edge via `lockButtonPosition`, customizable via `lockButtonBuilder`) locks controls and fixes the current orientation with `SystemChrome.setPreferredOrientations`; unlocking restores gravity-driven bidirectional landscape (`landscapeLeft` / `landscapeRight`).
 
 ### Desktop / Web (focused — fullscreen or inline)
 
-| Key       | Action                  |
-| --------- | ----------------------- |
-| `Space`   | Play / pause            |
-| `←` / `→` | Seek backward / forward |
-| `↑` / `↓` | Volume ±0.05            |
-| `Esc`     | Exit fullscreen         |
+| Key       | Action                          |
+| --------- | ------------------------------- |
+| `Space`   | Play / pause                    |
+| `←` / `→` | Seek backward / forward         |
+| `↑` / `↓` | Volume ±0.05                    |
+| `Esc`     | Unlock (if locked) / Exit fullscreen |
 
 ---
 

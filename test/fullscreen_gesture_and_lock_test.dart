@@ -334,6 +334,88 @@ void main() {
 
       await controller.dispose();
     });
+
+    testWidgets('supports custom asymmetric left/right width ratios and validates 0..1 bounds', (
+      WidgetTester tester,
+    ) async {
+      final _FakeBackend backend = _FakeBackend();
+      final _FakeBrightness brightness = _FakeBrightness(initial: 0.5);
+      final _FakeFullscreen fullscreen = _FakeFullscreen();
+      final VideoPlayerController controller = VideoPlayerController(
+        backend: backend,
+        brightness: brightness,
+        fullscreen: fullscreen,
+      );
+      await controller.initialize();
+      await controller.setVolume(0.5);
+      await controller.enterFullscreen();
+
+      expect(
+        () => VideoPlayer(controller: controller, verticalGestureLeftWidthRatio: -0.1),
+        throwsAssertionError,
+      );
+      expect(
+        () => VideoPlayer(controller: controller, verticalGestureRightWidthRatio: 1.1),
+        throwsAssertionError,
+      );
+      expect(
+        () => VideoPlayer(
+          controller: controller,
+          verticalGestureLeftWidthRatio: 0.6,
+          verticalGestureRightWidthRatio: 0.5,
+        ),
+        throwsAssertionError,
+      );
+      expect(
+        () => VideoPlayer(controller: controller, verticalGestureHeightRatio: 1.2),
+        throwsAssertionError,
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: SizedBox(
+                width: 800.0,
+                height: 400.0,
+                child: PlayerGestureLayer(
+                  controller: controller,
+                  verticalGestureLeftWidthRatio: 0.6,
+                  verticalGestureRightWidthRatio: 0.2,
+                  verticalGestureHeightRatio: 0.5,
+                  onTap: () {},
+                  child: const SizedBox.expand(),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      final Rect rect = tester.getRect(find.byType(PlayerGestureLayer));
+
+      // x = 55% is inside the custom 60% left zone and centered 50% height band.
+      final TestGesture leftGesture = await tester.startGesture(
+        Offset(rect.left + rect.width * 0.55, rect.top + rect.height * 0.5),
+      );
+      await leftGesture.moveBy(const Offset(0.0, -50.0));
+      await tester.pump();
+      expect(controller.brightness.value, greaterThan(0.5));
+      await leftGesture.up();
+      await tester.pump();
+
+      // x = 70% is in the dead center gap (between 60% and 80%), so volume must not change.
+      final TestGesture gapGesture = await tester.startGesture(
+        Offset(rect.left + rect.width * 0.70, rect.top + rect.height * 0.5),
+      );
+      await gapGesture.moveBy(const Offset(0.0, -50.0));
+      await tester.pump();
+      expect(controller.volume.value, equals(0.5));
+      await gapGesture.up();
+      await tester.pump();
+
+      await controller.dispose();
+    });
   });
 
   group('VideoPlayer fullscreen lock button & positioning', () {

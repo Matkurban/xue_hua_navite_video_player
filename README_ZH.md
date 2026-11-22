@@ -142,7 +142,7 @@ XueHuaNaviteVideoPlayer.instance
 
 ```yaml
 dependencies:
-  xue_hua_navite_video_player: ^2.8.0
+  xue_hua_navite_video_player: ^2.9.0
 ```
 
 然后执行：
@@ -157,7 +157,7 @@ flutter pub get
 import 'package:xue_hua_navite_video_player/xue_hua_navite_video_player.dart';
 ```
 
-公开导出主要包括：`VideoSource`、`VideoCacheConfig`、`VideoPlayerController`、`VideoPlayer`、`CorePlayer`、`LivePhotoPlayer`、`LivePhotoSource`、`VideoPlayerTheme`、`PlayState`、`CastState`、`AspectRatioMode`、`SkipSecondType`、`VideoCoverFrame`、`NaviteFile`、`XueHuaNaviteVideoPlayer`、`PlayerScrubberSlider`、`VideoPlayerSlotContext`。
+公开导出主要包括：`VideoSource`、`VideoCacheConfig`、`VideoPlayerController`、`VideoPlayer`、`CorePlayer`、`LivePhotoPlayer`、`LivePhotoSource`、`VideoPlayerTheme`、`PlayState`、`CastState`、`AspectRatioMode`、`SkipSecondType`、`FullscreenGestureSideMapping`、`PlayerLockButtonPosition`、`PlayerHudKind`、`PlayerGestureHudContext`、`PlayerGestureHud`、`PlayerLockButton`、`VideoCoverFrame`、`NaviteFile`、`XueHuaNaviteVideoPlayer`、`PlayerScrubberSlider`、`VideoPlayerSlotContext`。
 
 ---
 
@@ -473,12 +473,17 @@ await controller.setAspectRatioMode(AspectRatioMode.fill);
 // fit：适应留边 | fill：等比裁切铺满 | stretch：拉伸填满
 ```
 
-### 全屏
+### 全屏与锁屏
 
 ```dart
 await controller.enterFullscreen();
 await controller.exitFullscreen();
 await controller.toggleFullscreen();
+
+// 全屏锁定当前方向与防误触；解锁后通过 Flutter 官方 SystemChrome 恢复双向横屏重力自动旋转
+await controller.lock();
+await controller.unlock();
+await controller.toggleLocked();
 ```
 
 详见 [全屏契约](#全屏契约)。
@@ -516,6 +521,7 @@ final NaviteFile saved = await controller.takeSnapshot(savePath: '/tmp/frame.png
 | `skipSecondType`        | `SkipSecondType`  | 跳过步进                                          |
 | `aspectRatioMode`       | `AspectRatioMode` | 画面模式                                          |
 | `isFullscreen`          | `bool`            | 是否全屏                                          |
+| `isLocked`              | `bool`            | 全屏控件与方向是否已锁定                          |
 | `brightness`            | `double`          | 屏幕亮度                                          |
 | `textureId`             | `int?`            | Texture 平台的纹理 ID                             |
 | `castState`             | `CastState`       | 投屏状态，初始为 `unavailable`                    |
@@ -622,11 +628,18 @@ VideoPlayer(
   showCastButton: true,
   showAspectRatioMenu: true,
   enableFullscreen: true,
+  enableFullscreenVerticalGestures: true,
+  verticalGestureMapping: FullscreenGestureSideMapping.leftBrightnessRightVolume,
+  verticalGestureLeftWidthRatio: 0.3,
+  verticalGestureRightWidthRatio: 0.3,
+  verticalGestureHeightRatio: 0.7,
+  showLockButton: true,
+  lockButtonPosition: PlayerLockButtonPosition.left,
   skipSecondType: SkipSecondType.second10,
   // 自定义槽位：
-  // topBarBuilder / centerControlsBuilder /
-  // bottomScrubberBuilder / castingOverlayBuilder / extraOverlayBuilder
-  // errorBuilder / loadingBuilder
+  // topBarBuilder / centerControlsBuilder / bottomScrubberBuilder /
+  // castingOverlayBuilder / extraOverlayBuilder / gestureHudBuilder /
+  // lockButtonBuilder / errorBuilder / loadingBuilder
 );
 ```
 
@@ -736,33 +749,35 @@ await controller.exitFullscreen();
 - **桌面** — 操作系统窗口全屏（Windows 无边框、macOS 原生全屏、Linux `gtk_window_fullscreen`）
 - **Web** — 对 Flutter 文档根使用浏览器 Fullscreen API（不是 `<video>` 元素）
 
-手势在 **非 Web、全屏且 `VideoPlayer` 已挂载** 时生效。快捷键（桌面 / Web）在全屏或非全屏下均可使用，需 **`VideoPlayer` 已挂载且获得焦点**（点击播放器区域即可）。`Esc` 退出全屏。
+手势与锁屏按钮在 **全屏且 `VideoPlayer` 已挂载** 时生效。快捷键（桌面 / Web）在全屏或非全屏下均可使用，需 **`VideoPlayer` 已挂载且获得焦点**（点击播放器区域即可）。`Esc` 在锁定时先解锁，未锁定时退出全屏。
 
 ---
 
-## 手势与快捷键
+## 手势、锁屏与快捷键
 
-### 全屏手势（Web 除外）
+### 全屏横屏手势与实时指示器
 
-在全屏且已挂载 `VideoPlayer` 时生效（Web 只有点击显隐控件，没有滑动 HUD）。
+在全屏、未锁定且已挂载 `VideoPlayer` 时生效（Web 端无系统屏幕亮度接口，自动跳过亮度手势，保留音量手势）。
 
-| 手势     | 区域              | 作用                                        |
-| -------- | ----------------- | ------------------------------------------- |
-| 水平滑动 | 任意（超过 48px） | 快进 / 快退（幅度受 `skipSecondType` 影响） |
-| 垂直滑动 | 左侧约 40%        | 调节屏幕亮度                                |
-| 垂直滑动 | 右侧约 40%        | 调节音量                                    |
-| 单击     | —                 | 显隐控件                                    |
+| 手势     | 区域（默认）                              | 作用                                                        |
+| -------- | ----------------------------------------- | ----------------------------------------------------------- |
+| 水平滑动 | 任意（超过 48px）                         | 快进 / 快退（幅度受 `skipSecondType` 影响）                 |
+| 垂直滑动 | 仅横屏：左侧 30% 宽度 × 居中 70% 高度     | 默认调节屏幕亮度（可通过 `verticalGestureMapping` 左右切换）|
+| 垂直滑动 | 仅横屏：右侧 30% 宽度 × 居中 70% 高度     | 默认调节音量（可通过 `verticalGestureMapping` 左右切换）    |
+| 单击     | 任意区域                                  | 显隐控件（锁定时仅显隐解锁按钮）                            |
 
-手势过程中会显示 HUD（亮度 / 音量 / 跳转秒数）。
+- **区域与左右映射可配**：通过 `verticalGestureMapping`（`FullscreenGestureSideMapping.leftBrightnessRightVolume` / `leftVolumeRightBrightness`）、`verticalGestureLeftWidthRatio`（`0.0..1.0`，默认 `0.3`）、`verticalGestureRightWidthRatio`（`0.0..1.0`，默认 `0.3`，且校验 `left + right <= 1.0`）与 `verticalGestureHeightRatio`（`0.0..1.0`，默认 `0.7`）灵活控制。
+- **默认 HUD 主题适配与完全自定义**：内置 `PlayerGestureHud` 实时显示进度条与百分比，默认自动适配 Material（`LinearProgressIndicator`）与 Cupertino（毛玻璃胶囊进度条）主题；传入 `gestureHudBuilder` 可完全自定义指示器组件。
+- **基础锁定与双向横屏**：基于 Flutter 官方 `SystemChrome.setPreferredOrientations`，锁定时固定当前方向并屏蔽误触操作，解锁后自动恢复 `landscapeLeft` / `landscapeRight` 重力感应双向横屏旋转；锁屏按钮可通过 `lockButtonPosition`（`left` / `right`）配置左右位置，并通过 `lockButtonBuilder` 完全自定义。
 
 ### 桌面 / Web（已聚焦 — 全屏或非全屏）
 
-| 按键      | 作用              |
-| --------- | ----------------- |
-| `Space`   | 播放 / 暂停       |
-| `←` / `→` | 按步进后退 / 前进 |
-| `↑` / `↓` | 音量 ±0.05        |
-| `Esc`     | 退出全屏          |
+| 按键      | 作用                         |
+| --------- | ---------------------------- |
+| `Space`   | 播放 / 暂停                  |
+| `←` / `→` | 按步进后退 / 前进            |
+| `↑` / `↓` | 音量 ±0.05                   |
+| `Esc`     | 解锁（若已锁定）/ 退出全屏   |
 
 ---
 

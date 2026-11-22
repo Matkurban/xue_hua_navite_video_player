@@ -36,7 +36,8 @@ class PlayerBody extends StatelessWidget {
     required this.enableFullscreen,
     required this.enableFullscreenVerticalGestures,
     required this.verticalGestureMapping,
-    required this.verticalGestureWidthRatio,
+    required this.verticalGestureLeftWidthRatio,
+    required this.verticalGestureRightWidthRatio,
     required this.verticalGestureHeightRatio,
     required this.showLockButton,
     required this.lockButtonPosition,
@@ -75,7 +76,8 @@ class PlayerBody extends StatelessWidget {
   final bool enableFullscreen;
   final bool enableFullscreenVerticalGestures;
   final FullscreenGestureSideMapping verticalGestureMapping;
-  final double verticalGestureWidthRatio;
+  final double verticalGestureLeftWidthRatio;
+  final double verticalGestureRightWidthRatio;
   final double verticalGestureHeightRatio;
   final bool showLockButton;
   final PlayerLockButtonPosition lockButtonPosition;
@@ -138,7 +140,8 @@ class PlayerBody extends StatelessWidget {
                         isLocked: isLocked,
                         enableVerticalGestures: enableFullscreenVerticalGestures,
                         verticalGestureMapping: verticalGestureMapping,
-                        verticalGestureWidthRatio: verticalGestureWidthRatio,
+                        verticalGestureLeftWidthRatio: verticalGestureLeftWidthRatio,
+                        verticalGestureRightWidthRatio: verticalGestureRightWidthRatio,
                         verticalGestureHeightRatio: verticalGestureHeightRatio,
                         gestureHudBuilder: gestureHudBuilder,
                         onTap: () {

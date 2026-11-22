@@ -39,6 +39,7 @@ Defaults after construction (before open):
 | `skipSecondType`  | `FlutterSignal<SkipSecondType>`  | `SkipSecondType.second10` | Step used by `seekForward` / `seekBackward`.                                                                    |
 | `aspectRatioMode` | `FlutterSignal<AspectRatioMode>` | `AspectRatioMode.fit`     | Native fit mode.                                                                                                |
 | `isFullscreen`    | `FlutterSignal<bool>`            | `false`                   | Fullscreen flag (set before the platform host runs).                                                            |
+| `isLocked`        | `FlutterSignal<bool>`            | `false`                   | Fullscreen lock flag (controls & orientation locked). Cleared on fullscreen exit/dispose.                       |
 | `brightness`      | `FlutterSignal<double>`          | `1.0`                     | Screen brightness 0.0–1.0. Refreshed from native in `initialize()` when possible.                               |
 | `textureId`       | `FlutterSignal<int?>`            | `null` until create       | Flutter `Texture` id on Linux/Windows. PlatformView platforms return `0` from native create (not a Texture id). |
 
@@ -140,13 +141,17 @@ A 3-second ready fallback leaves `loading` if native never reports duration/meta
 | `setAspectRatioMode` | `Future<void> setAspectRatioMode(AspectRatioMode mode)`                                                            | Write signal, send native `mode.wireName` (`fit` / `fill` / `stretch`).                                                                                                                  |
 | `setVideoViewSize`   | `Future<void> setVideoViewSize({required double width, required double height, required double devicePixelRatio})` | Returns immediately if width or height `<= 0`. Needed for libmpv panscan vs Flutter view. No-op on PlatformView platforms that size themselves. `CorePlayer` Texture already calls this. |
 
-## Fullscreen
+## Fullscreen & Screen Lock
 
-| Method             | Signature                         | Behavior                                                                                                                                                               |
-| ------------------ | --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `enterFullscreen`  | `Future<void> enterFullscreen()`  | No-op if disposed or already fullscreen. Sets `isFullscreen = true` first (so Overlay can reparent), then platform host with `landscapeVideo: videoAspectRatio > 1.0`. |
-| `exitFullscreen`   | `Future<void> exitFullscreen()`   | No-op if disposed or not fullscreen. Sets flag false, restores host.                                                                                                   |
-| `toggleFullscreen` | `Future<void> toggleFullscreen()` | Exit if fullscreen, else enter.                                                                                                                                        |
+| Method             | Signature                                                                       | Behavior                                                                                                                                                                     |
+| ------------------ | ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `enterFullscreen`  | `Future<void> enterFullscreen()`                                                | No-op if disposed or already fullscreen. Clears `isLocked`, sets `isFullscreen = true` first (so Overlay can reparent), refreshes brightness, then enters platform host.    |
+| `exitFullscreen`   | `Future<void> exitFullscreen()`                                                 | No-op if disposed or not fullscreen. Clears `isLocked` and `isFullscreen`, restores host.                                                                                    |
+| `toggleFullscreen` | `Future<void> toggleFullscreen()`                                               | Exit if fullscreen, else enter.                                                                                                                                              |
+| `setLocked`        | `Future<void> setLocked(bool locked, {DeviceOrientation? lockedOrientation})`   | No-op if not fullscreen. Locks to a single `DeviceOrientation` via `SystemChrome`, or unlocks to restore gravity-driven bidirectional landscape/portrait rotation.           |
+| `lock`             | `Future<void> lock({DeviceOrientation? lockedOrientation})`                     | Shorthand for `setLocked(true, lockedOrientation: lockedOrientation)`.                                                                                                       |
+| `unlock`           | `Future<void> unlock()`                                                         | Shorthand for `setLocked(false)`.                                                                                                                                            |
+| `toggleLocked`     | `Future<void> toggleLocked({DeviceOrientation? lockedOrientation})`             | Toggles `isLocked` while in fullscreen.                                                                                                                                      |
 
 Platform host: mobile orientation + immersive UI; desktop window fullscreen; web browser Fullscreen API on the Flutter document (not the `<video>` element). OS/browser leaving fullscreen syncs `isFullscreen` without a second `exit()`.
 

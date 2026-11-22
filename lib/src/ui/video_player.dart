@@ -57,10 +57,17 @@ class VideoPlayer extends StatefulWidget {
   /// Configures which side controls screen brightness vs. audio volume in fullscreen landscape.
   final FullscreenGestureSideMapping verticalGestureMapping;
 
-  /// Width fraction (`0.05..0.5`) of each left/right vertical gesture area. Defaults to `0.3` (30%).
-  final double verticalGestureWidthRatio;
+  /// Width fraction (`0.0..1.0`) of the left vertical gesture area. Defaults to `0.3` (30%).
+  ///
+  /// Must satisfy `verticalGestureLeftWidthRatio + verticalGestureRightWidthRatio <= 1.0`.
+  final double verticalGestureLeftWidthRatio;
 
-  /// Vertically centered height fraction (`0.1..1.0`) of the vertical gesture band. Defaults to `0.7` (70%).
+  /// Width fraction (`0.0..1.0`) of the right vertical gesture area. Defaults to `0.3` (30%).
+  ///
+  /// Must satisfy `verticalGestureLeftWidthRatio + verticalGestureRightWidthRatio <= 1.0`.
+  final double verticalGestureRightWidthRatio;
+
+  /// Vertically centered height fraction (`0.0..1.0`) of the vertical gesture band. Defaults to `0.7` (70%).
   final double verticalGestureHeightRatio;
 
   /// Whether to display the screen lock/unlock button in fullscreen mode.
@@ -110,7 +117,8 @@ class VideoPlayer extends StatefulWidget {
     this.enableFullscreen = true,
     this.enableFullscreenVerticalGestures = true,
     this.verticalGestureMapping = FullscreenGestureSideMapping.leftBrightnessRightVolume,
-    this.verticalGestureWidthRatio = 0.3,
+    this.verticalGestureLeftWidthRatio = 0.3,
+    this.verticalGestureRightWidthRatio = 0.3,
     this.verticalGestureHeightRatio = 0.7,
     this.showLockButton = true,
     this.lockButtonPosition = PlayerLockButtonPosition.left,
@@ -125,7 +133,22 @@ class VideoPlayer extends StatefulWidget {
     this.gestureHudBuilder,
     this.lockButtonBuilder,
     this.skipSecondType = SkipSecondType.second10,
-  });
+  }) : assert(
+         verticalGestureLeftWidthRatio >= 0.0 && verticalGestureLeftWidthRatio <= 1.0,
+         'verticalGestureLeftWidthRatio must be between 0.0 and 1.0.',
+       ),
+       assert(
+         verticalGestureRightWidthRatio >= 0.0 && verticalGestureRightWidthRatio <= 1.0,
+         'verticalGestureRightWidthRatio must be between 0.0 and 1.0.',
+       ),
+       assert(
+         verticalGestureLeftWidthRatio + verticalGestureRightWidthRatio <= 1.0,
+         'verticalGestureLeftWidthRatio + verticalGestureRightWidthRatio must not exceed 1.0.',
+       ),
+       assert(
+         verticalGestureHeightRatio >= 0.0 && verticalGestureHeightRatio <= 1.0,
+         'verticalGestureHeightRatio must be between 0.0 and 1.0.',
+       );
 
   @override
   State<VideoPlayer> createState() => _VideoPlayerState();
@@ -376,7 +399,8 @@ class _VideoPlayerState extends State<VideoPlayer> {
               enableFullscreen: widget.enableFullscreen,
               enableFullscreenVerticalGestures: widget.enableFullscreenVerticalGestures,
               verticalGestureMapping: widget.verticalGestureMapping,
-              verticalGestureWidthRatio: widget.verticalGestureWidthRatio,
+              verticalGestureLeftWidthRatio: widget.verticalGestureLeftWidthRatio,
+              verticalGestureRightWidthRatio: widget.verticalGestureRightWidthRatio,
               verticalGestureHeightRatio: widget.verticalGestureHeightRatio,
               showLockButton: widget.showLockButton,
               lockButtonPosition: widget.lockButtonPosition,
@@ -423,7 +447,8 @@ class _VideoPlayerState extends State<VideoPlayer> {
               enableFullscreen: widget.enableFullscreen,
               enableFullscreenVerticalGestures: widget.enableFullscreenVerticalGestures,
               verticalGestureMapping: widget.verticalGestureMapping,
-              verticalGestureWidthRatio: widget.verticalGestureWidthRatio,
+              verticalGestureLeftWidthRatio: widget.verticalGestureLeftWidthRatio,
+              verticalGestureRightWidthRatio: widget.verticalGestureRightWidthRatio,
               verticalGestureHeightRatio: widget.verticalGestureHeightRatio,
               showLockButton: widget.showLockButton,
               lockButtonPosition: widget.lockButtonPosition,

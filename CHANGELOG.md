@@ -1,3 +1,17 @@
+## 2.9.0
+
+- **Fullscreen Landscape Brightness & Volume Gestures**:
+  - Enabled vertical swipe brightness and volume controls in fullscreen landscape playback (`width > height`), with default active hot-zones of **30% left width**, **30% right width**, and **70% centered height** (configurable via `enableFullscreenVerticalGestures`, `verticalGestureLeftWidthRatio`, `verticalGestureRightWidthRatio`, and `verticalGestureHeightRatio` on `VideoPlayer`, validated to `0.0..1.0` with `left + right <= 1.0`).
+  - Added `FullscreenGestureSideMapping` (`leftBrightnessRightVolume` / `leftVolumeRightBrightness`) to configure which side adjusts brightness vs. volume via `VideoPlayer.verticalGestureMapping`.
+  - Added `PlayerGestureHud` and `PlayerGestureHudContext` (`PlayerHudKind`, `value`, `percentage`, `label`, `isMuted`, `theme`, `controller`): default center real-time indicator adapts automatically to **Material** (`LinearProgressIndicator` + rounded Material icons) and **Cupertino** (frosted glass `PlayerGlassSurface` + capsule progress bar + Cupertino icons) themes, and can be completely replaced via `VideoPlayer.gestureHudBuilder`.
+- **Screen Lock & Bidirectional Landscape Rotation (`SystemChrome`)**:
+  - Added `VideoPlayerController.isLocked`, `lock()`, `unlock()`, `toggleLocked()`, and `setLocked()` backed by Flutter's official `SystemChrome.setPreferredOrientations`.
+  - Locking in fullscreen fixes the active orientation, hides top/center/bottom chrome, and blocks drag gestures while keeping tap-to-toggle unlock access; unlocking restores gravity-driven bidirectional landscape (`landscapeLeft` / `landscapeRight`) auto-rotation. Exiting fullscreen automatically clears the lock state.
+  - Added `PlayerLockButton` and `PlayerLockButtonPosition` (`left` / `right`) with `VideoPlayer.showLockButton`, `VideoPlayer.lockButtonPosition`, and `VideoPlayer.lockButtonBuilder` for full positioning and UI customization.
+- **Architecture & Tests**:
+  - Refactored `PlayerGestureLayer` and `VideoPlayer` to use `signals_flutter` without `setState`, maintaining clean widget-class decomposition.
+  - Added unit and widget test coverage in `test/fullscreen_gesture_and_lock_test.dart`.
+
 ## 2.8.0
 
 - **Pigeon Cross-Platform Native Communication (`pigeons/player_api.dart`)**:

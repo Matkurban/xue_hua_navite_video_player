@@ -69,3 +69,31 @@ Method-channel value: `'fit'`, `'fill'`, or `'stretch'`.
 | `'fit'` or anything else (including `null`) | `fit` |
 
 Default on a new controller: `fit`. `initialize()` and each `openSource` send the current mode to native.
+
+## `FullscreenGestureSideMapping`
+
+```dart
+enum FullscreenGestureSideMapping {
+  leftBrightnessRightVolume,
+  leftVolumeRightBrightness,
+}
+```
+
+- Default on `VideoPlayer.verticalGestureMapping`: `leftBrightnessRightVolume`.
+- Convenience getters: `isLeftBrightness`, `isLeftVolume`, `isRightBrightness`, `isRightVolume`.
+
+## `PlayerLockButtonPosition`
+
+```dart
+enum PlayerLockButtonPosition { left, right }
+```
+
+- Default on `VideoPlayer.lockButtonPosition`: `left`.
+
+## `PlayerHudKind`
+
+```dart
+enum PlayerHudKind { seek, brightness, volume }
+```
+
+- Passed inside `PlayerGestureHudContext` to `PlayerGestureHud` and `VideoPlayer.gestureHudBuilder`.

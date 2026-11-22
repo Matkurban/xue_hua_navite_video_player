@@ -21,7 +21,7 @@ Cast: [xue-hua-navite-video-player-cast](../xue-hua-navite-video-player-cast/SKI
 
 ## Guidelines
 
-- Add `xue_hua_navite_video_player: ^2.8.0` and run `flutter pub get`.
+- Add `xue_hua_navite_video_player: ^2.9.0` and run `flutter pub get`.
 - Call `WidgetsFlutterBinding.ensureInitialized()` before any plugin work.
 - `XueHuaNaviteVideoPlayer.instance.initialize({VideoCacheConfig? cacheConfig})` is optional, idempotent, and does **not** create the native player. It ensures the binding, optionally applies `cacheConfig`, and sets `isInitialized`.
 - On-disk media caching is **enabled by default** (`maxCacheBytes = 512 MiB`, `maxSingleFileBytes = 256 MiB`). Update cache limits at any time via `XueHuaNaviteVideoPlayer.instance.configureCache(VideoCacheConfig(...))`.

@@ -49,6 +49,14 @@ class VideoPlayer extends StatefulWidget {
     this.showCastButton = true,
     this.showAspectRatioMenu = true,
     this.enableFullscreen = true,
+    this.enableFullscreenVerticalGestures = true,
+    this.verticalGestureMapping = FullscreenGestureSideMapping.leftBrightnessRightVolume,
+    this.verticalGestureLeftWidthRatio = 0.3,
+    this.verticalGestureRightWidthRatio = 0.3,
+    this.verticalGestureHeightRatio = 0.7,
+    this.showLockButton = true,
+    this.lockButtonPosition = PlayerLockButtonPosition.left,
+    this.theme,
     this.errorBuilder,
     this.loadingBuilder,
     this.topBarBuilder,
@@ -56,6 +64,8 @@ class VideoPlayer extends StatefulWidget {
     this.bottomScrubberBuilder,
     this.castingOverlayBuilder,
     this.extraOverlayBuilder,
+    this.gestureHudBuilder,
+    this.lockButtonBuilder,
     this.skipSecondType = SkipSecondType.second10,
   });
 }
@@ -79,13 +89,23 @@ class VideoPlayer extends StatefulWidget {
 | `showCastButton` | `bool` | `true` | Default top bar only. Icon when `controller.isCastSupported`. A custom `topBarBuilder` must draw its own button. Overlay behavior: [cast reference](../../xue-hua-navite-video-player-cast/references/cast.md). |
 | `showAspectRatioMenu` | `bool` | `true` | Adds fit/fill/stretch menu (labels 适应 / 铺满 / 拉伸). |
 | `enableFullscreen` | `bool` | `true` | Shows the fullscreen icon on the default bottom bar. Overlay still reacts if `isFullscreen` becomes true. |
+| `enableFullscreenVerticalGestures` | `bool` | `true` | Enables fullscreen landscape vertical swipe controls for brightness and volume. |
+| `verticalGestureMapping` | `FullscreenGestureSideMapping` | `leftBrightnessRightVolume` | Controls which side adjusts brightness vs. volume (`leftBrightnessRightVolume` / `leftVolumeRightBrightness`). |
+| `verticalGestureLeftWidthRatio` | `double` | `0.3` | Left edge width fraction (`0.0..1.0`) for vertical swipe zone (`left + right <= 1.0`). |
+| `verticalGestureRightWidthRatio` | `double` | `0.3` | Right edge width fraction (`0.0..1.0`) for vertical swipe zone (`left + right <= 1.0`). |
+| `verticalGestureHeightRatio` | `double` | `0.7` | Vertically centered height fraction (`0.0..1.0`) for vertical swipe zones. |
+| `showLockButton` | `bool` | `true` | Shows the screen lock/unlock button in fullscreen mode. |
+| `lockButtonPosition` | `PlayerLockButtonPosition` | `left` | Places the fullscreen lock button vertically centered on the `left` or `right` edge. |
+| `theme` | `VideoPlayerTheme?` | `null` | Per-instance theme override; falls back to `VideoPlayerTheme.of(context)`. |
 | `errorBuilder` | `Widget Function(BuildContext, String?)?` | `null` | Forwarded to `CorePlayer`. |
 | `loadingBuilder` | `Widget Function(BuildContext)?` | `null` | Forwarded to `CorePlayer`. |
 | `topBarBuilder` | `Widget Function(BuildContext, VideoPlayerSlotContext)?` | `null` | Replaces default top bar. |
 | `centerControlsBuilder` | same | `null` | Replaces center skip / play / skip. |
 | `bottomScrubberBuilder` | same | `null` | Replaces mute, times, scrubber, speed menu, fullscreen. |
 | `castingOverlayBuilder` | same | `null` | Replaces the default overlay shown while `isCasting`. |
-| `extraOverlayBuilder` | same | `null` | Extra `Positioned.fill` above the cast overlay. |
+| `extraOverlayBuilder` | same | `null` | Extra `Positioned.fill` above the cast overlay (hidden while locked). |
+| `gestureHudBuilder` | `Widget Function(BuildContext, PlayerGestureHudContext)?` | `null` | Replaces default `PlayerGestureHud` center indicator during brightness/volume/seek gestures. |
+| `lockButtonBuilder` | `Widget Function(BuildContext, VideoPlayerSlotContext, bool isLocked)?` | `null` | Replaces default `PlayerLockButton` in fullscreen. |
 | `skipSecondType` | `SkipSecondType` | `second10` | Written to `controller.setSkipSecondType` on init and when this field changes. |
 
 ### Runtime behavior
@@ -94,8 +114,9 @@ class VideoPlayer extends StatefulWidget {
 - While playing, not buffering, and not casting, schedules auto-hide. Buffering, `completed`, or `isCasting` shows chrome and does not auto-hide.
 - Fullscreen: show OverlayPortal first, then suppress the inline body so the `GlobalKey` surface moves in one frame. Exit un-suppresses before hide.
 - If there is no `Overlay` ancestor, OverlayPortal cannot show; platform fullscreen may still apply.
-- Desktop/Web: wraps in `Focus` (`autofocus` when fullscreen). Keyboard: Space, arrows, Escape (see SKILL.md).
-- Gestures: `PlayerGestureLayer` when `isFullscreen && !kIsWeb`. Otherwise tap toggles chrome (and requests focus on desktop).
+- Desktop/Web: wraps in `Focus` (`autofocus` when fullscreen). Keyboard: Space, arrows, Escape (unlocks if locked, otherwise exits fullscreen).
+- Gestures: `PlayerGestureLayer` when `isFullscreen`. Horizontal drag seeks; in fullscreen landscape (`width > height`) and unlocked, vertical drag inside the `verticalGestureLeftWidthRatio` / `verticalGestureRightWidthRatio` (`0.0..1.0`, sum `<= 1.0`) × `verticalGestureHeightRatio` (`0.0..1.0`) side zones adjusts brightness/volume and shows `PlayerGestureHud` (Material/Cupertino adaptive) or `gestureHudBuilder`.
+- Screen lock: while `controller.isLocked.value` is true, top/center/bottom controls and drag gestures are disabled; tapping toggles only the lock/unlock button.
 - Default bottom scrubber commits `controller.seek` in `onChangeEnd` from the slider value × duration. Speed menu: `0.5, 1.0, 1.25, 1.5, 2.0`.
 
 ### Example — slot replacement
