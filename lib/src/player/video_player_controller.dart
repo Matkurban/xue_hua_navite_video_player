@@ -32,7 +32,7 @@ class VideoPlayerController {
   ///
   /// 所有依赖参数均可选，默认使用插件内置的跨平台实现；在单元测试或高级定制场景下可
   /// 注入自定义实现：
-  /// - [backend]：底层播放器传输后端（默认使用 [ChannelPlayerBackend]）。
+  /// - [backend]：底层播放器传输后端（默认使用 [PlayerBackend]）。
   /// - [fullscreen]：全屏与方向锁定协调器（默认使用 [SystemChromeFullscreenCoordinator]）。
   /// - [brightness]：屏幕亮度控制器（默认使用 [ChannelBrightnessController]）。
   /// - [localCastServer]：本地文件投屏使用的局域网 HTTP 代理服务。
