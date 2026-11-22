@@ -21,6 +21,17 @@ Future<void> main(List<String> args) async {
   if (exitCode != 0) {
     exit(exitCode);
   }
+
+  final orientationProcess = await Process.start(
+    Platform.resolvedExecutable,
+    <String>['run', 'pigeon', '--input', 'pigeons/orientation_api.dart', ...args],
+    environment: env,
+    mode: ProcessStartMode.inheritStdio,
+  );
+  final orientationExitCode = await orientationProcess.exitCode;
+  if (orientationExitCode != 0) {
+    exit(orientationExitCode);
+  }
 }
 
 String? _resolveAndroidHome(Map<String, String> env) {

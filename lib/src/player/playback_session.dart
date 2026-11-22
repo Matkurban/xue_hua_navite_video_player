@@ -14,6 +14,7 @@ import '../data/enums/skip_second_type.dart';
 import '../data/models/live_photo_bundle.dart';
 import '../data/models/live_photo_metadata.dart';
 import '../data/models/navite_file.dart';
+import '../orientation/player_orientation_controller.dart';
 import '../utils/live_photo_extractor.dart';
 import '../utils/mime_detector.dart';
 import 'brightness_controller.dart';
@@ -277,6 +278,17 @@ class PlaybackSession {
                ? VideoCacheManager.instance
                : null) {
     _fullscreenExternalSub = _fullscreen.externalChanges.listen(_onExternalFullscreen);
+  }
+
+  /// 关联的设备方向与重力传感器状态机控制器（移动端与移动端 Web 可用）。
+  ///
+  /// Associated [PlayerOrientationController] driving gravity rotation and lock.
+  PlayerOrientationController? get orientationController {
+    final FullscreenCoordinator coordinator = _fullscreen;
+    if (coordinator is SystemChromeFullscreenCoordinator) {
+      return coordinator.orientationController;
+    }
+    return null;
   }
 
   /// 原生视频渲染纹理 ID 信号。

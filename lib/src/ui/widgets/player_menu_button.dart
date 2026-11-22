@@ -60,6 +60,7 @@ class PlayerMenuButton extends StatelessWidget {
       borderRadius: style.menuBorderRadius,
       padding: EdgeInsets.zero,
       spacing: 0,
+      horizontalMargin: 0,
       menuBuilder: (context, hideMenu) => Material(
         type: MaterialType.transparency,
         child: IntrinsicWidth(

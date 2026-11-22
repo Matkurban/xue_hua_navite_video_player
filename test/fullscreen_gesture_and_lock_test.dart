@@ -57,11 +57,9 @@ void main() {
       await coordinator.exit();
 
       expect(orientationCalls, <List<String>>[
-        <String>['DeviceOrientation.landscapeLeft', 'DeviceOrientation.landscapeRight'],
         <String>['DeviceOrientation.landscapeLeft'],
         <String>['DeviceOrientation.landscapeRight'],
-        <String>['DeviceOrientation.landscapeLeft', 'DeviceOrientation.landscapeRight'],
-        <String>[],
+        <String>['DeviceOrientation.portraitUp'],
       ]);
 
       coordinator.dispose();

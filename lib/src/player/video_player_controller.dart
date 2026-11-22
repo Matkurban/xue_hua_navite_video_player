@@ -11,6 +11,7 @@ import '../data/enums/skip_second_type.dart';
 import '../data/models/live_photo_bundle.dart';
 import '../data/models/live_photo_metadata.dart';
 import '../data/models/navite_file.dart';
+import '../orientation/player_orientation_controller.dart';
 import 'brightness_controller.dart';
 import 'fullscreen_coordinator.dart';
 import 'local_cast_http_server.dart';
@@ -220,6 +221,11 @@ class VideoPlayerController {
   ///
   /// `true` when a cast session is currently connecting or connected.
   FlutterComputed<bool> get isCasting => _session.isCasting;
+
+  /// 关联的设备方向与重力传感器状态机控制器（支持锁屏状态查询、自动旋转开关与 iOS Safari 权限请求）。
+  ///
+  /// Associated [PlayerOrientationController] for gravity rotation and orientation lock.
+  PlayerOrientationController? get orientationController => _session.orientationController;
 
   /// 原生视频渲染纹理 ID 信号（移动端/桌面端用于 [Texture] 渲染，Web 端为 `0` 或 `null`）。
   ///

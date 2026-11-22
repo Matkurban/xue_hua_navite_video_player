@@ -4,12 +4,16 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import '../bridge/video_player_host_bridge.dart';
+import '../orientation/method_channel_player_orientation.dart';
+import '../orientation/player_orientation_controller.dart';
+import '../pigeon/orientation_api.g.dart';
 import 'browser_fullscreen.dart';
 
-/// 全屏宿主协调器抽象接口：负责应用与恢复系统栏/屏幕方向、桌面窗口全屏或浏览器全屏。
+/// 全屏宿主协调器抽象接口：负责应用与恢复系统栏/屏幕方向、原生重力传感器联动、
+/// 桌面窗口全屏或浏览器全屏。
 ///
-/// Abstracts platform fullscreen coordination so `PlaybackSession` can be
-/// unit-tested with a fake coordinator.
+/// Abstracts platform fullscreen and orientation coordination so `PlaybackSession`
+/// can be unit-tested with a fake coordinator.
 abstract class FullscreenCoordinator {
   /// 进入平台全屏（[landscapeVideo] 决定移动端优先横屏还是竖屏）。
   ///
@@ -21,13 +25,14 @@ abstract class FullscreenCoordinator {
   /// Exits platform fullscreen and restores system UI, orientations, or window bounds.
   Future<void> exit();
 
-  /// 在移动端使用 Flutter 官方 `SystemChrome.setPreferredOrientations` 锁定或解锁屏幕方向。
+  /// 锁定或解锁屏幕方向，并联动原生重力传感器自动旋转状态机。
   ///
-  /// - [locked] 为 `true` 时锁定到单一方向（[lockedOrientation]，默认按 [landscapeVideo] 选择）。
-  /// - [locked] 为 `false` 时恢复按重力感应自动旋转的双向横屏或双向竖屏。
+  /// - [locked] 为 `true` 时锁定到当前真实方向（或显式指定的 [lockedOrientation]），
+  ///   暂停响应重力传感器且绝不触发多余的 180° 翻转。
+  /// - [locked] 为 `false` 时立即恢复物理重力传感器联动（全屏下左右翻转自动 180° 切换）。
   ///
-  /// Locks orientation to a single [DeviceOrientation] when [locked] is `true`,
-  /// or restores gravity-driven bidirectional landscape / portrait rotation when `false`.
+  /// Locks orientation to the current active direction (or [lockedOrientation]) when
+  /// [locked] is `true`, or resumes gravity-driven rotation when `false`.
   Future<void> setOrientationLocked({
     required bool locked,
     required bool landscapeVideo,
@@ -84,17 +89,28 @@ class DefaultBrowserFullscreenApplier implements BrowserFullscreenApplier {
   Stream<bool> get changes => BrowserFullscreen.changes;
 }
 
-/// 默认全屏协调器实现：移动端基于 Flutter 官方 [SystemChrome]，桌面端基于原生窗口全屏，Web 端基于浏览器 Fullscreen API。
+/// 默认全屏协调器实现：
+/// - 移动端（iOS / Android）：通过 [PlayerOrientationController] 与 Pigeon 原生方向插件
+///   控制强制横竖屏切换、物理重力传感器 180° 自动反向旋转、精准锁定当前方向与防回弹恢复。
+/// - Web 端：结合 [BrowserFullscreenApplier] 与 [PlayerOrientationController] 支持桌面浏览器全屏、
+///   Android Chrome `screen.orientation.lock` 以及 iOS Safari CSS 降级横屏容器。
+/// - 桌面端（macOS / Windows / Linux）：基于原生窗口全屏。
 ///
-/// Default coordinator using [SystemChrome] on mobile, native window fullscreen
-/// on desktop, and the browser Fullscreen API on Web.
+/// Default coordinator combining [PlayerOrientationController] (mobile & mobile Web),
+/// native desktop window fullscreen, and the browser Fullscreen API.
 class SystemChromeFullscreenCoordinator implements FullscreenCoordinator {
-  /// 创建默认全屏协调器，可选注入测试用 [bridge]、[browser] 与 [isWeb] 标志。
+  /// 创建默认全屏协调器，可选注入测试用 [bridge]、[browser]、[orientationController] 与 [isWeb]。
   ///
   /// Creates a [SystemChromeFullscreenCoordinator] with optional test overrides.
-  SystemChromeFullscreenCoordinator({this._bridge, BrowserFullscreenApplier? browser, bool? isWeb})
-    : _browser = browser ?? const DefaultBrowserFullscreenApplier(),
-      _isWeb = isWeb ?? kIsWeb {
+  SystemChromeFullscreenCoordinator({
+    this._bridge,
+    BrowserFullscreenApplier? browser,
+    PlayerOrientationController? orientationController,
+    bool? isWeb,
+  }) : _browser = browser ?? const DefaultBrowserFullscreenApplier(),
+       _isWeb = isWeb ?? kIsWeb,
+       _ownsOrientationController = orientationController == null,
+       _orientationController = orientationController ?? PlayerOrientationController() {
     if (!_isWeb) {
       _bridgeSub = _resolvedBridge.fullscreenEvents.listen(_external.add);
     }
@@ -104,11 +120,18 @@ class SystemChromeFullscreenCoordinator implements FullscreenCoordinator {
   final VideoPlayerHostBridge? _bridge;
   final BrowserFullscreenApplier _browser;
   final bool _isWeb;
+  final bool _ownsOrientationController;
+  final PlayerOrientationController _orientationController;
   final StreamController<bool> _external = StreamController<bool>.broadcast();
   StreamSubscription<bool>? _bridgeSub;
   StreamSubscription<bool>? _browserSub;
 
   VideoPlayerHostBridge get _resolvedBridge => _bridge ?? VideoPlayerHostBridge.instance;
+
+  /// 关联的设备方向与重力传感器控制器。
+  ///
+  /// Associated [PlayerOrientationController] driving gravity rotation and lock.
+  PlayerOrientationController get orientationController => _orientationController;
 
   @override
   Stream<bool> get externalChanges => _external.stream;
@@ -121,22 +144,12 @@ class SystemChromeFullscreenCoordinator implements FullscreenCoordinator {
   Future<void> enter({required bool landscapeVideo}) async {
     if (_isWeb) {
       await _browser.enter();
+      await _orientationController.enterFullscreen(landscapeVideo: landscapeVideo);
       return;
     }
 
     if (_isMobile) {
-      if (landscapeVideo) {
-        await SystemChrome.setPreferredOrientations(const <DeviceOrientation>[
-          DeviceOrientation.landscapeLeft,
-          DeviceOrientation.landscapeRight,
-        ]);
-      } else {
-        await SystemChrome.setPreferredOrientations(const <DeviceOrientation>[
-          DeviceOrientation.portraitUp,
-          DeviceOrientation.portraitDown,
-        ]);
-      }
-      await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+      await _orientationController.enterFullscreen(landscapeVideo: landscapeVideo);
       return;
     }
 
@@ -148,13 +161,13 @@ class SystemChromeFullscreenCoordinator implements FullscreenCoordinator {
   @override
   Future<void> exit() async {
     if (_isWeb) {
+      await _orientationController.exitFullscreen();
       await _browser.exit();
       return;
     }
 
     if (_isMobile) {
-      await SystemChrome.setPreferredOrientations(const <DeviceOrientation>[]);
-      await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+      await _orientationController.exitFullscreen();
       return;
     }
 
@@ -169,29 +182,22 @@ class SystemChromeFullscreenCoordinator implements FullscreenCoordinator {
     required bool landscapeVideo,
     DeviceOrientation? lockedOrientation,
   }) async {
-    if (_isWeb || !_isMobile) {
+    if (!_isWeb && !_isMobile) {
       return;
     }
 
     if (locked) {
-      final DeviceOrientation target =
-          lockedOrientation ??
-          (landscapeVideo ? DeviceOrientation.landscapeLeft : DeviceOrientation.portraitUp);
-      await SystemChrome.setPreferredOrientations(<DeviceOrientation>[target]);
+      final DevicePhysicalOrientation? mapped = lockedOrientation == null
+          ? null
+          : MethodChannelPlayerOrientation.fromDeviceOrientation(
+              lockedOrientation,
+              platform: defaultTargetPlatform,
+            );
+      await _orientationController.lock(orientation: mapped);
       return;
     }
 
-    if (landscapeVideo) {
-      await SystemChrome.setPreferredOrientations(const <DeviceOrientation>[
-        DeviceOrientation.landscapeLeft,
-        DeviceOrientation.landscapeRight,
-      ]);
-    } else {
-      await SystemChrome.setPreferredOrientations(const <DeviceOrientation>[
-        DeviceOrientation.portraitUp,
-        DeviceOrientation.portraitDown,
-      ]);
-    }
+    await _orientationController.unlock();
   }
 
   @override
@@ -200,6 +206,9 @@ class SystemChromeFullscreenCoordinator implements FullscreenCoordinator {
     _bridgeSub = null;
     _browserSub?.cancel();
     _browserSub = null;
+    if (_ownsOrientationController) {
+      _orientationController.dispose();
+    }
     if (!_external.isClosed) {
       _external.close();
     }

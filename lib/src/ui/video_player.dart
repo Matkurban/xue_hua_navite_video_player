@@ -8,11 +8,13 @@ import '../data/enums/fullscreen_gesture_side_mapping.dart';
 import '../data/enums/play_state.dart';
 import '../data/enums/player_lock_button_position.dart';
 import '../data/enums/skip_second_type.dart';
+import '../orientation/player_orientation_controller.dart';
 import '../player/video_player_controller.dart';
 import 'player_gesture_hud_context.dart';
 import 'style/video_player_theme.dart';
 import 'video_player_slot_context.dart';
 import 'widgets/player_body.dart';
+import 'widgets/web_orientation_viewport.dart';
 
 export 'player_gesture_hud_context.dart';
 export 'video_player_slot_context.dart';
@@ -467,52 +469,62 @@ class _VideoPlayerState extends State<VideoPlayer> {
       data: themedData,
       child: OverlayPortal(
         controller: _fullscreenPortal,
-        overlayChildBuilder: (BuildContext context) => Theme(
-          data: themedData,
-          child: Material(
-            color: slot.theme.backgroundColor,
-            child: PlayerBody(
-              slot: slot,
-              controller: widget.controller,
-              surfaceKey: _playerSurfaceKey,
-              aspectRatio: widget.aspectRatio,
-              fill: true,
-              fadeDuration: widget.fadeDuration,
-              visible: _visible,
-              isDesktop: _isDesktop,
-              focusNode: _focusNode,
-              leading: widget.leading,
-              title: widget.title,
-              actions: widget.actions,
-              topBarActions: widget.topBarActions,
-              showCastButton: widget.showCastButton,
-              showAspectRatioMenu: widget.showAspectRatioMenu,
-              enableFullscreen: widget.enableFullscreen,
-              enableFullscreenVerticalGestures: widget.enableFullscreenVerticalGestures,
-              verticalGestureMapping: widget.verticalGestureMapping,
-              verticalGestureLeftWidthRatio: widget.verticalGestureLeftWidthRatio,
-              verticalGestureRightWidthRatio: widget.verticalGestureRightWidthRatio,
-              verticalGestureHeightRatio: widget.verticalGestureHeightRatio,
-              showLockButton: widget.showLockButton,
-              lockButtonPosition: widget.lockButtonPosition,
-              errorBuilder: widget.errorBuilder,
-              loadingBuilder: widget.loadingBuilder,
-              topBarBuilder: widget.topBarBuilder,
-              centerControlsBuilder: widget.centerControlsBuilder,
-              bottomScrubberBuilder: widget.bottomScrubberBuilder,
-              castingOverlayBuilder: widget.castingOverlayBuilder,
-              extraOverlayBuilder: widget.extraOverlayBuilder,
-              gestureHudBuilder: widget.gestureHudBuilder,
-              lockButtonBuilder: widget.lockButtonBuilder,
-              onClose: _handleClose,
-              onToggleControls: _toggleControls,
-              onShowControls: _showControls,
-              onHideControls: _hideControls,
-              onCancelHideTimer: () => _hideTimer?.cancel(),
-              onScheduleAutoHide: _scheduleAutoHide,
+        overlayChildBuilder: (BuildContext context) {
+          final PlayerOrientationController? orientationCtrl =
+              widget.controller.orientationController;
+          final Widget fullscreenBody = PlayerBody(
+            slot: slot,
+            controller: widget.controller,
+            surfaceKey: _playerSurfaceKey,
+            aspectRatio: widget.aspectRatio,
+            fill: true,
+            fadeDuration: widget.fadeDuration,
+            visible: _visible,
+            isDesktop: _isDesktop,
+            focusNode: _focusNode,
+            leading: widget.leading,
+            title: widget.title,
+            actions: widget.actions,
+            topBarActions: widget.topBarActions,
+            showCastButton: widget.showCastButton,
+            showAspectRatioMenu: widget.showAspectRatioMenu,
+            enableFullscreen: widget.enableFullscreen,
+            enableFullscreenVerticalGestures: widget.enableFullscreenVerticalGestures,
+            verticalGestureMapping: widget.verticalGestureMapping,
+            verticalGestureLeftWidthRatio: widget.verticalGestureLeftWidthRatio,
+            verticalGestureRightWidthRatio: widget.verticalGestureRightWidthRatio,
+            verticalGestureHeightRatio: widget.verticalGestureHeightRatio,
+            showLockButton: widget.showLockButton,
+            lockButtonPosition: widget.lockButtonPosition,
+            errorBuilder: widget.errorBuilder,
+            loadingBuilder: widget.loadingBuilder,
+            topBarBuilder: widget.topBarBuilder,
+            centerControlsBuilder: widget.centerControlsBuilder,
+            bottomScrubberBuilder: widget.bottomScrubberBuilder,
+            castingOverlayBuilder: widget.castingOverlayBuilder,
+            extraOverlayBuilder: widget.extraOverlayBuilder,
+            gestureHudBuilder: widget.gestureHudBuilder,
+            lockButtonBuilder: widget.lockButtonBuilder,
+            onClose: _handleClose,
+            onToggleControls: _toggleControls,
+            onShowControls: _showControls,
+            onHideControls: _hideControls,
+            onCancelHideTimer: () => _hideTimer?.cancel(),
+            onScheduleAutoHide: _scheduleAutoHide,
+          );
+          return Theme(
+            data: themedData,
+            child: Material(
+              color: slot.theme.backgroundColor,
+              child: orientationCtrl != null
+                  ? WebOrientationViewport(
+                      controller: orientationCtrl,
+                      child: fullscreenBody,
+                    )
+                  : fullscreenBody,
             ),
-          ),
-        ),
+          );
+        },
         child: SignalBuilder(
           builder: (BuildContext context) {
             final bool fs = widget.controller.isFullscreen.value;

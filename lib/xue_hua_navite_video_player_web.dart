@@ -6,6 +6,8 @@ import 'package:flutter_web_plugins/flutter_web_plugins.dart';
 import 'package:web/web.dart' as html;
 
 import 'src/bridge/video_player_host_bridge.dart';
+import 'src/orientation/player_orientation_platform.dart';
+import 'src/orientation/web_player_orientation.dart';
 import 'src/pigeon/player_api.g.dart';
 import 'src/web/web_media_probe_service.dart';
 import 'src/web/web_remote_playback_controller.dart';
@@ -45,6 +47,7 @@ class XueHuaNaviteVideoPlayerWeb implements VideoPlayerHostBridge {
   /// [VideoPlayerHostBridge.instance].
   static void registerWith(Registrar registrar) {
     VideoPlayerHostBridge.instance = XueHuaNaviteVideoPlayerWeb();
+    PlayerOrientationPlatform.instance = WebPlayerOrientation();
   }
 
   /// Web 播放器事件广播流（状态、进度、缓冲、时长、尺寸、错误、投屏状态）。

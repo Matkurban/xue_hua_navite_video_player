@@ -27,6 +27,14 @@ export 'src/data/models/video_cover_frame.dart';
 // Utilities
 export 'src/utils/live_photo_parser.dart';
 
+// Orientation
+export 'src/orientation/method_channel_player_orientation.dart';
+export 'src/orientation/player_orientation_controller.dart';
+export 'src/orientation/player_orientation_platform.dart';
+export 'src/orientation/web_player_orientation.dart';
+export 'src/pigeon/orientation_api.g.dart'
+    show DevicePhysicalOrientation, OrientationSensorEvent;
+
 // Player
 export 'src/player/video_player_controller.dart';
 
@@ -42,6 +50,7 @@ export 'src/ui/widgets/live_photo_badge.dart';
 export 'src/ui/widgets/player_gesture_hud.dart';
 export 'src/ui/widgets/player_lock_button.dart';
 export 'src/ui/widgets/player_scrubber_slider.dart';
+export 'src/ui/widgets/web_orientation_viewport.dart';
 
 // App
 export 'src/xue_hua_navite_video_player.dart';

@@ -8,6 +8,7 @@ import UIKit
 public class XueHuaNaviteVideoPlayerPlugin: NSObject, FlutterPlugin, PlayerHostApi {
     private var registrar: FlutterPluginRegistrar?
     private var videoPlayer: NativeVideoPlayer?
+    private let orientationPlugin = OrientationPlugin()
     private var savedBrightness: CGFloat?
     private var lastKnownBrightness: Double = 1.0
     private var interruptionObserver: NSObjectProtocol?
@@ -32,6 +33,7 @@ public class XueHuaNaviteVideoPlayerPlugin: NSObject, FlutterPlugin, PlayerHostA
         }
         instance.videoPlayer = player
         PlayerHostApiSetup.register(api: instance, registrar: registrar)
+        instance.orientationPlugin.attach(binaryMessenger: registrar.messenger())
 
         registrar.register(
             PlayerPlatformViewFactory(
@@ -43,6 +45,7 @@ public class XueHuaNaviteVideoPlayerPlugin: NSObject, FlutterPlugin, PlayerHostA
     }
 
     public func detachFromEngine(for registrar: FlutterPluginRegistrar) {
+        orientationPlugin.detach(binaryMessenger: registrar.messenger())
         PlayerHostApiSetup.unregister(api: self, registrar: registrar)
         cleanupLifecycle()
         self.registrar = nil

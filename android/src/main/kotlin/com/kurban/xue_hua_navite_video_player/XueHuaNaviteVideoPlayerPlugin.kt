@@ -98,6 +98,7 @@ class XueHuaNaviteVideoPlayerPlugin :
     private var activity: Activity? = null
     private var lifecycleOwner: LifecycleOwner? = null
     private var savedBrightness: Float? = null
+    private val orientationPlugin = OrientationPlugin()
 
     private var lastReportedDuration: Long = -1L
     private var lastReportedBuffered: Long = -1L
@@ -123,6 +124,7 @@ class XueHuaNaviteVideoPlayerPlugin :
         }
         startEventConsumer(binding)
         PlayerHostApiRegistrar().register(this, binding)
+        orientationPlugin.attach(binding.applicationContext, binding.binaryMessenger)
 
         binding.platformViewRegistry.registerViewFactory(
             PLAYER_PLATFORM_VIEW_TYPE,
@@ -133,6 +135,7 @@ class XueHuaNaviteVideoPlayerPlugin :
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         engineGeneration.incrementAndGet()
         openGeneration.incrementAndGet()
+        orientationPlugin.detach(binding.binaryMessenger)
         PlayerHostApiRegistrar().unregister(this, binding)
         stopEventConsumer()
         restoreBrightness()
@@ -234,6 +237,7 @@ class XueHuaNaviteVideoPlayerPlugin :
 
     private fun bindActivity(act: Activity) {
         activity = act
+        orientationPlugin.bindActivity(act)
         val owner = act as? LifecycleOwner
         lifecycleOwner = owner
         owner?.lifecycle?.addObserver(this)
@@ -245,6 +249,7 @@ class XueHuaNaviteVideoPlayerPlugin :
         if (restoreWindowBrightness) {
             restoreBrightness()
         }
+        orientationPlugin.unbindActivity()
         activity = null
     }
 
