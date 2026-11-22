@@ -3,54 +3,93 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:signals_flutter/signals_flutter.dart';
 
+import '../../data/enums/fullscreen_gesture_side_mapping.dart';
 import '../../player/video_player_controller.dart';
-import '../style/player_icon_catalog.dart';
+import '../player_gesture_hud_context.dart';
 import '../style/video_player_theme.dart';
-import 'player_glass_surface.dart';
+import 'player_gesture_hud.dart';
 
-const _leftZoneRatio = 0.4;
-const _rightZoneRatio = 0.6;
-const _seekDragThreshold = 48.0;
+export '../player_gesture_hud_context.dart';
 
-enum PlayerHudKind { seek, brightness, volume }
+const double _seekDragThreshold = 48.0;
+const double _gestureActivationDistance = 12.0;
 
-/// Mobile fullscreen gesture layer: horizontal seek, left brightness, right volume.
+enum _GestureZone { left, center, right }
+
+/// Fullscreen gesture layer: horizontal seek and landscape vertical
+/// brightness / volume swipe controls with configurable hot-zones and HUD.
 class PlayerGestureLayer extends StatefulWidget {
   const PlayerGestureLayer({
     super.key,
     required this.controller,
     required this.onTap,
     required this.child,
+    this.isLocked = false,
+    this.enableVerticalGestures = true,
+    this.verticalGestureMapping = FullscreenGestureSideMapping.leftBrightnessRightVolume,
+    this.verticalGestureWidthRatio = 0.3,
+    this.verticalGestureHeightRatio = 0.7,
+    this.gestureHudBuilder,
   });
 
   final VideoPlayerController controller;
   final VoidCallback onTap;
   final Widget child;
 
+  /// When true, drag gestures are disabled while single-tap remains active.
+  final bool isLocked;
+
+  /// Enables vertical brightness/volume drag gestures in fullscreen landscape.
+  final bool enableVerticalGestures;
+
+  /// Controls which side adjusts brightness vs. volume.
+  final FullscreenGestureSideMapping verticalGestureMapping;
+
+  /// Width fraction (`0.05..0.5`) of each vertical swipe zone on the left/right edges.
+  final double verticalGestureWidthRatio;
+
+  /// Vertically centered height fraction (`0.1..1.0`) of the active vertical swipe band.
+  final double verticalGestureHeightRatio;
+
+  /// Optional custom center indicator builder replacing [PlayerGestureHud].
+  final Widget Function(BuildContext context, PlayerGestureHudContext hud)? gestureHudBuilder;
+
   @override
   State<PlayerGestureLayer> createState() => _PlayerGestureLayerState();
 }
 
-enum _GestureZone { left, center, right }
-
 class _PlayerGestureLayerState extends State<PlayerGestureLayer> {
+  late final FlutterSignal<PlayerGestureHudContext?> _hud = signal<PlayerGestureHudContext?>(null);
+
   Offset? _panStart;
   _GestureZone? _zone;
-  double _horizontalDrag = 0;
+  bool _verticalZoneEligible = false;
+  double _horizontalDrag = 0.0;
   bool _axisResolved = false;
   bool _isHorizontal = false;
   double? _brightnessBaseline;
   double? _volumeBaseline;
-  PlayerHudKind? _hudKind;
-  String? _hudLabel;
-  double _hudProgress = 0.0;
-  bool _seekForward = true;
+
+  double get _clampedWidthRatio => widget.verticalGestureWidthRatio.clamp(0.05, 0.5);
+
+  double get _clampedHeightRatio => widget.verticalGestureHeightRatio.clamp(0.1, 1.0);
 
   _GestureZone _zoneFor(double x, double width) {
-    if (x < width * _leftZoneRatio) return _GestureZone.left;
-    if (x > width * _rightZoneRatio) return _GestureZone.right;
+    final double sideRatio = _clampedWidthRatio;
+    if (x <= width * sideRatio) {
+      return _GestureZone.left;
+    }
+    if (x >= width * (1.0 - sideRatio)) {
+      return _GestureZone.right;
+    }
     return _GestureZone.center;
+  }
+
+  bool _isInsideVerticalBand(double y, double height) {
+    final double verticalMargin = height * (1.0 - _clampedHeightRatio) / 2.0;
+    return y >= verticalMargin && y <= height - verticalMargin;
   }
 
   double _seekSeconds({
@@ -58,16 +97,43 @@ class _PlayerGestureLayerState extends State<PlayerGestureLayer> {
     required double width,
     required int maxStepSeconds,
   }) {
-    final maxStep = maxStepSeconds.toDouble();
-    return (horizontalDrag / width * maxStep * 3).clamp(-maxStep, maxStep);
+    final double maxStep = maxStepSeconds.toDouble();
+    return (horizontalDrag / width * maxStep * 3.0).clamp(-maxStep, maxStep);
+  }
+
+  void _resetGestureState() {
+    _hud.value = null;
+    _panStart = null;
+    _zone = null;
+    _verticalZoneEligible = false;
+    _horizontalDrag = 0.0;
+    _axisResolved = false;
+    _isHorizontal = false;
+    _brightnessBaseline = null;
+    _volumeBaseline = null;
   }
 
   void _onPanStart(DragStartDetails details) {
-    final width = context.size?.width;
-    if (width == null) return;
-    _panStart = details.localPosition;
-    _zone = _zoneFor(details.localPosition.dx, width);
-    _horizontalDrag = 0;
+    if (widget.isLocked) {
+      _resetGestureState();
+      return;
+    }
+    final Size? size = context.size;
+    if (size == null || size.width <= 0.0 || size.height <= 0.0) {
+      return;
+    }
+    final Offset localPosition = details.localPosition;
+    final _GestureZone zone = _zoneFor(localPosition.dx, size.width);
+    final bool isLandscape = size.width > size.height;
+
+    _panStart = localPosition;
+    _zone = zone;
+    _verticalZoneEligible =
+        widget.enableVerticalGestures &&
+        isLandscape &&
+        zone != _GestureZone.center &&
+        _isInsideVerticalBand(localPosition.dy, size.height);
+    _horizontalDrag = 0.0;
     _axisResolved = false;
     _isHorizontal = false;
     _brightnessBaseline = null;
@@ -75,93 +141,143 @@ class _PlayerGestureLayerState extends State<PlayerGestureLayer> {
   }
 
   Future<void> _onPanUpdate(DragUpdateDetails details) async {
-    final size = context.size;
-    final start = _panStart;
-    if (size == null || start == null) return;
+    if (widget.isLocked) {
+      if (_hud.value != null) {
+        _resetGestureState();
+      }
+      return;
+    }
+    final Size? size = context.size;
+    final Offset? start = _panStart;
+    if (size == null || start == null || size.width <= 0.0 || size.height <= 0.0) {
+      return;
+    }
 
-    final delta = details.localPosition - start;
+    final Offset delta = details.localPosition - start;
     if (!_axisResolved) {
-      if (delta.distance < 12) return;
+      if (delta.distance < _gestureActivationDistance) {
+        return;
+      }
       _axisResolved = true;
       _isHorizontal = delta.dx.abs() >= delta.dy.abs();
     }
 
+    final VideoPlayerTheme theme = VideoPlayerTheme.of(context);
+
     if (_isHorizontal) {
       _horizontalDrag = delta.dx;
       if (_horizontalDrag.abs() < _seekDragThreshold) {
-        setState(() {
-          _hudKind = null;
-          _hudLabel = null;
-        });
+        _hud.value = null;
         return;
       }
-      final seconds = _seekSeconds(
+      final double seconds = _seekSeconds(
         horizontalDrag: _horizontalDrag,
         width: size.width,
         maxStepSeconds: widget.controller.skipSecondType.value.value,
       );
-      final sign = seconds >= 0 ? '+' : '';
-      setState(() {
-        _hudKind = PlayerHudKind.seek;
-        _seekForward = seconds >= 0;
-        _hudLabel = '$sign${seconds.toStringAsFixed(0)}s';
-      });
+      final String sign = seconds >= 0.0 ? '+' : '';
+      _hud.value = PlayerGestureHudContext(
+        controller: widget.controller,
+        theme: theme,
+        kind: PlayerHudKind.seek,
+        value: 0.0,
+        label: '$sign${seconds.toStringAsFixed(0)}s',
+        seekForward: seconds >= 0.0,
+      );
       return;
     }
 
-    // Vertical
-    if (_zone == _GestureZone.center) return;
-    final dy = -delta.dy;
-    final deltaNorm = (dy / size.height).clamp(-1.0, 1.0);
+    if (!_verticalZoneEligible || _zone == null || _zone == _GestureZone.center) {
+      return;
+    }
 
-    if (_zone == _GestureZone.left && !kIsWeb) {
+    final double activeHeight = size.height * _clampedHeightRatio;
+    if (activeHeight <= 0.0) {
+      return;
+    }
+    final double deltaNorm = (-delta.dy / activeHeight).clamp(-1.0, 1.0);
+    final bool controlsBrightness = _zone == _GestureZone.left
+        ? widget.verticalGestureMapping.isLeftBrightness
+        : widget.verticalGestureMapping.isRightBrightness;
+
+    if (controlsBrightness) {
+      if (kIsWeb) {
+        return;
+      }
       _brightnessBaseline ??= widget.controller.brightness.value;
-      final next = (_brightnessBaseline! + deltaNorm).clamp(0.0, 1.0);
+      final double next = (_brightnessBaseline! + deltaNorm).clamp(0.0, 1.0);
       await widget.controller.setBrightness(next);
-      setState(() {
-        _hudKind = PlayerHudKind.brightness;
-        _hudProgress = next;
-        _hudLabel = '${(next * 100).round()}%';
-      });
-    } else if (_zone == _GestureZone.right) {
+      if (!mounted) {
+        return;
+      }
+      _hud.value = PlayerGestureHudContext(
+        controller: widget.controller,
+        theme: theme,
+        kind: PlayerHudKind.brightness,
+        value: next,
+        label: '${(next * 100.0).round()}%',
+        seekForward: true,
+      );
+    } else {
       _volumeBaseline ??= widget.controller.volume.value;
-      final next = (_volumeBaseline! + deltaNorm).clamp(0.0, 1.0);
+      final double next = (_volumeBaseline! + deltaNorm).clamp(0.0, 1.0);
       await widget.controller.setVolume(next);
-      setState(() {
-        _hudKind = PlayerHudKind.volume;
-        _hudProgress = next;
-        _hudLabel = '${(next * 100).round()}%';
-      });
+      if (!mounted) {
+        return;
+      }
+      _hud.value = PlayerGestureHudContext(
+        controller: widget.controller,
+        theme: theme,
+        kind: PlayerHudKind.volume,
+        value: next,
+        label: '${(next * 100.0).round()}%',
+        seekForward: true,
+      );
     }
   }
 
   Future<void> _onPanEnd(DragEndDetails details) async {
-    final size = context.size;
-    if (_isHorizontal && size != null && _horizontalDrag.abs() >= _seekDragThreshold) {
-      final seconds = _seekSeconds(
+    final Size? size = context.size;
+    if (!widget.isLocked &&
+        _isHorizontal &&
+        size != null &&
+        size.width > 0.0 &&
+        _horizontalDrag.abs() >= _seekDragThreshold) {
+      final double seconds = _seekSeconds(
         horizontalDrag: _horizontalDrag,
         width: size.width,
         maxStepSeconds: widget.controller.skipSecondType.value.value,
       );
-      final delta = Duration(milliseconds: (seconds * 1000).round());
-      var target = widget.controller.position.value + delta;
-      if (target < Duration.zero) target = Duration.zero;
-      final total = widget.controller.duration.value;
-      if (total > Duration.zero && target > total) target = total;
+      final Duration delta = Duration(milliseconds: (seconds * 1000.0).round());
+      Duration target = widget.controller.position.value + delta;
+      if (target < Duration.zero) {
+        target = Duration.zero;
+      }
+      final Duration total = widget.controller.duration.value;
+      if (total > Duration.zero && target > total) {
+        target = total;
+      }
       await widget.controller.seek(target);
     }
-    setState(() {
-      _hudKind = null;
-      _hudLabel = null;
-    });
-    _panStart = null;
-    _zone = null;
-    _axisResolved = false;
+    _resetGestureState();
+  }
+
+  @override
+  void didUpdateWidget(covariant PlayerGestureLayer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!oldWidget.isLocked && widget.isLocked) {
+      _resetGestureState();
+    }
+  }
+
+  @override
+  void dispose() {
+    _hud.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final style = VideoPlayerTheme.of(context);
     return Stack(
       fit: StackFit.expand,
       children: <Widget>[
@@ -171,66 +287,23 @@ class _PlayerGestureLayerState extends State<PlayerGestureLayer> {
           onPanStart: _onPanStart,
           onPanUpdate: _onPanUpdate,
           onPanEnd: _onPanEnd,
+          onPanCancel: _resetGestureState,
           child: widget.child,
         ),
-        if (_hudKind != null && _hudLabel != null)
-          Center(
-            child: _GestureHudBadge(
-              style: style,
-              kind: _hudKind!,
-              label: _hudLabel!,
-              progress: _hudProgress,
-              seekForward: _seekForward,
-            ),
+        IgnorePointer(
+          child: SignalBuilder(
+            builder: (BuildContext context) {
+              final PlayerGestureHudContext? hud = _hud.value;
+              if (hud == null) {
+                return const SizedBox.shrink();
+              }
+              return Center(
+                child: widget.gestureHudBuilder?.call(context, hud) ?? PlayerGestureHud(hud: hud),
+              );
+            },
           ),
+        ),
       ],
-    );
-  }
-}
-
-class _GestureHudBadge extends StatelessWidget {
-  const _GestureHudBadge({
-    required this.style,
-    required this.kind,
-    required this.label,
-    required this.progress,
-    required this.seekForward,
-  });
-
-  final VideoPlayerTheme style;
-  final PlayerHudKind kind;
-  final String label;
-  final double progress;
-  final bool seekForward;
-
-  @override
-  Widget build(BuildContext context) {
-    final isCupertino = style.isCupertinoFor(context);
-    final iconData = switch (kind) {
-      PlayerHudKind.seek => PlayerIconCatalog.hudSeek(
-        isCupertino: isCupertino,
-        forward: seekForward,
-      ),
-      PlayerHudKind.brightness => PlayerIconCatalog.hudBrightness(isCupertino: isCupertino),
-      PlayerHudKind.volume => PlayerIconCatalog.hudVolume(
-        isCupertino: isCupertino,
-        muted: progress <= 0.0,
-      ),
-    };
-
-    return PlayerGlassSurface(
-      backgroundColor: style.hudBackgroundColor,
-      borderRadius: style.hudBorderRadius,
-      blurSigma: isCupertino ? style.backdropBlurSigma : 0.0,
-      padding: style.hudPadding,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          Icon(iconData, color: style.foregroundColor, size: style.hudIconSize),
-          SizedBox(width: style.hudIconGap),
-          Text(label, style: style.hudTextStyle),
-        ],
-      ),
     );
   }
 }
@@ -238,6 +311,13 @@ class _GestureHudBadge extends StatelessWidget {
 /// Desktop / web key handler (active when the player Focus is focused).
 KeyEventResult handlePlayerKeyEvent(VideoPlayerController controller, KeyEvent event) {
   if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+    return KeyEventResult.ignored;
+  }
+  if (controller.isLocked.value) {
+    if (event.logicalKey == LogicalKeyboardKey.escape && event is KeyDownEvent) {
+      controller.unlock();
+      return KeyEventResult.handled;
+    }
     return KeyEventResult.ignored;
   }
   switch (event.logicalKey) {

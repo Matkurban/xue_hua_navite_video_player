@@ -14,6 +14,15 @@ abstract class FullscreenCoordinator {
 
   Future<void> exit();
 
+  /// Locks orientation to a single [DeviceOrientation] when [locked] is true,
+  /// or restores gravity-driven bidirectional landscape / portrait rotation
+  /// when [locked] is false.
+  Future<void> setOrientationLocked({
+    required bool locked,
+    required bool landscapeVideo,
+    DeviceOrientation? lockedOrientation,
+  }) async {}
+
   /// OS / browser entered or left fullscreen without [enter] / [exit].
   Stream<bool> get externalChanges => const Stream<bool>.empty();
 
@@ -115,6 +124,37 @@ class SystemChromeFullscreenCoordinator implements FullscreenCoordinator {
     try {
       await _resolvedBridge.setWindowFullscreen(false);
     } catch (_) {}
+  }
+
+  @override
+  Future<void> setOrientationLocked({
+    required bool locked,
+    required bool landscapeVideo,
+    DeviceOrientation? lockedOrientation,
+  }) async {
+    if (_isWeb || !_isMobile) {
+      return;
+    }
+
+    if (locked) {
+      final DeviceOrientation target =
+          lockedOrientation ??
+          (landscapeVideo ? DeviceOrientation.landscapeLeft : DeviceOrientation.portraitUp);
+      await SystemChrome.setPreferredOrientations(<DeviceOrientation>[target]);
+      return;
+    }
+
+    if (landscapeVideo) {
+      await SystemChrome.setPreferredOrientations(const <DeviceOrientation>[
+        DeviceOrientation.landscapeLeft,
+        DeviceOrientation.landscapeRight,
+      ]);
+    } else {
+      await SystemChrome.setPreferredOrientations(const <DeviceOrientation>[
+        DeviceOrientation.portraitUp,
+        DeviceOrientation.portraitDown,
+      ]);
+    }
   }
 
   @override

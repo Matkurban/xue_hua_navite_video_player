@@ -62,6 +62,7 @@ class VideoPlayerController {
   FlutterSignal<SkipSecondType> get skipSecondType => _session.skipSecondType;
   FlutterSignal<AspectRatioMode> get aspectRatioMode => _session.aspectRatioMode;
   FlutterSignal<bool> get isFullscreen => _session.isFullscreen;
+  FlutterSignal<bool> get isLocked => _session.isLocked;
   FlutterSignal<double> get brightness => _session.brightness;
 
   /// Resolved Live Photo / Motion Photo bundle for the currently loaded media, if any.
@@ -182,6 +183,21 @@ class VideoPlayerController {
   Future<void> exitFullscreen() => _session.exitFullscreen();
 
   Future<void> toggleFullscreen() => _session.toggleFullscreen();
+
+  /// Locks or unlocks fullscreen controls and orientation (via `SystemChrome`).
+  Future<void> setLocked(bool locked, {DeviceOrientation? lockedOrientation}) =>
+      _session.setLocked(locked, lockedOrientation: lockedOrientation);
+
+  /// Locks fullscreen controls and orientation.
+  Future<void> lock({DeviceOrientation? lockedOrientation}) =>
+      _session.lock(lockedOrientation: lockedOrientation);
+
+  /// Unlocks fullscreen controls and restores gravity-driven bidirectional rotation.
+  Future<void> unlock() => _session.unlock();
+
+  /// Toggles [isLocked] while in fullscreen.
+  Future<void> toggleLocked({DeviceOrientation? lockedOrientation}) =>
+      _session.toggleLocked(lockedOrientation: lockedOrientation);
 
   Future<void> setBrightness(double value) => _session.setBrightness(value);
 

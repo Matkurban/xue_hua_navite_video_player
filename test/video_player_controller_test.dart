@@ -796,6 +796,13 @@ class _FakeFullscreen implements FullscreenCoordinator {
   }
 
   @override
+  Future<void> setOrientationLocked({
+    required bool locked,
+    required bool landscapeVideo,
+    DeviceOrientation? lockedOrientation,
+  }) async {}
+
+  @override
   void dispose() {
     external.close();
   }

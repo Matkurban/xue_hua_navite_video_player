@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:signals_flutter/signals_flutter.dart';
@@ -288,6 +289,13 @@ class _NoopFullscreen implements FullscreenCoordinator {
 
   @override
   Future<void> exit() async {}
+
+  @override
+  Future<void> setOrientationLocked({
+    required bool locked,
+    required bool landscapeVideo,
+    DeviceOrientation? lockedOrientation,
+  }) async {}
 
   @override
   void dispose() {}

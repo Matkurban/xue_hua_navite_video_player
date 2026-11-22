@@ -29,6 +29,7 @@ class PlaybackSessionState {
   final FlutterSignal<SkipSecondType> skipSecondType = signal(SkipSecondType.second10);
   final FlutterSignal<AspectRatioMode> aspectRatioMode = signal(AspectRatioMode.fit);
   final FlutterSignal<bool> isFullscreen = signal(false);
+  final FlutterSignal<bool> isLocked = signal(false);
   final FlutterSignal<double> brightness = signal(1.0);
   final FlutterSignal<CastState> castState = signal(CastState.unavailable);
   final FlutterSignal<String?> castDeviceName = signal<String?>(null);

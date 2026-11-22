@@ -62,6 +62,7 @@ class PlaybackSession {
   Duration _backendBufferedPosition = Duration.zero;
   String? _pinnedCacheKey;
   double _volumeBeforeMute = 1.0;
+  bool _fullscreenLandscape = true;
 
   /// After [seek], ignore native position events that are still far from the
   /// target so a stale pre-seek tick cannot overwrite the optimistic position.
@@ -90,6 +91,7 @@ class PlaybackSession {
   FlutterSignal<SkipSecondType> get skipSecondType => _state.skipSecondType;
   FlutterSignal<AspectRatioMode> get aspectRatioMode => _state.aspectRatioMode;
   FlutterSignal<bool> get isFullscreen => _state.isFullscreen;
+  FlutterSignal<bool> get isLocked => _state.isLocked;
   FlutterSignal<double> get brightness => _state.brightness;
   FlutterSignal<CastState> get castState => _state.castState;
   FlutterSignal<String?> get castDeviceName => _state.castDeviceName;
@@ -659,13 +661,19 @@ class PlaybackSession {
   /// See [VideoPlayerController.enterFullscreen] for the UI contract.
   Future<void> enterFullscreen() async {
     if (_disposed || isFullscreen.value) return;
-    final landscape = videoAspectRatio.value > 1.0;
+    final bool landscape = videoAspectRatio.value > 1.0;
+    _fullscreenLandscape = landscape;
+    isLocked.value = false;
     isFullscreen.value = true;
+    try {
+      brightness.value = await _brightness.current;
+    } catch (_) {}
     await _fullscreen.enter(landscapeVideo: landscape);
   }
 
   Future<void> exitFullscreen() async {
     if (_disposed || !isFullscreen.value) return;
+    isLocked.value = false;
     isFullscreen.value = false;
     await _fullscreen.exit();
   }
@@ -678,9 +686,33 @@ class PlaybackSession {
     }
   }
 
+  /// Locks or unlocks fullscreen controls and device orientation.
+  Future<void> setLocked(bool locked, {DeviceOrientation? lockedOrientation}) async {
+    if (_disposed) return;
+    if (!isFullscreen.value) {
+      isLocked.value = false;
+      return;
+    }
+    if (isLocked.value == locked) return;
+    isLocked.value = locked;
+    await _fullscreen.setOrientationLocked(
+      locked: locked,
+      landscapeVideo: _fullscreenLandscape,
+      lockedOrientation: lockedOrientation,
+    );
+  }
+
+  Future<void> lock({DeviceOrientation? lockedOrientation}) =>
+      setLocked(true, lockedOrientation: lockedOrientation);
+
+  Future<void> unlock() => setLocked(false);
+
+  Future<void> toggleLocked({DeviceOrientation? lockedOrientation}) =>
+      setLocked(!isLocked.value, lockedOrientation: lockedOrientation);
+
   Future<void> setBrightness(double value) async {
     if (_disposed) return;
-    final clamped = value.clamp(0.0, 1.0);
+    final double clamped = value.clamp(0.0, 1.0);
     await _brightness.setBrightness(clamped);
     brightness.value = clamped;
   }
@@ -710,6 +742,9 @@ class PlaybackSession {
   void _onExternalFullscreen(bool fullscreen) {
     if (_disposed) return;
     if (isFullscreen.value == fullscreen) return;
+    if (!fullscreen) {
+      isLocked.value = false;
+    }
     isFullscreen.value = fullscreen;
   }
 
@@ -722,6 +757,7 @@ class PlaybackSession {
     _openEpoch++;
     _releasePinnedCacheKey();
     _releaseNativeSession();
+    isLocked.value = false;
     if (isFullscreen.value) {
       try {
         await _fullscreen.exit();

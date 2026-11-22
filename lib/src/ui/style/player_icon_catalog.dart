@@ -131,4 +131,11 @@ abstract final class PlayerIconCatalog {
     }
     return muted ? Icons.volume_off_rounded : Icons.volume_up_rounded;
   }
+
+  static IconData lock({required bool isCupertino, required bool isLocked}) {
+    if (isCupertino) {
+      return isLocked ? CupertinoIcons.lock_fill : CupertinoIcons.lock_open_fill;
+    }
+    return isLocked ? Icons.lock_rounded : Icons.lock_open_rounded;
+  }
 }

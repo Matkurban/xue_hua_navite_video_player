@@ -4,13 +4,17 @@ import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:signals_flutter/signals_flutter.dart';
 
+import '../data/enums/fullscreen_gesture_side_mapping.dart';
 import '../data/enums/play_state.dart';
+import '../data/enums/player_lock_button_position.dart';
 import '../data/enums/skip_second_type.dart';
 import '../player/video_player_controller.dart';
+import 'player_gesture_hud_context.dart';
 import 'style/video_player_theme.dart';
 import 'video_player_slot_context.dart';
 import 'widgets/player_body.dart';
 
+export 'player_gesture_hud_context.dart';
 export 'video_player_slot_context.dart';
 
 /// 高性能的默认视频播放器组件。
@@ -47,6 +51,24 @@ class VideoPlayer extends StatefulWidget {
   final bool showAspectRatioMenu;
   final bool enableFullscreen;
 
+  /// Enables vertical brightness/volume drag gestures in fullscreen landscape playback.
+  final bool enableFullscreenVerticalGestures;
+
+  /// Configures which side controls screen brightness vs. audio volume in fullscreen landscape.
+  final FullscreenGestureSideMapping verticalGestureMapping;
+
+  /// Width fraction (`0.05..0.5`) of each left/right vertical gesture area. Defaults to `0.3` (30%).
+  final double verticalGestureWidthRatio;
+
+  /// Vertically centered height fraction (`0.1..1.0`) of the vertical gesture band. Defaults to `0.7` (70%).
+  final double verticalGestureHeightRatio;
+
+  /// Whether to display the screen lock/unlock button in fullscreen mode.
+  final bool showLockButton;
+
+  /// Horizontal edge (`left` or `right`) where the fullscreen lock/unlock button is positioned.
+  final PlayerLockButtonPosition lockButtonPosition;
+
   /// Optional theme override for this player instance. Falls back to
   /// `VideoPlayerTheme.of(context)` when null.
   final VideoPlayerTheme? theme;
@@ -58,6 +80,14 @@ class VideoPlayer extends StatefulWidget {
   final Widget Function(BuildContext, VideoPlayerSlotContext)? bottomScrubberBuilder;
   final Widget Function(BuildContext, VideoPlayerSlotContext)? castingOverlayBuilder;
   final Widget Function(BuildContext, VideoPlayerSlotContext)? extraOverlayBuilder;
+
+  /// Fully customizable center real-time indicator shown during brightness,
+  /// volume, and seek gestures. Defaults to [PlayerGestureHud].
+  final Widget Function(BuildContext context, PlayerGestureHudContext hud)? gestureHudBuilder;
+
+  /// Fully customizable fullscreen lock/unlock button widget. Defaults to [PlayerLockButton].
+  final Widget Function(BuildContext context, VideoPlayerSlotContext slot, bool isLocked)?
+  lockButtonBuilder;
 
   /// Initial skip step; synced with [VideoPlayerController.skipSecondType].
   final SkipSecondType skipSecondType;
@@ -78,6 +108,12 @@ class VideoPlayer extends StatefulWidget {
     this.showCastButton = true,
     this.showAspectRatioMenu = true,
     this.enableFullscreen = true,
+    this.enableFullscreenVerticalGestures = true,
+    this.verticalGestureMapping = FullscreenGestureSideMapping.leftBrightnessRightVolume,
+    this.verticalGestureWidthRatio = 0.3,
+    this.verticalGestureHeightRatio = 0.7,
+    this.showLockButton = true,
+    this.lockButtonPosition = PlayerLockButtonPosition.left,
     this.theme,
     this.errorBuilder,
     this.loadingBuilder,
@@ -86,6 +122,8 @@ class VideoPlayer extends StatefulWidget {
     this.bottomScrubberBuilder,
     this.castingOverlayBuilder,
     this.extraOverlayBuilder,
+    this.gestureHudBuilder,
+    this.lockButtonBuilder,
     this.skipSecondType = SkipSecondType.second10,
   });
 
@@ -94,13 +132,11 @@ class VideoPlayer extends StatefulWidget {
 }
 
 class _VideoPlayerState extends State<VideoPlayer> {
-  late final FlutterSignal<bool> _visible = signal(widget.initiallyVisible);
+  late final FlutterSignal<bool> _visible = signal<bool>(widget.initiallyVisible);
+  late final FlutterSignal<bool> _inlineSuppressed = signal<bool>(false);
   final FocusNode _focusNode = FocusNode();
   final OverlayPortalController _fullscreenPortal = OverlayPortalController();
   final GlobalKey _playerSurfaceKey = GlobalKey();
-
-  /// When true, in-tree [PlayerBody] is omitted so overlay can host alone.
-  bool _inlineSuppressed = false;
 
   Timer? _hideTimer;
   VoidCallback? _playingDisposer;
@@ -132,8 +168,8 @@ class _VideoPlayerState extends State<VideoPlayer> {
     _disposeControllerEffects();
 
     _playingDisposer = effect(() {
-      final playing = widget.controller.isPlaying.value;
-      final buffering = widget.controller.isBuffering.value;
+      final bool playing = widget.controller.isPlaying.value;
+      final bool buffering = widget.controller.isBuffering.value;
       if (playing && !buffering && _visible.value) {
         _scheduleAutoHide();
       } else if (!playing) {
@@ -141,7 +177,7 @@ class _VideoPlayerState extends State<VideoPlayer> {
       }
     });
     _bufferingDisposer = effect(() {
-      final buffering = widget.controller.isBuffering.value;
+      final bool buffering = widget.controller.isBuffering.value;
       if (buffering) {
         _hideTimer?.cancel();
       } else if (widget.controller.isPlaying.value && _visible.value) {
@@ -149,13 +185,13 @@ class _VideoPlayerState extends State<VideoPlayer> {
       }
     });
     _completedDisposer = effect(() {
-      final state = widget.controller.playState.value;
+      final PlayState state = widget.controller.playState.value;
       if (state == PlayState.completed) {
         _showControls(scheduleAutoHide: false);
       }
     });
     _castingDisposer = effect(() {
-      final casting = widget.controller.isCasting.value;
+      final bool casting = widget.controller.isCasting.value;
       if (casting) {
         _showControls(scheduleAutoHide: false);
       } else if (widget.controller.isPlaying.value && _visible.value) {
@@ -163,14 +199,14 @@ class _VideoPlayerState extends State<VideoPlayer> {
       }
     });
     _fullscreenDisposer = effect(() {
-      final fs = widget.controller.isFullscreen.value;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
+      final bool fs = widget.controller.isFullscreen.value;
+      WidgetsBinding.instance.addPostFrameCallback((Duration _) {
         if (!mounted) return;
         if (fs) {
           // Show overlay first so the GlobalKey'd surface moves in one build;
           // suppressing inline before show() would dispose the PlatformView.
           if (!_fullscreenPortal.isShowing) {
-            final overlay = Overlay.maybeOf(context, rootOverlay: true);
+            final OverlayState? overlay = Overlay.maybeOf(context, rootOverlay: true);
             if (overlay != null) {
               _fullscreenPortal.show();
             }
@@ -178,13 +214,13 @@ class _VideoPlayerState extends State<VideoPlayer> {
               _focusNode.requestFocus();
             }
           }
-          if (_fullscreenPortal.isShowing && !_inlineSuppressed) {
-            setState(() => _inlineSuppressed = true);
+          if (_fullscreenPortal.isShowing && !_inlineSuppressed.value) {
+            _inlineSuppressed.value = true;
           }
         } else {
           // Un-suppress before hide() so the surface stays mounted while moving.
-          if (_inlineSuppressed) {
-            setState(() => _inlineSuppressed = false);
+          if (_inlineSuppressed.value) {
+            _inlineSuppressed.value = false;
           }
           if (_fullscreenPortal.isShowing) {
             _fullscreenPortal.hide();
@@ -226,6 +262,8 @@ class _VideoPlayerState extends State<VideoPlayer> {
     if (_fullscreenPortal.isShowing) {
       _fullscreenPortal.hide();
     }
+    _visible.dispose();
+    _inlineSuppressed.dispose();
     _focusNode.dispose();
     super.dispose();
   }
@@ -272,6 +310,9 @@ class _VideoPlayerState extends State<VideoPlayer> {
 
   void _handleClose() {
     if (widget.controller.isFullscreen.value) {
+      if (widget.controller.isLocked.value) {
+        return;
+      }
       widget.controller.exitFullscreen();
       return;
     }
@@ -284,23 +325,25 @@ class _VideoPlayerState extends State<VideoPlayer> {
 
   @override
   Widget build(BuildContext context) {
-    final effectiveTheme = widget.theme ?? VideoPlayerTheme.of(context);
-    final slot = VideoPlayerSlotContext(
+    final VideoPlayerTheme effectiveTheme = widget.theme ?? VideoPlayerTheme.of(context);
+    final VideoPlayerSlotContext slot = VideoPlayerSlotContext(
       controller: widget.controller,
       theme: effectiveTheme,
       showControls: _showControls,
       hideControls: _hideControls,
     );
 
-    final baseTheme = Theme.of(context);
+    final ThemeData baseTheme = Theme.of(context);
     // Leave the list untyped. `<ThemeExtension<dynamic>>` normalizes to
     // `ThemeExtension<ThemeExtension<dynamic>>` because of the
     // `T extends ThemeExtension<T>` bound, so spreading
     // `baseTheme.extensions.values` fails to type-check.
-    final themedData = widget.theme != null
+    final ThemeData themedData = widget.theme != null
         ? baseTheme.copyWith(
             extensions: [
-              ...baseTheme.extensions.values.where((ext) => ext is! VideoPlayerTheme),
+              ...baseTheme.extensions.values.where(
+                (ThemeExtension<dynamic> ext) => ext is! VideoPlayerTheme,
+              ),
               effectiveTheme,
             ],
           )
@@ -310,7 +353,7 @@ class _VideoPlayerState extends State<VideoPlayer> {
       data: themedData,
       child: OverlayPortal(
         controller: _fullscreenPortal,
-        overlayChildBuilder: (context) => Theme(
+        overlayChildBuilder: (BuildContext context) => Theme(
           data: themedData,
           child: Material(
             color: slot.theme.backgroundColor,
@@ -331,6 +374,12 @@ class _VideoPlayerState extends State<VideoPlayer> {
               showCastButton: widget.showCastButton,
               showAspectRatioMenu: widget.showAspectRatioMenu,
               enableFullscreen: widget.enableFullscreen,
+              enableFullscreenVerticalGestures: widget.enableFullscreenVerticalGestures,
+              verticalGestureMapping: widget.verticalGestureMapping,
+              verticalGestureWidthRatio: widget.verticalGestureWidthRatio,
+              verticalGestureHeightRatio: widget.verticalGestureHeightRatio,
+              showLockButton: widget.showLockButton,
+              lockButtonPosition: widget.lockButtonPosition,
               errorBuilder: widget.errorBuilder,
               loadingBuilder: widget.loadingBuilder,
               topBarBuilder: widget.topBarBuilder,
@@ -338,6 +387,8 @@ class _VideoPlayerState extends State<VideoPlayer> {
               bottomScrubberBuilder: widget.bottomScrubberBuilder,
               castingOverlayBuilder: widget.castingOverlayBuilder,
               extraOverlayBuilder: widget.extraOverlayBuilder,
+              gestureHudBuilder: widget.gestureHudBuilder,
+              lockButtonBuilder: widget.lockButtonBuilder,
               onClose: _handleClose,
               onToggleControls: _toggleControls,
               onShowControls: _showControls,
@@ -348,12 +399,11 @@ class _VideoPlayerState extends State<VideoPlayer> {
           ),
         ),
         child: SignalBuilder(
-          builder: (context) {
-            widget.controller.isFullscreen.value;
-            if (_inlineSuppressed || _fullscreenPortal.isShowing) {
+          builder: (BuildContext context) {
+            final bool fs = widget.controller.isFullscreen.value;
+            if (_inlineSuppressed.value || _fullscreenPortal.isShowing) {
               return const SizedBox.shrink();
             }
-            final fs = widget.controller.isFullscreen.value;
             return PlayerBody(
               slot: slot,
               controller: widget.controller,
@@ -371,6 +421,12 @@ class _VideoPlayerState extends State<VideoPlayer> {
               showCastButton: widget.showCastButton,
               showAspectRatioMenu: widget.showAspectRatioMenu,
               enableFullscreen: widget.enableFullscreen,
+              enableFullscreenVerticalGestures: widget.enableFullscreenVerticalGestures,
+              verticalGestureMapping: widget.verticalGestureMapping,
+              verticalGestureWidthRatio: widget.verticalGestureWidthRatio,
+              verticalGestureHeightRatio: widget.verticalGestureHeightRatio,
+              showLockButton: widget.showLockButton,
+              lockButtonPosition: widget.lockButtonPosition,
               errorBuilder: widget.errorBuilder,
               loadingBuilder: widget.loadingBuilder,
               topBarBuilder: widget.topBarBuilder,
@@ -378,6 +434,8 @@ class _VideoPlayerState extends State<VideoPlayer> {
               bottomScrubberBuilder: widget.bottomScrubberBuilder,
               castingOverlayBuilder: widget.castingOverlayBuilder,
               extraOverlayBuilder: widget.extraOverlayBuilder,
+              gestureHudBuilder: widget.gestureHudBuilder,
+              lockButtonBuilder: widget.lockButtonBuilder,
               onClose: _handleClose,
               onToggleControls: _toggleControls,
               onShowControls: _showControls,
