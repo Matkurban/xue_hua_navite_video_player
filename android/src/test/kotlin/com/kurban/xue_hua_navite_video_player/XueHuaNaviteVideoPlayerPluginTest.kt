@@ -150,4 +150,18 @@ internal class XueHuaNaviteVideoPlayerPluginTest {
         }
         assertEquals(NativePlayerEventType.COMPLETED, delivered[14].kind)
     }
+
+    @Test
+    fun runOffMainThread_dispatchesToWorkerEvenUnderDispatchersIOContext() = runTest {
+        val plugin = XueHuaNaviteVideoPlayerPlugin()
+        val callerThreadId = Thread.currentThread().id
+        val (ioCallerId, workerThreadId) = kotlinx.coroutines.withContext(Dispatchers.IO) {
+            val currentId = Thread.currentThread().id
+            plugin.runOffMainThread {
+                Pair(currentId, Thread.currentThread().id)
+            }
+        }
+        assertTrue(workerThreadId != callerThreadId)
+        assertTrue(workerThreadId != ioCallerId)
+    }
 }

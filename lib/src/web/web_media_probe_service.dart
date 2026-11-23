@@ -100,6 +100,8 @@ abstract final class WebMediaProbeService {
         } catch (_) {
           continue;
         }
+        // Yield back to the browser event loop between frames so UI stays responsive.
+        await Future<void>.delayed(Duration.zero);
       }
       frames.sort((a, b) => b.brightness.compareTo(a.brightness));
       return frames.take(count).toList();

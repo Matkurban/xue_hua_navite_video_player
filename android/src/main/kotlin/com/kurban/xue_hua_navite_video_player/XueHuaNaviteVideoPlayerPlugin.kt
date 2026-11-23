@@ -51,7 +51,9 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import android.os.Build
 import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 import kotlin.math.abs
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -235,6 +237,40 @@ class XueHuaNaviteVideoPlayerPlugin :
         }
     }
 
+    /**
+     * 强制在独立后台线程池 [workerExecutor] 上执行阻塞 I/O、媒体解码或 PNG 压缩任务。
+     *
+     * `package:jni` 的 `PortContinuation.getContext()` 返回 `Dispatchers.IO`，若直接使用
+     * `withContext(Dispatchers.IO)`，Kotlin 协程会命中同上下文无分发快路径而在 Flutter UI /
+     * Android 主线程上同步执行，导致界面卡死、ANR 或 `NetworkOnMainThreadException`。
+     */
+    internal suspend fun <T> runOffMainThread(block: () -> T): T {
+        if (workerExecutor.isShutdown || workerExecutor.isTerminated) {
+            workerExecutor = Executors.newCachedThreadPool()
+        }
+        return suspendCancellableCoroutine { cont ->
+            val future = workerExecutor.submit {
+                try {
+                    val value = block()
+                    if (cont.isActive) {
+                        cont.resume(value)
+                    }
+                } catch (e: CancellationException) {
+                    if (cont.isActive) {
+                        cont.cancel(e)
+                    }
+                } catch (t: Throwable) {
+                    if (cont.isActive) {
+                        cont.resumeWithException(t)
+                    }
+                }
+            }
+            cont.invokeOnCancellation {
+                future.cancel(true)
+            }
+        }
+    }
+
     private fun bindActivity(act: Activity) {
         activity = act
         orientationPlugin.bindActivity(act)
@@ -277,7 +313,7 @@ class XueHuaNaviteVideoPlayerPlugin :
         }
 
         // Pre-warm SimpleCache (SQLite + cache directory scan) off the merged UI/platform thread.
-        val dataSourceFactory = withContext(Dispatchers.IO) {
+        val dataSourceFactory = runOffMainThread {
             AndroidMediaCacheManager.buildDataSourceFactory(appContext)
         }
 
@@ -528,7 +564,7 @@ class XueHuaNaviteVideoPlayerPlugin :
 
         val headers = normalizeHeaders(request.headers)
         val dsFactory = appContext?.let { ctx ->
-            withContext(Dispatchers.IO) {
+            runOffMainThread {
                 AndroidMediaCacheManager.buildDataSourceFactory(
                     context = ctx,
                     headers = headers,
@@ -724,7 +760,7 @@ class XueHuaNaviteVideoPlayerPlugin :
 
     override suspend fun configureCache(request: CacheConfigRequest) {
         val appContext = flutterPluginBinding?.applicationContext ?: return
-        withContext(Dispatchers.IO) {
+        runOffMainThread {
             AndroidMediaCacheManager.configure(
                 context = appContext,
                 enabled = request.enabled,
@@ -772,14 +808,14 @@ class XueHuaNaviteVideoPlayerPlugin :
         val appContext = flutterPluginBinding?.applicationContext ?: return false
         val cacheKey = request.cacheKey?.takeIf { it.isNotBlank() } ?: request.url
         if (cacheKey.isBlank()) return false
-        return withContext(Dispatchers.IO) {
+        return runOffMainThread {
             AndroidMediaCacheManager.isCached(appContext, request.cacheDir, cacheKey)
         }
     }
 
     override suspend fun getCacheSize(cacheDir: String?): Long {
         val appContext = flutterPluginBinding?.applicationContext ?: return 0L
-        return withContext(Dispatchers.IO) {
+        return runOffMainThread {
             AndroidMediaCacheManager.getCacheSize(appContext, cacheDir)
         }
     }
@@ -788,14 +824,14 @@ class XueHuaNaviteVideoPlayerPlugin :
         val appContext = flutterPluginBinding?.applicationContext ?: return
         val cacheKey = request.cacheKey?.takeIf { it.isNotBlank() } ?: request.url
         if (cacheKey.isBlank()) return
-        withContext(Dispatchers.IO) {
+        runOffMainThread {
             AndroidMediaCacheManager.removeCache(appContext, request.cacheDir, cacheKey)
         }
     }
 
     override suspend fun clearCache(cacheDir: String?) {
         val appContext = flutterPluginBinding?.applicationContext ?: return
-        withContext(Dispatchers.IO) {
+        runOffMainThread {
             AndroidMediaCacheManager.clearCache(appContext, cacheDir)
         }
     }
@@ -1092,7 +1128,7 @@ class XueHuaNaviteVideoPlayerPlugin :
             message = "No media loaded",
         )
         val appContext = flutterPluginBinding?.applicationContext
-        val bytes = withContext(Dispatchers.IO) {
+        val bytes = runOffMainThread {
             val retriever = MediaMetadataRetriever()
             try {
                 setDataSourceForUrl(
@@ -1102,16 +1138,22 @@ class XueHuaNaviteVideoPlayerPlugin :
                     snapshotInput.cacheKey,
                     snapshotInput.headers,
                 )
-                val bmp = retriever.getFrameAtTime(
+                val rawBmp = retriever.getFrameAtTime(
                     snapshotInput.positionUs,
                     MediaMetadataRetriever.OPTION_CLOSEST,
                 ) ?: throw FlutterError(
                     code = "NO_FRAME",
                     message = "Failed to extract frame",
                 )
-                compressBitmapPngSync(bmp)
+                val softwareBmp = ensureSoftwareBitmap(rawBmp)
+                compressBitmapPngSync(softwareBmp)
             } catch (error: FlutterError) {
                 throw error
+            } catch (oom: OutOfMemoryError) {
+                throw FlutterError(
+                    code = "SNAPSHOT_OOM",
+                    message = oom.message ?: "Out of memory while capturing frame",
+                )
             } catch (t: Throwable) {
                 throw FlutterError(
                     code = "SNAPSHOT_FAIL",
@@ -1163,8 +1205,8 @@ class XueHuaNaviteVideoPlayerPlugin :
     }
 
     private suspend fun compressBitmapPng(bmp: Bitmap): ByteArray =
-        withContext(Dispatchers.Default) {
-            compressBitmapPngSync(bmp)
+        runOffMainThread {
+            compressBitmapPngSync(ensureSoftwareBitmap(bmp))
         }
 
     private fun compressBitmapPngSync(bmp: Bitmap): ByteArray {
@@ -1173,7 +1215,9 @@ class XueHuaNaviteVideoPlayerPlugin :
             bmp.compress(Bitmap.CompressFormat.PNG, 100, baos)
             return baos.toByteArray()
         } finally {
-            bmp.recycle()
+            if (!bmp.isRecycled) {
+                bmp.recycle()
+            }
         }
     }
 
@@ -1183,6 +1227,9 @@ class XueHuaNaviteVideoPlayerPlugin :
         val appContext = flutterPluginBinding?.applicationContext
         val headers = normalizeHeaders(request.headers)
         val timeoutMs = request.timeoutMs.coerceAtLeast(1L)
+        if (workerExecutor.isShutdown || workerExecutor.isTerminated) {
+            workerExecutor = Executors.newCachedThreadPool()
+        }
         val future = workerExecutor.submit<Long?> {
             val retriever = MediaMetadataRetriever()
             try {
@@ -1197,7 +1244,7 @@ class XueHuaNaviteVideoPlayerPlugin :
             }
         }
         return try {
-            withContext(Dispatchers.IO) {
+            runOffMainThread {
                 future.get(timeoutMs, TimeUnit.MILLISECONDS)
             }?.takeIf { it > 0L }
         } catch (_: TimeoutException) {
@@ -1220,14 +1267,14 @@ class XueHuaNaviteVideoPlayerPlugin :
         val candidates = request.candidates.toInt().coerceAtLeast(count)
         if (count == 0 || candidates == 0) return emptyList()
 
-        return withContext(Dispatchers.IO) {
+        return runOffMainThread {
             val frames = ArrayList<CoverFrameData>()
             val retriever = MediaMetadataRetriever()
             try {
                 setDataSourceForUrl(retriever, url, appContext, request.cacheKey, headers)
                 val durMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
                     ?.toLongOrNull() ?: 0L
-                if (durMs <= 0L) return@withContext emptyList()
+                if (durMs <= 0L) return@runOffMainThread emptyList()
 
                 val dir = File(
                     request.outputDir.ifEmpty { appContext?.cacheDir?.absolutePath ?: "/tmp" }
@@ -1238,18 +1285,17 @@ class XueHuaNaviteVideoPlayerPlugin :
                 val upper = (durMs * 0.95).toLong()
                 val span = (upper - lower).coerceAtLeast(1L)
                 for (i in 0 until candidates) {
-                    if (!isActive) break
+                    if (Thread.currentThread().isInterrupted) break
                     val t = lower + (span * (i + 0.5) / candidates).toLong()
-                    val bmp =
-                        retriever.getFrameAtTime(t * 1000L, MediaMetadataRetriever.OPTION_CLOSEST)
-                            ?: continue
-                    val brightness = averageBrightness(bmp)
-                    if (brightness < request.minBrightness) {
-                        bmp.recycle()
-                        continue
-                    }
-                    val outFile = File(dir, "cover-${abs(url.hashCode())}-$t.png")
+                    var bmp: Bitmap? = null
                     try {
+                        val decoded = decodeScaledCoverFrame(retriever, t * 1000L) ?: continue
+                        bmp = ensureSoftwareBitmap(decoded)
+                        val brightness = averageBrightness(bmp)
+                        if (brightness < request.minBrightness) {
+                            continue
+                        }
+                        val outFile = File(dir, "cover-${abs(url.hashCode())}-$t.png")
                         FileOutputStream(outFile).use { fos ->
                             bmp.compress(Bitmap.CompressFormat.PNG, 100, fos)
                         }
@@ -1260,10 +1306,14 @@ class XueHuaNaviteVideoPlayerPlugin :
                                 brightness = brightness,
                             )
                         )
+                    } catch (_: OutOfMemoryError) {
+                        // Skip oversized frame rather than crashing the process.
                     } catch (_: Throwable) {
-                        // Skip individual frame write failures.
+                        // Skip individual frame decode/write failures.
                     } finally {
-                        bmp.recycle()
+                        if (bmp != null && !bmp.isRecycled) {
+                            bmp.recycle()
+                        }
                     }
                 }
                 trimCoverCache(dir)
@@ -1271,6 +1321,8 @@ class XueHuaNaviteVideoPlayerPlugin :
                 frames.take(count)
             } catch (e: CancellationException) {
                 throw e
+            } catch (_: OutOfMemoryError) {
+                emptyList()
             } catch (_: Throwable) {
                 emptyList()
             } finally {
@@ -1280,6 +1332,54 @@ class XueHuaNaviteVideoPlayerPlugin :
                 }
             }
         }
+    }
+
+    private fun decodeScaledCoverFrame(
+        retriever: MediaMetadataRetriever,
+        timeUs: Long,
+    ): Bitmap? {
+        // 使用 OPTION_CLOSEST_SYNC 关键帧快速抽帧并限制最大分辨率为 1280x720，
+        // 与 iOS/macOS AVAssetImageGenerator.maximumSize 对齐，避免 4K 视频逐帧解码卡死与 OOM。
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            return retriever.getScaledFrameAtTime(
+                timeUs,
+                MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
+                1280,
+                720,
+            )
+        }
+        val raw = retriever.getFrameAtTime(
+            timeUs,
+            MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
+        ) ?: return null
+        val maxW = 1280
+        val maxH = 720
+        if (raw.width <= maxW && raw.height <= maxH) {
+            return raw
+        }
+        val scale = minOf(maxW.toFloat() / raw.width, maxH.toFloat() / raw.height)
+        val targetW = (raw.width * scale).toInt().coerceAtLeast(1)
+        val targetH = (raw.height * scale).toInt().coerceAtLeast(1)
+        val scaled = raw.scale(targetW, targetH, true)
+        if (scaled !== raw && !raw.isRecycled) {
+            raw.recycle()
+        }
+        return scaled
+    }
+
+    private fun ensureSoftwareBitmap(bmp: Bitmap): Bitmap {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+            bmp.config == Bitmap.Config.HARDWARE
+        ) {
+            val copy = bmp.copy(Bitmap.Config.ARGB_8888, false)
+            if (!bmp.isRecycled) {
+                bmp.recycle()
+            }
+            if (copy != null) {
+                return copy
+            }
+        }
+        return bmp
     }
 
     private fun trimCoverCache(dir: File, keep: Int = 40) {
