@@ -196,7 +196,7 @@ class VideoPlayerTheme extends ThemeExtension<VideoPlayerTheme> {
     this.centerPlayButtonIconSize = 24,
     this.centerSkipButtonIconSize = 22,
     this.centerButtonBackgroundColor = const Color(0x4D000000), // Colors.black38
-    this.chromeIconSize = 20,
+    this.chromeIconSize = 24,
     this.topBarPadding = const EdgeInsets.fromLTRB(12, 12, 12, 12),
     this.bottomBarPadding = const EdgeInsets.fromLTRB(16, 6, 16, 14),
     this.timeTextStyle = const TextStyle(
@@ -244,7 +244,7 @@ class VideoPlayerTheme extends ThemeExtension<VideoPlayerTheme> {
     this.centerPlayButtonIconSize = 28,
     this.centerSkipButtonIconSize = 24,
     this.centerButtonBackgroundColor = const Color(0x59000000),
-    this.chromeIconSize = 22,
+    this.chromeIconSize = 20,
     this.topBarPadding = const EdgeInsets.fromLTRB(12, 12, 12, 12),
     this.bottomBarPadding = const EdgeInsets.fromLTRB(16, 6, 16, 14),
     this.timeTextStyle = const TextStyle(
@@ -296,7 +296,7 @@ class VideoPlayerTheme extends ThemeExtension<VideoPlayerTheme> {
     this.centerPlayButtonIconSize = 28,
     this.centerSkipButtonIconSize = 24,
     this.centerButtonBackgroundColor = const Color(0x591C1C1E),
-    this.chromeIconSize = 19,
+    this.chromeIconSize = 20,
     this.topBarPadding = const EdgeInsets.fromLTRB(14, 12, 14, 10),
     this.bottomBarPadding = const EdgeInsets.fromLTRB(14, 6, 14, 14),
     this.timeTextStyle = const TextStyle(
@@ -326,11 +326,11 @@ class VideoPlayerTheme extends ThemeExtension<VideoPlayerTheme> {
       fontWeight: FontWeight.w400,
       letterSpacing: -0.2,
     ),
-    this.menuIconSize = 18,
+    this.menuIconSize = 20,
     this.hudBackgroundColor = const Color(0xB3252528),
     this.hudBorderRadius = const BorderRadius.all(Radius.circular(14)),
     this.hudPadding = const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-    this.hudIconSize = 20,
+    this.hudIconSize = 22,
     this.hudIconGap = 8,
     this.hudTextStyle = const TextStyle(
       color: Colors.white,

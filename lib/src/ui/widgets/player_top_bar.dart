@@ -150,18 +150,12 @@ class PlayerTopBar extends StatelessWidget {
                     : Row(mainAxisSize: MainAxisSize.min, children: trailing),
               );
 
-        return Padding(
-          padding: style.topBarPadding,
-          child: Row(
-            children: <Widget>[
-              Expanded(
-                child: Align(alignment: Alignment.centerLeft, child: wrappedLeading),
-              ),
-              Expanded(flex: 2, child: Center(child: title ?? const SizedBox.shrink())),
-              Expanded(
-                child: Align(alignment: Alignment.centerRight, child: trailingRow),
-              ),
-            ],
+        return SizedBox(
+          height: 48,
+          child: NavigationToolbar(
+            leading: wrappedLeading,
+            middle: title ?? const SizedBox.shrink(),
+            trailing: trailingRow,
           ),
         );
       },
