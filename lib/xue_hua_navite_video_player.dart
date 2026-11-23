@@ -32,8 +32,7 @@ export 'src/orientation/method_channel_player_orientation.dart';
 export 'src/orientation/player_orientation_controller.dart';
 export 'src/orientation/player_orientation_platform.dart';
 export 'src/orientation/web_player_orientation.dart';
-export 'src/pigeon/orientation_api.g.dart'
-    show DevicePhysicalOrientation, OrientationSensorEvent;
+export 'src/pigeon/orientation_api.g.dart' show DevicePhysicalOrientation, OrientationSensorEvent;
 
 // Player
 export 'src/player/video_player_controller.dart';

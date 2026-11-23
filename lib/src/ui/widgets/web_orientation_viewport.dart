@@ -95,11 +95,7 @@ class WebOrientationViewport extends StatelessWidget {
                           maxWidth: viewportH,
                           minHeight: viewportW,
                           maxHeight: viewportW,
-                          child: SizedBox(
-                            width: viewportH,
-                            height: viewportW,
-                            child: innerChild,
-                          ),
+                          child: SizedBox(width: viewportH, height: viewportW, child: innerChild),
                         ),
                       );
                     },

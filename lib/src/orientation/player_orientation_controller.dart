@@ -193,8 +193,7 @@ class PlayerOrientationController with WidgetsBindingObserver {
     _landscapeFullscreen = landscapeVideo;
 
     final DevicePhysicalOrientation target;
-    if (preferredOrientation != null &&
-        preferredOrientation != DevicePhysicalOrientation.unknown) {
+    if (preferredOrientation != null && preferredOrientation != DevicePhysicalOrientation.unknown) {
       target = preferredOrientation;
     } else if (!landscapeVideo) {
       target = DevicePhysicalOrientation.portraitUp;
@@ -275,8 +274,7 @@ class PlayerOrientationController with WidgetsBindingObserver {
       }
     }
 
-    final bool needsApply =
-        explicit != null || resolved != currentOrientation.value;
+    final bool needsApply = explicit != null || resolved != currentOrientation.value;
 
     batch(() {
       isLocked.value = true;
@@ -389,8 +387,7 @@ class PlayerOrientationController with WidgetsBindingObserver {
 
     // 5. 非全屏状态下：横握时自动通知宿主进入对应方向全屏
     if (_isLandscape(next)) {
-      final FutureOr<void> Function(DevicePhysicalOrientation)? callback =
-          onAutoEnterFullscreen;
+      final FutureOr<void> Function(DevicePhysicalOrientation)? callback = onAutoEnterFullscreen;
       if (callback != null) {
         unawaited(Future<void>.sync(() => callback(next)));
       }

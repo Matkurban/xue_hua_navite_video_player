@@ -10,9 +10,9 @@ import 'package:flutter/services.dart';
 import 'package:meta/meta.dart' show immutable, protected, visibleForTesting;
 
 Object? _extractReplyValueOrThrow(
-    List<Object?>? replyList,
-    String channelName, {
-    required bool isNullValid,
+  List<Object?>? replyList,
+  String channelName, {
+  required bool isNullValid,
 }) {
   if (replyList == null) {
     throw PlatformException(
@@ -34,7 +34,6 @@ Object? _extractReplyValueOrThrow(
   return replyList.firstOrNull;
 }
 
-
 List<Object?> wrapResponse({Object? result, PlatformException? error, bool empty = false}) {
   if (empty) {
     return <Object?>[];
@@ -44,6 +43,7 @@ List<Object?> wrapResponse({Object? result, PlatformException? error, bool empty
   }
   return <Object?>[error.code, error.message, error.details];
 }
+
 bool _deepEquals(Object? a, Object? b) {
   if (identical(a, b)) {
     return true;
@@ -56,8 +56,7 @@ bool _deepEquals(Object? a, Object? b) {
   }
   if (a is List && b is List) {
     return a.length == b.length &&
-        a.indexed
-            .every(((int, dynamic) item) => _deepEquals(item.$2, b[item.$1]));
+        a.indexed.every(((int, dynamic) item) => _deepEquals(item.$2, b[item.$1]));
   }
   if (a is Map && b is Map) {
     if (a.length != b.length) {
@@ -106,7 +105,6 @@ int _deepHash(Object? value) {
   return value.hashCode;
 }
 
-
 /// 设备真实物理朝向枚举（主动过滤倒置 `portraitDown` 与平放干扰）。
 ///
 /// Physical device orientation enum with upside-down (`portraitDown`) and flat
@@ -116,18 +114,21 @@ enum DevicePhysicalOrientation {
   ///
   /// Upright portrait (device top facing up).
   portraitUp,
+
   /// 横屏正向（设备顶部朝左、充电口/Home 指示条朝右，相对竖屏逆时针 90°）。
   ///
   /// Standard landscape (device top on the left, 90° counter-clockwise from portrait).
   landscapeLeft,
+
   /// 横屏反向（设备顶部朝右、充电口/Home 指示条朝左，相对竖屏顺时针 90°）。
   ///
   /// Reverse landscape (device top on the right, 90° clockwise from portrait).
   landscapeRight,
+
   /// 未知、平放或被过滤的倒置姿态。
   ///
   /// Unknown, flat, or filtered upside-down posture.
-  unknown;
+  unknown,
 }
 
 /// 原生重力传感器上报的物理朝向事件载荷。
@@ -156,15 +157,12 @@ class OrientationSensorEvent {
   double angleDegrees;
 
   List<Object?> _toList() {
-    return <Object?>[
-      orientation,
-      confidence,
-      angleDegrees,
-    ];
+    return <Object?>[orientation, confidence, angleDegrees];
   }
 
   Object encode() {
-    return _toList();  }
+    return _toList();
+  }
 
   static OrientationSensorEvent decode(Object result) {
     result as List<Object?>;
@@ -184,7 +182,9 @@ class OrientationSensorEvent {
     if (identical(this, other)) {
       return true;
     }
-    return _deepEquals(orientation, other.orientation) && _deepEquals(confidence, other.confidence) && _deepEquals(angleDegrees, other.angleDegrees);
+    return _deepEquals(orientation, other.orientation) &&
+        _deepEquals(confidence, other.confidence) &&
+        _deepEquals(angleDegrees, other.angleDegrees);
   }
 
   @override
@@ -197,7 +197,6 @@ class OrientationSensorEvent {
   }
 }
 
-
 class _PigeonCodec extends StandardMessageCodec {
   const _PigeonCodec();
   @override
@@ -205,10 +204,10 @@ class _PigeonCodec extends StandardMessageCodec {
     if (value is int) {
       buffer.putUint8(4);
       buffer.putInt64(value);
-    }    else if (value is DevicePhysicalOrientation) {
+    } else if (value is DevicePhysicalOrientation) {
       buffer.putUint8(129);
       writeValue(buffer, value.index);
-    }    else if (value is OrientationSensorEvent) {
+    } else if (value is OrientationSensorEvent) {
       buffer.putUint8(130);
       writeValue(buffer, value.encode());
     } else {
@@ -238,24 +237,23 @@ class OrientationHostApi {
   /// Constructor for [OrientationHostApi]. The [binaryMessenger] named argument is
   /// available for dependency injection. If it is left null, the default
   /// BinaryMessenger will be used which routes to the host platform.
-  OrientationHostApi({
-      BinaryMessenger? binaryMessenger, 
-      String messageChannelSuffix = '', 
-      })
-      : pigeonVar_binaryMessenger = binaryMessenger,
-        pigeonVar_messageChannelSuffix = messageChannelSuffix.isNotEmpty ? '.$messageChannelSuffix' : '';
+  OrientationHostApi({BinaryMessenger? binaryMessenger, String messageChannelSuffix = ''})
+    : pigeonVar_binaryMessenger = binaryMessenger,
+      pigeonVar_messageChannelSuffix = messageChannelSuffix.isNotEmpty
+          ? '.$messageChannelSuffix'
+          : '';
 
   final BinaryMessenger? pigeonVar_binaryMessenger;
   static const MessageCodec<Object?> pigeonChannelCodec = _PigeonCodec();
 
   final String pigeonVar_messageChannelSuffix;
 
-
   /// 设置目标屏幕显示方向（无视系统控制中心竖屏锁定 / 自动旋转开关）。
   ///
   /// Sets the target interface orientation, overriding system orientation lock.
   Future<void> setTargetOrientation(DevicePhysicalOrientation orientation) async {
-    final pigeonVar_channelName = 'dev.flutter.pigeon.xue_hua_navite_video_player.OrientationHostApi.setTargetOrientation$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.xue_hua_navite_video_player.OrientationHostApi.setTargetOrientation$pigeonVar_messageChannelSuffix';
     final pigeonVar_channel = BasicMessageChannel<Object?>(
       pigeonVar_channelName,
       pigeonChannelCodec,
@@ -263,12 +261,7 @@ class OrientationHostApi {
     );
     final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[orientation]);
     final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
-    _extractReplyValueOrThrow(
-        pigeonVar_replyList,
-        pigeonVar_channelName,
-        isNullValid: true,
-    )
-    ;
+    _extractReplyValueOrThrow(pigeonVar_replyList, pigeonVar_channelName, isNullValid: true);
   }
 
   /// 读取当前界面实际所处的方向（用于锁屏时精准锁定当前方向，避免 iOS 180° 翻转）。
@@ -276,7 +269,8 @@ class OrientationHostApi {
   /// Returns the current active interface orientation so locking pins the exact
   /// current direction without triggering a spurious rotation.
   Future<DevicePhysicalOrientation> getCurrentOrientation() async {
-    final pigeonVar_channelName = 'dev.flutter.pigeon.xue_hua_navite_video_player.OrientationHostApi.getCurrentOrientation$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.xue_hua_navite_video_player.OrientationHostApi.getCurrentOrientation$pigeonVar_messageChannelSuffix';
     final pigeonVar_channel = BasicMessageChannel<Object?>(
       pigeonVar_channelName,
       pigeonChannelCodec,
@@ -285,11 +279,10 @@ class OrientationHostApi {
     final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(null);
     final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
     final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
-        pigeonVar_replyList,
-        pigeonVar_channelName,
-        isNullValid: false,
-    )
-    ;
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: false,
+    );
     return pigeonVar_replyValue! as DevicePhysicalOrientation;
   }
 
@@ -297,7 +290,8 @@ class OrientationHostApi {
   ///
   /// Starts native physical gravity sensor listening.
   Future<void> startSensorListening() async {
-    final pigeonVar_channelName = 'dev.flutter.pigeon.xue_hua_navite_video_player.OrientationHostApi.startSensorListening$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.xue_hua_navite_video_player.OrientationHostApi.startSensorListening$pigeonVar_messageChannelSuffix';
     final pigeonVar_channel = BasicMessageChannel<Object?>(
       pigeonVar_channelName,
       pigeonChannelCodec,
@@ -305,19 +299,15 @@ class OrientationHostApi {
     );
     final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(null);
     final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
-    _extractReplyValueOrThrow(
-        pigeonVar_replyList,
-        pigeonVar_channelName,
-        isNullValid: true,
-    )
-    ;
+    _extractReplyValueOrThrow(pigeonVar_replyList, pigeonVar_channelName, isNullValid: true);
   }
 
   /// 停止原生平台物理重力传感器监听并释放硬件采样。
   ///
   /// Stops native physical gravity sensor listening.
   Future<void> stopSensorListening() async {
-    final pigeonVar_channelName = 'dev.flutter.pigeon.xue_hua_navite_video_player.OrientationHostApi.stopSensorListening$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.xue_hua_navite_video_player.OrientationHostApi.stopSensorListening$pigeonVar_messageChannelSuffix';
     final pigeonVar_channel = BasicMessageChannel<Object?>(
       pigeonVar_channelName,
       pigeonChannelCodec,
@@ -325,19 +315,15 @@ class OrientationHostApi {
     );
     final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(null);
     final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
-    _extractReplyValueOrThrow(
-        pigeonVar_replyList,
-        pigeonVar_channelName,
-        isNullValid: true,
-    )
-    ;
+    _extractReplyValueOrThrow(pigeonVar_replyList, pigeonVar_channelName, isNullValid: true);
   }
 
   /// 进入或退出原生沉浸式全屏模式（隐藏/恢复状态栏与系统导航栏）。
   ///
   /// Enters or exits native immersive fullscreen (system bars / home indicator).
   Future<void> setImmersiveFullscreen(bool enabled) async {
-    final pigeonVar_channelName = 'dev.flutter.pigeon.xue_hua_navite_video_player.OrientationHostApi.setImmersiveFullscreen$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.xue_hua_navite_video_player.OrientationHostApi.setImmersiveFullscreen$pigeonVar_messageChannelSuffix';
     final pigeonVar_channel = BasicMessageChannel<Object?>(
       pigeonVar_channelName,
       pigeonChannelCodec,
@@ -345,12 +331,7 @@ class OrientationHostApi {
     );
     final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[enabled]);
     final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
-    _extractReplyValueOrThrow(
-        pigeonVar_replyList,
-        pigeonVar_channelName,
-        isNullValid: true,
-    )
-    ;
+    _extractReplyValueOrThrow(pigeonVar_replyList, pigeonVar_channelName, isNullValid: true);
   }
 }
 
@@ -367,16 +348,18 @@ abstract class OrientationFlutterApi {
   /// orientation change.
   void onPhysicalOrientationChanged(OrientationSensorEvent event);
 
-  static void setUp(OrientationFlutterApi? api, {
+  static void setUp(
+    OrientationFlutterApi? api, {
     BinaryMessenger? binaryMessenger,
     String messageChannelSuffix = '',
-  }) 
-{
+  }) {
     messageChannelSuffix = messageChannelSuffix.isNotEmpty ? '.$messageChannelSuffix' : '';
     {
       final pigeonVar_channel = BasicMessageChannel<Object?>(
-          'dev.flutter.pigeon.xue_hua_navite_video_player.OrientationFlutterApi.onPhysicalOrientationChanged$messageChannelSuffix', pigeonChannelCodec,
-          binaryMessenger: binaryMessenger);
+        'dev.flutter.pigeon.xue_hua_navite_video_player.OrientationFlutterApi.onPhysicalOrientationChanged$messageChannelSuffix',
+        pigeonChannelCodec,
+        binaryMessenger: binaryMessenger,
+      );
       if (api == null) {
         pigeonVar_channel.setMessageHandler(null);
       } else {
@@ -388,8 +371,10 @@ abstract class OrientationFlutterApi {
             return wrapResponse(empty: true);
           } on PlatformException catch (e) {
             return wrapResponse(error: e);
-          }          catch (e) {
-            return wrapResponse(error: PlatformException(code: 'error', message: e.toString()));
+          } catch (e) {
+            return wrapResponse(
+              error: PlatformException(code: 'error', message: e.toString()),
+            );
           }
         });
       }

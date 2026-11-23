@@ -517,10 +517,7 @@ class _VideoPlayerState extends State<VideoPlayer> {
             child: Material(
               color: slot.theme.backgroundColor,
               child: orientationCtrl != null
-                  ? WebOrientationViewport(
-                      controller: orientationCtrl,
-                      child: fullscreenBody,
-                    )
+                  ? WebOrientationViewport(controller: orientationCtrl, child: fullscreenBody)
                   : fullscreenBody,
             ),
           );

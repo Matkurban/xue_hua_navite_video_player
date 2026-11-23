@@ -7,14 +7,12 @@ import 'package:pigeon/pigeon.dart';
   PigeonOptions(
     dartOut: 'lib/src/pigeon/orientation_api.g.dart',
     dartOptions: DartOptions(),
-    kotlinOut:
-        'android/src/main/kotlin/com/kurban/xue_hua_navite_video_player/OrientationApi.g.kt',
+    kotlinOut: 'android/src/main/kotlin/com/kurban/xue_hua_navite_video_player/OrientationApi.g.kt',
     kotlinOptions: KotlinOptions(
       package: 'com.kurban.xue_hua_navite_video_player',
       errorClassName: 'OrientationFlutterError',
     ),
-    swiftOut:
-        'ios/xue_hua_navite_video_player/Sources/xue_hua_navite_video_player/OrientationApi.g.swift',
+    swiftOut: 'ios/xue_hua_navite_video_player/Sources/xue_hua_navite_video_player/OrientationApi.g.swift',
     swiftOptions: SwiftOptions(errorClassName: 'OrientationPigeonError'),
     dartPackageName: 'xue_hua_navite_video_player',
   ),

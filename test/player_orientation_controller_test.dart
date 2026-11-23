@@ -46,44 +46,47 @@ void main() {
   });
 
   group('PlayerOrientationController state machine', () {
-    test('lock and unlock do NOT cause spurious 180-degree flip when already in landscapeRight', () async {
-      final _FakeOrientationPlatform platform = _FakeOrientationPlatform(
-        initialCurrent: DevicePhysicalOrientation.landscapeRight,
-      );
-      final PlayerOrientationController controller = PlayerOrientationController(
-        platform: platform,
-      );
+    test(
+      'lock and unlock do NOT cause spurious 180-degree flip when already in landscapeRight',
+      () async {
+        final _FakeOrientationPlatform platform = _FakeOrientationPlatform(
+          initialCurrent: DevicePhysicalOrientation.landscapeRight,
+        );
+        final PlayerOrientationController controller = PlayerOrientationController(
+          platform: platform,
+        );
 
-      // Simulate physical grip already in landscapeRight before entering fullscreen.
-      platform.emit(DevicePhysicalOrientation.landscapeRight);
-      await Future<void>.delayed(Duration.zero);
+        // Simulate physical grip already in landscapeRight before entering fullscreen.
+        platform.emit(DevicePhysicalOrientation.landscapeRight);
+        await Future<void>.delayed(Duration.zero);
 
-      await controller.enterFullscreen(landscapeVideo: true);
-      expect(controller.currentOrientation.value, DevicePhysicalOrientation.landscapeRight);
-      expect(platform.targetCalls, <DevicePhysicalOrientation>[
-        DevicePhysicalOrientation.landscapeRight,
-      ]);
+        await controller.enterFullscreen(landscapeVideo: true);
+        expect(controller.currentOrientation.value, DevicePhysicalOrientation.landscapeRight);
+        expect(platform.targetCalls, <DevicePhysicalOrientation>[
+          DevicePhysicalOrientation.landscapeRight,
+        ]);
 
-      // Lock without specifying explicit orientation -> queries actual current orientation
-      // (landscapeRight) and does NOT emit a redundant or flipped setTargetOrientation call.
-      await controller.lock();
-      expect(controller.isLocked.value, isTrue);
-      expect(controller.currentOrientation.value, DevicePhysicalOrientation.landscapeRight);
-      expect(platform.targetCalls, <DevicePhysicalOrientation>[
-        DevicePhysicalOrientation.landscapeRight,
-      ]);
+        // Lock without specifying explicit orientation -> queries actual current orientation
+        // (landscapeRight) and does NOT emit a redundant or flipped setTargetOrientation call.
+        await controller.lock();
+        expect(controller.isLocked.value, isTrue);
+        expect(controller.currentOrientation.value, DevicePhysicalOrientation.landscapeRight);
+        expect(platform.targetCalls, <DevicePhysicalOrientation>[
+          DevicePhysicalOrientation.landscapeRight,
+        ]);
 
-      // Unlock while phone is still held in landscapeRight -> zero extra rotation!
-      await controller.unlock();
-      expect(controller.isLocked.value, isFalse);
-      expect(controller.currentOrientation.value, DevicePhysicalOrientation.landscapeRight);
-      expect(platform.targetCalls, <DevicePhysicalOrientation>[
-        DevicePhysicalOrientation.landscapeRight,
-      ]);
+        // Unlock while phone is still held in landscapeRight -> zero extra rotation!
+        await controller.unlock();
+        expect(controller.isLocked.value, isFalse);
+        expect(controller.currentOrientation.value, DevicePhysicalOrientation.landscapeRight);
+        expect(platform.targetCalls, <DevicePhysicalOrientation>[
+          DevicePhysicalOrientation.landscapeRight,
+        ]);
 
-      controller.dispose();
-      platform.dispose();
-    });
+        controller.dispose();
+        platform.dispose();
+      },
+    );
 
     test('auto-rotates 180 degrees in fullscreen when unlocked, pauses when locked, and resumes on unlock', () async {
       final _FakeOrientationPlatform platform = _FakeOrientationPlatform();
@@ -147,9 +150,7 @@ void main() {
       // Subsequent horizontal rotation now triggers auto-enter fullscreen normally.
       platform.emit(DevicePhysicalOrientation.landscapeLeft);
       await Future<void>.delayed(Duration.zero);
-      expect(autoEnterCalls, <DevicePhysicalOrientation>[
-        DevicePhysicalOrientation.landscapeLeft,
-      ]);
+      expect(autoEnterCalls, <DevicePhysicalOrientation>[DevicePhysicalOrientation.landscapeLeft]);
 
       controller.dispose();
       platform.dispose();
@@ -160,9 +161,7 @@ void main() {
     testWidgets('rotates viewport 90/-90 degrees when usesCssFallbackRotation is true', (
       WidgetTester tester,
     ) async {
-      final _FakeOrientationPlatform platform = _FakeOrientationPlatform(
-        cssFallback: true,
-      );
+      final _FakeOrientationPlatform platform = _FakeOrientationPlatform(cssFallback: true);
       final PlayerOrientationController controller = PlayerOrientationController(
         platform: platform,
       );

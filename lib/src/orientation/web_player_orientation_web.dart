@@ -91,8 +91,8 @@ class WebPlayerOrientation extends PlayerOrientationPlatform {
       if (ctor != null && ctor.isA<JSObject>()) {
         final JSObject ctorObj = ctor as JSObject;
         if (ctorObj.hasProperty('requestPermission'.toJS).toDart) {
-          final JSPromise<JSString>? promise =
-              (ctorObj as _JsDeviceOrientationEventCtor).requestPermission();
+          final JSPromise<JSString>? promise = (ctorObj as _JsDeviceOrientationEventCtor)
+              .requestPermission();
           if (promise != null) {
             final JSString result = await promise.toDart;
             _permissionGranted = result.toDart == 'granted';
@@ -231,11 +231,7 @@ class WebPlayerOrientation extends PlayerOrientationPlatform {
       return;
     }
 
-    final double confidence = _computeConfidence(
-      beta: beta,
-      gamma: gamma,
-      orientation: resolved,
-    );
+    final double confidence = _computeConfidence(beta: beta, gamma: gamma, orientation: resolved);
     final double angleDegrees = switch (resolved) {
       DevicePhysicalOrientation.portraitUp => 0.0,
       DevicePhysicalOrientation.landscapeLeft => 270.0,
