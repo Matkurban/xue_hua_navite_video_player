@@ -84,6 +84,7 @@ Future<void> main(List<String> args) async {
     include: (Declaration d) => classes.contains(d.name) || enums.contains(d.name),
     output: Output(
       module: 'xue_hua_navite_video_player',
+      assetId: 'package:xue_hua_navite_video_player/xue_hua_navite_video_player_objc_gen.dylib',
       dartFile: Uri.file('lib/src/pigeon/player_api.g.ffi.dart'),
       objectiveCFile: Uri.file(
         'ios/xue_hua_navite_video_player/Sources/xue_hua_navite_video_player_objc_gen/PlayerApi.g.m',

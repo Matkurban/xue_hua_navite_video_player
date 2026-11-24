@@ -4,7 +4,7 @@
 #
 Pod::Spec.new do |s|
   s.name             = 'xue_hua_navite_video_player'
-  s.version          = '1.0.0'
+  s.version          = '2.9.1'
   s.summary          = 'xue_hua_navite_video_player'
   s.description      = <<-DESC
 A six-terminal universal audio and video player that caches while watching, supports multi-threaded download, breakpoint resumption, and LRU cache elimination.
@@ -14,7 +14,7 @@ A six-terminal universal audio and video player that caches while watching, supp
   s.author           = { 'Matkurban' => '3496354336@qq.com' }
 
   s.source           = { :path => '.' }
-  s.source_files = 'xue_hua_navite_video_player/Sources/**/*.{swift,m,h}'
+  s.source_files = 'xue_hua_navite_video_player/Sources/xue_hua_navite_video_player/**/*.swift'
 
   # If your plugin requires a privacy manifest, for example if it collects user
   # data, update the PrivacyInfo.xcprivacy file to describe your plugin's

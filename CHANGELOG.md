@@ -1,3 +1,10 @@
+## 2.9.1
+
+- **Fix iOS TestFlight / Xcode Archive & macOS Release Pigeon FFI Symbol Stripping (`dlsym: symbol not found`)**:
+  - **Root cause**: Xcode Archive / TestFlight (`ACTION=install`) enables `DEPLOYMENT_POSTPROCESSING = YES` with default `STRIP_STYLE = all`, stripping all C trampoline exports from `*_objc_gen/*.m` statically linked into `Runner` and causing runtime `dlsym(RTLD_DEFAULT, ...): symbol not found` failures.
+  - **Fix**: Added a Dart Native Code Asset build hook (`hook/build.dart`, declaring explicit `code_assets: ^2.2.0` and `hooks: ^2.0.0` dependencies) to compile and bundle Apple `*_objc_gen/*.m` trampolines into a dedicated `DynamicLoadingBundled` framework (`xue_hua_navite_video_player_objc_gen.dylib`), bound `@ffi.DefaultAsset` in `lib/src/pigeon/player_api.g.ffi.dart` (preserved automatically by `tool/generate_pigeon.dart`), and removed duplicate ObjC compilation from iOS/macOS `Package.swift` and `.podspec` files.
+  - **Zero host-app configuration required**: Works out of the box with Xcode's default `STRIP_STYLE = all` across SwiftPM and CocoaPods (static and dynamic frameworks), producing signed `.framework` and `.dSYM` artifacts.
+
 ## 2.9.0
 
 - **Fullscreen Landscape Brightness & Volume Gestures**:

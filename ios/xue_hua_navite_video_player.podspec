@@ -4,7 +4,7 @@
 #
 Pod::Spec.new do |s|
   s.name             = 'xue_hua_navite_video_player'
-  s.version          = '1.0.0'
+  s.version          = '2.9.1'
   s.summary          = 'A cross-platform Flutter audio/video player plugin powered by native players (ExoPlayer, AVPlayer, mpv)'
   s.description      = <<-DESC
 A cross-platform Flutter audio/video player plugin powered by native players (ExoPlayer, AVPlayer, mpv).
@@ -13,7 +13,7 @@ A cross-platform Flutter audio/video player plugin powered by native players (Ex
   s.license          = { :file => '../LICENSE' }
   s.author           = { 'Matkurban' => '3496354336@qq.com' }
   s.source           = { :path => '.' }
-  s.source_files = 'xue_hua_navite_video_player/Sources/**/*.{swift,m,h}'
+  s.source_files = 'xue_hua_navite_video_player/Sources/xue_hua_navite_video_player/**/*.swift'
   s.dependency 'Flutter'
   s.platform = :ios, '13.0'
 

@@ -1,5 +1,10 @@
 import 'dart:io';
 
+const String _objcGenAssetId =
+    'package:xue_hua_navite_video_player/xue_hua_navite_video_player_objc_gen.dylib';
+const String _ffigenConfigPath = 'tool/pigeon/player_api_ffigen_config.dart';
+const String _ffiDartOutPath = 'lib/src/pigeon/player_api.g.ffi.dart';
+
 Future<void> main(List<String> args) async {
   final env = Map<String, String>.from(Platform.environment);
   final androidSdk = _resolveAndroidHome(env);
@@ -16,11 +21,28 @@ Future<void> main(List<String> args) async {
   );
   final exitCode = await process.exitCode;
 
-  _syncAppleObjcGen();
-
   if (exitCode != 0) {
+    _syncAppleObjcGen();
     exit(exitCode);
   }
+
+  _injectFfigenAssetId();
+  if (Platform.isMacOS) {
+    final ffigenProcess = await Process.start(
+      Platform.resolvedExecutable,
+      <String>['run', _ffigenConfigPath],
+      environment: env,
+      mode: ProcessStartMode.inheritStdio,
+    );
+    final ffigenExitCode = await ffigenProcess.exitCode;
+    if (ffigenExitCode != 0) {
+      _syncAppleObjcGen();
+      exit(ffigenExitCode);
+    }
+    _verifyFfiDefaultAsset();
+  }
+
+  _syncAppleObjcGen();
 
   final orientationProcess = await Process.start(
     Platform.resolvedExecutable,
@@ -31,6 +53,43 @@ Future<void> main(List<String> args) async {
   final orientationExitCode = await orientationProcess.exitCode;
   if (orientationExitCode != 0) {
     exit(orientationExitCode);
+  }
+}
+
+void _injectFfigenAssetId() {
+  final configFile = File(_ffigenConfigPath);
+  if (!configFile.existsSync()) {
+    throw StateError('Missing ffigen config file: $_ffigenConfigPath');
+  }
+
+  final content = configFile.readAsStringSync();
+  const assetIdLine = "      assetId: '$_objcGenAssetId',";
+  if (content.contains("assetId: '$_objcGenAssetId'")) {
+    return;
+  }
+
+  const anchor = "      module: 'xue_hua_navite_video_player',";
+  if (!content.contains(anchor)) {
+    throw StateError('Could not find Output module anchor in $_ffigenConfigPath');
+  }
+
+  configFile.writeAsStringSync(content.replaceFirst(anchor, '$anchor\n$assetIdLine'));
+}
+
+void _verifyFfiDefaultAsset() {
+  final ffiDartFile = File(_ffiDartOutPath);
+  if (!ffiDartFile.existsSync()) {
+    throw StateError('Missing generated FFI Dart file: $_ffiDartOutPath');
+  }
+
+  final content = ffiDartFile.readAsStringSync();
+  final pattern = RegExp(
+    "@ffi\\.DefaultAsset\\(\\s*'${RegExp.escape(_objcGenAssetId)}',?\\s*\\)\\r?\\nlibrary;",
+  );
+  if (!pattern.hasMatch(content)) {
+    throw StateError(
+      'Generated $_ffiDartOutPath is missing @ffi.DefaultAsset(\'$_objcGenAssetId\') library;',
+    );
   }
 }
 
